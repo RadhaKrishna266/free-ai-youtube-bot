@@ -1,11 +1,10 @@
 import random
 
 def get_topic():
-    with open("topics/history.txt", "r") as h:
-            history = h.readlines()
+    files = ["topics/history.txt", "topics/tech.txt"]
+    chosen_file = random.choice(files)
 
-                with open("topics/tech.txt", "r") as t:
-                        tech = t.readlines()
+    with open(chosen_file, "r") as f:
+        topics = f.readlines()
 
-                            all_topics = history + tech
-                                return random.choice(all_topics).strip()
+    return random.choice(topics).strip()
