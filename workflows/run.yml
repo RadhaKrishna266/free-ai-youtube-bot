@@ -2,31 +2,27 @@ name: Free AI YouTube Bot
 
 on:
   schedule:
-    - cron: "0 6 * * *"
+    - cron: "0 4 * * *"   # runs daily
   workflow_dispatch:
 
 jobs:
-  run-bot:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+    - name: Checkout repo
+      uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
 
-      - name: Install system dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y ffmpeg
+    - name: Install FFmpeg
+      run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-      - name: Install Python packages
-        run: |
-          pip install edge-tts
+    - name: Install Edge TTS
+      run: pip install edge-tts
 
-      - name: Run bot
-        run: |
-          python main.py
+    - name: Run bot
+      run: python main.py
