@@ -1,22 +1,24 @@
 from topic import get_topic
 from script import generate_scripts
-from voice_edge import create_voice
-from video_short import create_short_video
-from video_long import create_long_video
+from voice import create_voice
+from video_short import make_short
+from video_long import make_long
 from upload import upload_video
 
-def main():
+
+def run():
     topic = get_topic()
-        short_script, long_script = generate_scripts(topic)
+    short_script, long_script = generate_scripts(topic)
 
-            short_audio = create_voice(short_script, "short")
-                long_audio = create_voice(long_script, "long")
+    short_audio = create_voice(short_script, "short")
+    long_audio = create_voice(long_script, "long")
 
-                    short_video = create_short_video(short_audio, short_script)
-                        long_video = create_long_video(long_audio, long_script)
+    short_video = make_short(short_audio)
+    long_video = make_long(long_audio)
 
-                            upload_video(short_video, "short", topic)
-                                upload_video(long_video, "long", topic)
+    upload_video(short_video, topic, is_short=True)
+    upload_video(long_video, topic, is_short=False)
 
-                                if __name__ == "__main__":
-                                    main()
+
+if __name__ == "__main__":
+    run()
