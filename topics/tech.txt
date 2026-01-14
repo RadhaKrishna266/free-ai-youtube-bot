@@ -1,0 +1,10 @@
+# Tech Topics
+
+Notes and suggested technology topics for the project.
+
+- How the internet works
+- What is artificial intelligence
+- How smartphones work
+- What is cloud computing
+
+_Added 2026-01-14 by RadhaKrishna266_
