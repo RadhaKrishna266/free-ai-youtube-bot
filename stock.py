@@ -1,14 +1,19 @@
+import requests
 import random
-import subprocess
+import os
 
 PIXABAY_VIDEOS = [
-    "https://cdn.pixabay.com/vimeo/458199130/ai-38530.mp4",
-    "https://cdn.pixabay.com/vimeo/452033518/technology-30377.mp4",
-    "https://cdn.pixabay.com/vimeo/447645493/history-29441.mp4"
+    "https://cdn.pixabay.com/video/2020/03/11/33569-401138047_large.mp4",
+    "https://cdn.pixabay.com/video/2023/01/10/146360-787462594_large.mp4",
+    "https://cdn.pixabay.com/video/2019/09/24/27369-363438373_large.mp4"
 ]
 
-def download_stock(name):
+def get_stock_video():
     url = random.choice(PIXABAY_VIDEOS)
-    output = f"{name}_stock.mp4"
-    subprocess.run(["wget", "-O", output, url])
-    return output
+    filename = "stock.mp4"
+
+    r = requests.get(url)
+    with open(filename, "wb") as f:
+        f.write(r.content)
+
+    return filename
