@@ -9,8 +9,7 @@ def make_short(audio_file):
         "-f", "lavfi",
         "-i", "color=c=black:s=1080x1920:d=60",
         "-i", audio_file,
-        "-vf",
-        "zoompan=z='min(zoom+0.0005,1.1)':d=1,drawtext=text='Did You Know?':fontcolor=white:fontsize=70:x=(w-text_w)/2:y=200",
+        "-vf", "zoompan=z='min(zoom+0.0005,1.1)':d=1",
         "-shortest",
         output
     ]
