@@ -5,7 +5,6 @@ from video_short import make_short
 from video_long import make_long
 from upload import upload_video
 
-
 def run():
     topic = get_topic()
     short_script, long_script = generate_scripts(topic)
@@ -18,7 +17,6 @@ def run():
 
     upload_video(short_video, topic, is_short=True)
     upload_video(long_video, topic, is_short=False)
-
 
 if __name__ == "__main__":
     run()
