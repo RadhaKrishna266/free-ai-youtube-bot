@@ -1,16 +1,15 @@
 import subprocess
-from stock import get_stock_video
+from stock import download_stock
 
-def make_long(audio):
-    stock = get_stock_video()
+def make_long(audio_file):
+    stock = download_stock("technology")
     output = "long_video.mp4"
 
     cmd = [
         "ffmpeg", "-y",
         "-i", stock,
-        "-i", audio,
-        "-vf",
-        "scale=1280:720,zoompan=z='min(zoom+0.0004,1.05)':d=1",
+        "-i", audio_file,
+        "-vf", "zoompan=z='min(zoom+0.0004,1.08)':d=1",
         "-shortest",
         output
     ]
