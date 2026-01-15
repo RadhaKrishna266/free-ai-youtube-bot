@@ -1,4 +1,4 @@
-name: Free AI YouTube Bot
+7name: Free AI YouTube Bot
 
 on:
   workflow_dispatch:
@@ -30,3 +30,9 @@ jobs:
 - name: Install dependencies
   run: |
     pip install edge-tts google-api-python-client google-auth
+
+- name: Install dependencies
+  run: |
+    pip install edge-tts
+    pip install google-api-python-client
+    pip install ffmpeg-python
