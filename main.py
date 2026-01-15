@@ -1,4 +1,4 @@
-from topic import get_topic
+3from topic import get_topic
 from script import generate_scripts
 from voice import create_voice
 from video_short import make_short
@@ -21,4 +21,3 @@ def run():
 if __name__ == "__main__":
     run()
 
-pip install -r requirements.txt
