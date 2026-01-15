@@ -1,20 +1,23 @@
+import os
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
-import os
 
 def upload_video(video_file, title, is_short=False):
+    api_key = os.environ.get("YOUTUBE_API_KEY")
+
     youtube = build(
-        "youtube", "v3",
-        developerKey=os.environ["YOUTUBE_API_KEY"]
+        "youtube",
+        "v3",
+        developerKey=api_key
     )
 
     request = youtube.videos().insert(
         part="snippet,status",
         body={
             "snippet": {
-                "title": title,
-                "description": title,
-                "tags": ["facts", "history", "tech"],
+                "title": title[:95],
+                "description": f"{title}\n\n#facts #history #tech",
+                "tags": ["facts", "history", "technology"],
                 "categoryId": "27"
             },
             "status": {
@@ -23,4 +26,6 @@ def upload_video(video_file, title, is_short=False):
         },
         media_body=MediaFileUpload(video_file)
     )
-    request.execute()
+
+    response = request.execute()
+    print("Uploaded:", response["id"])
