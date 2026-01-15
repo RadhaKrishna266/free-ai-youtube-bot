@@ -13,5 +13,5 @@ def create_voice(text, name):
         output_file
     ]
 
-    subprocess.run(command, check=True)
+    subprocess.run(command, timeout=120)
     return output_file
