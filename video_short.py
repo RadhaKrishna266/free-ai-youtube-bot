@@ -1,20 +1,20 @@
 import subprocess
-from stock import download_stock
 
 def make_short(audio_file):
-    stock = download_stock("history", "short_stock.mp4")
     output = "short_video.mp4"
 
-    if stock:
-        cmd = [
-            "ffmpeg", "-y",
-            "-i", stock,
-            "-i", audio_file,
-            "-vf",
-            "scale=1080:1920,zoompan=z='min(zoom+0.0008,1.1)':d=1",
-            "-shortest",
-            output
-        ]
-    else:
-        cmd = [
-            "ffmpeg", "-y",
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-f", "lavfi",
+        "-i", "color=c=black:s=1080x1920:d=60",
+        "-i", audio_file,
+        "-vf",
+        "zoompan=z='min(zoom+0.0005,1.1)':d=1,"
+        "drawtext=text='Did You Know?':fontcolor=white:fontsize=70:x=(w-text_w)/2:y=200",
+        "-shortest",
+        output
+    ]
+
+    subprocess.run(cmd, check=True)
+    return output
