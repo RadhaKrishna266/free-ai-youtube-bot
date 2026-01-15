@@ -30,3 +30,7 @@ jobs:
       - name: Run bot
         run: |
           python main.py
+
+- name: Install dependencies
+        run: |
+          pip install edge-tts google-api-python-client requests
