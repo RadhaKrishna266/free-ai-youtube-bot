@@ -1,42 +1,23 @@
 import os
-import pickle
-from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
-
 def upload_video(video_file, title, is_short=False):
-    creds = None
+    api_key = os.environ.get("YOUTUBE_API_KEY")
 
-    if os.path.exists("token.pickle"):
-        with open("token.pickle", "rb") as token:
-            creds = pickle.load(token)
-
-    if not creds or not creds.valid:
-        flow = InstalledAppFlow.from_client_config(
-            {
-                "installed": {
-                    "client_id": os.environ["YOUTUBE_CLIENT_ID"],
-                    "client_secret": os.environ["YOUTUBE_CLIENT_SECRET"],
-                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                    "token_uri": "https://oauth2.googleapis.com/token"
-                }
-            },
-            SCOPES
-        )
-        creds = flow.run_console()
-        with open("token.pickle", "wb") as token:
-            pickle.dump(creds, token)
-
-    youtube = build("youtube", "v3", credentials=creds)
+    youtube = build(
+        "youtube",
+        "v3",
+        developerKey=api_key
+    )
 
     request = youtube.videos().insert(
         part="snippet,status",
         body={
             "snippet": {
-                "title": title[:95],
-                "description": title,
+                "title": title[:90],
+                "description": f"{title}\n\n#facts #history #technology",
+                "tags": ["facts", "history", "technology"],
                 "categoryId": "27"
             },
             "status": {
