@@ -20,3 +20,5 @@ def run():
 
 if __name__ == "__main__":
     run()
+
+pip install -r requirements.txt
