@@ -1,7 +1,8 @@
 from topic import get_topic
 from script import generate_scripts
 from voice import create_voice
-from video import create_video
+from video import make_long
+from video import make_short
 from upload import upload_video
 
 def run():
@@ -11,8 +12,8 @@ def run():
     short_audio = create_voice(script, short=True)
     long_audio = create_voice(script, short=False)
 
-    short_video = create_video(short_audio, short=True)
-    long_video = create_video(long_audio, short=False)
+    short_video = make_short(short_audio, short=True)
+    long_video = make_long(long_audio, short=False)
 
     upload_video(short_video, topic, is_short=True)
     upload_video(long_video, topic, is_short=False)
