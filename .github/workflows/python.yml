@@ -11,6 +11,9 @@ jobs:
   run-bot:
     runs-on: ubuntu-latest
 
+    env:
+      YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3
@@ -29,9 +32,11 @@ jobs:
         run: python -m pip install --upgrade pip
 
       - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Create YouTube client secret file
         run: |
-          pip install -r requirements.txt
-          pip install edge-tts google-api-python-client
+          echo "$YOUTUBE_CLIENT_SECRET" > client_secret.json
 
       - name: Verify FFmpeg
         run: ffmpeg -version
@@ -39,11 +44,8 @@ jobs:
       - name: Run bot
         run: python main.py
 
-env:
-  YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
-
-- name: Upload artifacts
-  uses: actions/upload-artifact@v4
-  with:
-    name: videos
-    path: "*.mp4"
+      - name: Upload generated videos
+        uses: actions/upload-artifact@v4
+        with:
+          name: videos
+          path: "*.mp4"
