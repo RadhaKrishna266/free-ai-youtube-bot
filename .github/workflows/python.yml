@@ -38,3 +38,6 @@ jobs:
 
       - name: Run bot
         run: python main.py
+
+env:
+  YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
