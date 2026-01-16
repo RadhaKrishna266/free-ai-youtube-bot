@@ -9,8 +9,8 @@ def run():
     topic = get_topic()
     script = generate_scripts(topic)
 
-    short_audio = create_voice(script, short=True)
-    long_audio = create_voice(script, short=False)
+    short_audio = create_voice(script, name="short")
+    long_audio = create_voice(script, name="long")
 
     short_video = make_short(short_audio, short=True)
     long_video = make_long(long_audio, short=False)
