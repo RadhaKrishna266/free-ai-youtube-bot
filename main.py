@@ -1,4 +1,3 @@
-# main.py
 import os
 from topic import get_topic
 from script import generate_scripts
@@ -17,7 +16,6 @@ def run():
     short_video = make_short(short_audio)
     long_video = make_long(long_audio)
 
-    # ✅ Upload ONLY when NOT running in GitHub Actions
     if os.environ.get("GITHUB_ACTIONS") != "true":
         from upload import upload_video
         upload_video(short_video, topic, is_short=True)
