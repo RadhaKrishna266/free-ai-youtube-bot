@@ -6,7 +6,10 @@ import os
 def create_voice(text, name):
     output_file = f"{name}.mp3"
 
-    # Write text to temp file (safe for long scripts)
+    # Edge TTS is unstable with long text → limit length
+    text = text.strip()[:1000]
+
+    # Write text to temp file (MOST STABLE METHOD)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w") as f:
         f.write(text)
         text_file = f.name
