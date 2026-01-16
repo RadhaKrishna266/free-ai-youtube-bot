@@ -1,3 +1,10 @@
+name: Run bot
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+
 name: Free AI YouTube Bot
 
 on:
