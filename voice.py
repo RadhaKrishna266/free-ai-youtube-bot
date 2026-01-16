@@ -6,15 +6,15 @@ import os
 def create_voice(text, name):
     output_file = f"{name}.mp3"
 
-    # Write text to temp file (SAFE for CI)
-    with tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".txt") as f:
+    # Write text to temp file (safe for long scripts)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w") as f:
         f.write(text)
         text_file = f.name
 
     cmd = [
         "edge-tts",
         "--voice", "en-US-GuyNeural",
-        "--text-file", text_file,
+        "--file", text_file,
         "--write-media", output_file
     ]
 
