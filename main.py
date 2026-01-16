@@ -16,7 +16,8 @@ def run():
     long_video = make_long(long_audio, short=False)
 
     upload_video(short_video, topic, is_short=True)
-    upload_video(long_video, topic, is_short=False)
+    upload_video(long_video, topic, 
+short=False)
 
 if __name__ == "__main__":
     run()
