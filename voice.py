@@ -1,28 +1,35 @@
 import subprocess
-import shlex
+import re
+
+def sanitize_text(text):
+    text = text.replace("\n", " ")
+    text = text.replace("—", "-")
+    text = text.replace("–", "-")
+    text = text.replace(":", "")
+    text = text.replace('"', "'")
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
 
 def create_voice(text, name):
     output_file = f"{name}.mp3"
 
-    # Clean text (important for CLI safety)
-    safe_text = text.replace('"', "'").replace("\n", " ")
+    safe_text = sanitize_text(text)
+    safe_text = safe_text[:2000]  # CI-safe limit
 
-    command = f'''
-    edge-tts
-    --voice en-US-GuyNeural
-    --text "{safe_text}"
-    --write-media {output_file}
-    '''
+    command = [
+        "edge-tts",
+        "--voice", "en-US-GuyNeural",
+        "--rate", "+0%",
+        "--pitch", "+0Hz",
+        "--text", safe_text,
+        "--write-media", output_file,
+    ]
 
     try:
-        subprocess.run(
-            shlex.split(command),
-            timeout=180,
-            check=True
-        )
+        subprocess.run(command, timeout=180, check=True)
     except subprocess.TimeoutExpired:
         raise Exception("Voice generation timed out")
-    except subprocess.CalledProcessError:
-        raise Exception("Edge TTS failed")
+    except subprocess.CalledProcessError as e:
+        raise Exception(f"Edge TTS failed: {e}")
 
     return output_file
