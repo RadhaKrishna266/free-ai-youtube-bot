@@ -1,8 +1,8 @@
 from topic import get_topic
 from script import generate_scripts
 from voice import create_voice
-from video import make_long
-from video import make_short
+from video_long import make_long
+from video_short import make_short
 from upload import upload_video
 
 def run():
