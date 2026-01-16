@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# Audio / Video
+*.mp3
+*.mp4
+
+# Auth files
+token.pickle
+client_secret.json
+
+# OS
+.DS_Store
+Thumbs.db
