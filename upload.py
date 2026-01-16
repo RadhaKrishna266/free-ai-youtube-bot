@@ -1,20 +1,15 @@
+# upload.py
 import os
+import pickle
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
-
-def upload_video(video_file, title, is_short=False):
-    api_key = os.environ.get("YOUTUBE_API_KEY")
-
-    from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from google.auth.transport.requests import Request
-import pickle
-import os
+from google_auth_oauthlib.flow import InstalledAppFlow
 
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 
 def get_youtube_service():
     creds = None
+
     if os.path.exists("token.pickle"):
         with open("token.pickle", "rb") as token:
             creds = pickle.load(token)
@@ -24,10 +19,15 @@ def get_youtube_service():
             "client_secret.json", SCOPES
         )
         creds = flow.run_console()
+
         with open("token.pickle", "wb") as token:
             pickle.dump(creds, token)
 
     return build("youtube", "v3", credentials=creds)
+
+def upload_video(video_file, title, is_short=False):
+    youtube = get_youtube_service()
+
     request = youtube.videos().insert(
         part="snippet,status",
         body={
