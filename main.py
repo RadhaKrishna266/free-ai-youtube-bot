@@ -1,12 +1,12 @@
 from topic import get_topic
-from script import get_script
+from script import generate_scripts
 from voice import generate_voice
 from video import create_video
 from upload import upload_video
 
 def run():
     topic = get_topic()
-    script = get_script(topic)
+    script = generate_scripts(topic)
 
     short_audio = generate_voice(script, short=True)
     long_audio = generate_voice(script, short=False)
