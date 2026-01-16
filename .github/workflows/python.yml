@@ -1,16 +1,9 @@
-name: Run bot
-on:
-  workflow_dispatch:
+name: Free AI YouTube Bot
 
 on:
   workflow_dispatch:
   push:
     branches: [ "main" ]
-
-name: Free AI YouTube Bot
-
-on:
-  workflow_dispatch:
   schedule:
     - cron: "0 9 * * *"
 
@@ -32,19 +25,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
       - name: Install Python dependencies
         run: |
+          pip install -r requirements.txt
           pip install edge-tts google-api-python-client
 
       - name: Verify FFmpeg
-        run: |
-          ffmpeg -version
+        run: ffmpeg -version
 
       - name: Run bot
-        run: |
-          python main.py
-
-- name: Install dependencies
-  run: |
-    python -m pip install --upgrade pip
-    pip install -r requirements.txt
+        run: python main.py
