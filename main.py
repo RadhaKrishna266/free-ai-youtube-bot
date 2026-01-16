@@ -1,3 +1,4 @@
+# main.py
 from topic import get_topic
 from script import generate_scripts
 from voice import create_voice
@@ -8,14 +9,18 @@ from upload import upload_video
 def run():
     topic = get_topic()
 
+    # 1. Generate scripts
     short_script, long_script = generate_scripts(topic)
 
+    # 2. Generate audio
     short_audio = create_voice(short_script, name="short")
     long_audio = create_voice(long_script, name="long")
 
-    short_video = make_short(short_audio, short=True)
-    long_video = make_long(long_audio, short=False)
+    # 3. Generate videos (NO FLAGS HERE)
+    short_video = make_short(short_audio)
+    long_video = make_long(long_audio)
 
+    # 4. Upload (FLAG IS VALID HERE)
     upload_video(short_video, topic, is_short=True)
     upload_video(long_video, topic, is_short=False)
 
