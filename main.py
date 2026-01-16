@@ -25,4 +25,5 @@ def run():
     upload_video(long_video, topic, is_short=False)
 
 if __name__ == "__main__":
-    run()
+    if os.environ.get("CI") != "true":
+        run()
