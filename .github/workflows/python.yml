@@ -1,4 +1,6 @@
 name: Run bot
+on:
+  workflow_dispatch:
 
 on:
   workflow_dispatch:
