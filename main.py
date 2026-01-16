@@ -17,13 +17,13 @@ def run():
     short_video = make_short(short_audio)
     long_video = make_long(long_audio)
 
-    # 🚫 DO NOT upload in GitHub Actions
+    # ✅ Upload ONLY when NOT running in GitHub Actions
     if os.environ.get("GITHUB_ACTIONS") != "true":
         from upload import upload_video
         upload_video(short_video, topic, is_short=True)
         upload_video(long_video, topic, is_short=False)
     else:
-        print("⚠️ Upload skipped in CI")
+        print("⚠️ CI detected — skipping upload step")
 
 if __name__ == "__main__":
     run()
