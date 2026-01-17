@@ -47,3 +47,10 @@ def upload_video(video_file, title, is_short=False):
 
     response = request.execute()
     print("✅ Uploaded video ID:", response["id"])
+
+if __name__ == "__main__":
+    upload_video(
+        video_file="short_video.mp4",
+        title="Test Upload from Bot",
+        is_short=True
+    )
