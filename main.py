@@ -4,6 +4,7 @@ from script import generate_scripts
 from voice import create_voice
 from video_long import make_long
 from video_short import make_short
+from upload import upload_video
 
 def run():
     topic = get_topic()
