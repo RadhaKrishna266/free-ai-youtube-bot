@@ -16,7 +16,8 @@ def get_youtube_service():
 
     if not creds or not creds.valid:
         flow = InstalledAppFlow.from_client_secrets_file(
-            "client_secret.json", SCOPES
+            "client_secret.json",
+            SCOPES
         )
         creds = flow.run_console()
 
