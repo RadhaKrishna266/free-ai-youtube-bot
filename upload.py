@@ -1,102 +1,97 @@
 import os
-import subprocess
 import random
+import subprocess
 import requests
 import json
+import time
+
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
 
-# ---------------- CONFIG ----------------
-
-VIDEO_FILE = "output.mp4"
-VOICE_FILE = "voice.mp3"
-IMAGE_DIR = "images"
-
-CATEGORY = "History"
+# ================= CONFIG =================
 TOPICS = [
-    "The lost city of Mohenjo-daro",
     "The mystery of Stonehenge",
-    "Secrets of the Roman Empire",
-    "How ancient Egyptians built pyramids"
+    "How ancient Egyptians built pyramids",
+    "Secrets of the Roman Colosseum",
+    "How Vikings navigated the oceans"
 ]
 
-# ----------------------------------------
+VOICE_FILE = "voice.mp3"
+VIDEO_FILE = "video.mp4"
+IMAGE_DIR = "images"
+TOKEN_FILE = "token.json"
+
+# ==========================================
 
 
-def generate_script(category, topic):
+def generate_script(topic):
     return f"""
-Welcome to today's documentary.
+{topic} has fascinated historians for centuries.
 
-Today we explore {topic}, one of the most fascinating mysteries in {category}.
+In this video, we explore how it was created, why it mattered,
+and what mysteries still remain today.
 
-Archaeologists believe this site was built thousands of years ago.
-The engineering techniques used still puzzle modern scientists.
+Experts believe advanced planning, engineering, and teamwork
+played a major role in its construction.
 
-Massive structures were created without modern tools.
-Many theories exist, from religious rituals to astronomical purposes.
-
-Despite decades of research, many secrets remain hidden.
-New discoveries continue to reshape our understanding.
-
-If you enjoy deep history and ancient mysteries,
-subscribe for more documentaries like this.
+Despite modern technology, many details remain unexplained,
+making it one of history’s greatest wonders.
 """
 
 
 def generate_voice(text):
     subprocess.run([
         "edge-tts",
-        "--voice", "en-US-GuyNeural",
-        "--rate", "+0%",
+        "--voice", "en-US-AriaNeural",
         "--text", text,
         "--write-media", VOICE_FILE
     ], check=True)
 
 
-def safe_json(response):
-    try:
-        return response.json()
-    except Exception:
-        return None
+def get_audio_duration():
+    result = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries",
+         "format=duration", "-of",
+         "default=noprint_wrappers=1:nokey=1", VOICE_FILE],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+    return float(result.stdout.strip())
 
 
 def download_images(topic):
     os.makedirs(IMAGE_DIR, exist_ok=True)
-    downloaded = 0
 
-    url = "https://en.wikipedia.org/w/api.php"
-    params = {
-        "action": "query",
-        "format": "json",
-        "generator": "search",
-        "gsrsearch": topic,
-        "gsrlimit": 6,
-        "prop": "pageimages",
-        "piprop": "original"
-    }
+    headers = {"User-Agent": "Mozilla/5.0"}
+    query = topic.replace(" ", "+")
+    url = f"https://www.bing.com/images/search?q={query}&form=HDRSC2"
 
-    try:
-        resp = requests.get(url, params=params, timeout=10)
-        data = safe_json(resp)
-        if not data:
-            raise ValueError("No JSON")
+    print("Downloading images from Bing...")
+    html = requests.get(url, headers=headers, timeout=10).text
 
-        pages = data.get("query", {}).get("pages", {})
-        for i, page in enumerate(pages.values()):
-            if "original" in page:
-                img_url = page["original"]["source"]
-                img_data = requests.get(img_url, timeout=10).content
-                with open(f"{IMAGE_DIR}/img_{i:02d}.jpg", "wb") as f:
-                    f.write(img_data)
-                downloaded += 1
+    links = []
+    for part in html.split("murl&quot;:&quot;")[1:]:
+        link = part.split("&quot;")[0]
+        if link.startswith("http"):
+            links.append(link)
 
-    except Exception:
-        downloaded = 0
+    links = links[:6]
 
-    if downloaded < 3:
-        print("No usable images — using fallback")
+    if len(links) < 3:
+        print("Not enough images, using fallback")
         create_fallback_images()
+        return
+
+    for i, img_url in enumerate(links):
+        try:
+            img = requests.get(img_url, headers=headers, timeout=10).content
+            with open(f"{IMAGE_DIR}/img_{i:02d}.jpg", "wb") as f:
+                f.write(img)
+            print(f"Saved img_{i:02d}.jpg")
+        except:
+            pass
 
 
 def create_fallback_images():
@@ -105,25 +100,15 @@ def create_fallback_images():
         subprocess.run([
             "ffmpeg", "-y",
             "-f", "lavfi",
-            "-i", "color=c=darkslategray:s=1280x720",
-            "-frames:v", "1",
+            "-i", f"color=c=blue:s=1280x720:d=5",
             f"{IMAGE_DIR}/img_{i:02d}.jpg"
-        ], check=True)
-
-
-def get_audio_duration():
-    result = subprocess.check_output([
-        "ffprobe", "-v", "error",
-        "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1",
-        VOICE_FILE
-    ])
-    return float(result.strip())
+        ])
 
 
 def create_video():
     duration = get_audio_duration()
-    img_duration = duration / 6
+    images = sorted(os.listdir(IMAGE_DIR))
+    img_duration = duration / len(images)
 
     subprocess.run([
         "ffmpeg", "-y",
@@ -131,7 +116,10 @@ def create_video():
         "-i", f"{IMAGE_DIR}/img_%02d.jpg",
         "-i", VOICE_FILE,
         "-vf",
-        "zoompan=z='min(zoom+0.002,1.15)':d=125:s=1280x720",
+        "zoompan=z='if(lte(zoom,1.0),1.1,zoom+0.0015)':"
+        "x='iw/2-(iw/zoom/2)':"
+        "y='ih/2-(ih/zoom/2)':"
+        "d=125:s=1280x720",
         "-c:v", "libx264",
         "-pix_fmt", "yuv420p",
         "-shortest",
@@ -139,8 +127,12 @@ def create_video():
     ], check=True)
 
 
-def upload_video(title, description):
-    creds = Credentials.from_authorized_user_file("token.json")
+def upload_to_youtube(title, description):
+    creds = Credentials.from_authorized_user_file(
+        TOKEN_FILE,
+        ["https://www.googleapis.com/auth/youtube.upload"]
+    )
+
     youtube = build("youtube", "v3", credentials=creds)
 
     request = youtube.videos().insert(
@@ -149,18 +141,26 @@ def upload_video(title, description):
             "snippet": {
                 "title": title,
                 "description": description,
-                "tags": ["history", "documentary", "ancient"],
                 "categoryId": "27"
             },
             "status": {
                 "privacyStatus": "public"
             }
         },
-        media_body=MediaFileUpload(VIDEO_FILE, resumable=True)
+        media_body=MediaFileUpload(VIDEO_FILE)
     )
 
     response = request.execute()
-    print("Uploaded video ID:", response["id"])
+    print("Uploaded:", response["id"])
+
+
+def clean():
+    for f in [VOICE_FILE, VIDEO_FILE]:
+        if os.path.exists(f):
+            os.remove(f)
+    if os.path.exists(IMAGE_DIR):
+        for f in os.listdir(IMAGE_DIR):
+            os.remove(os.path.join(IMAGE_DIR, f))
 
 
 def main():
@@ -169,13 +169,13 @@ def main():
     topic = random.choice(TOPICS)
     print("Topic:", topic)
 
-    script = generate_script(CATEGORY, topic)
+    script = generate_script(topic)
     generate_voice(script)
-
     download_images(topic)
     create_video()
+    upload_to_youtube(topic, script)
 
-    upload_video(topic, script)
+    clean()
 
 
 if __name__ == "__main__":
