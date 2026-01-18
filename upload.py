@@ -55,16 +55,45 @@ def generate_voice(text):
 def download_images(topic):
     os.makedirs(IMG_DIR, exist_ok=True)
 
-    search = topic.replace(" ", "%20")
-    url = f"https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch={search}&gsrlimit=5&prop=imageinfo&iiprop=url&format=json"
+    headers = {
+        "User-Agent": "free-ai-youtube-bot/1.0 (https://github.com)"
+    }
 
-    r = requests.get(url).json()
-    if "query" not in r:
-        raise Exception("No images found")
+    search = topic.replace(" ", "_")
+    url = (
+        "https://commons.wikimedia.org/w/api.php"
+        "?action=query"
+        "&generator=search"
+        f"&gsrsearch={search}"
+        "&gsrlimit=5"
+        "&prop=imageinfo"
+        "&iiprop=url"
+        "&format=json"
+    )
 
-    for i, page in enumerate(r["query"]["pages"].values()):
+    r = requests.get(url, headers=headers, timeout=20)
+
+    if r.status_code != 200:
+        print("Wikimedia request failed, using fallback")
+        create_fallback_images()
+        return
+
+    try:
+        data = r.json()
+    except Exception:
+        print("Invalid JSON, using fallback images")
+        create_fallback_images()
+        return
+
+    pages = data.get("query", {}).get("pages", {})
+    if not pages:
+        print("No images found, using fallback")
+        create_fallback_images()
+        return
+
+    for i, page in enumerate(pages.values()):
         img_url = page["imageinfo"][0]["url"]
-        img_data = requests.get(img_url).content
+        img_data = requests.get(img_url, headers=headers).content
         with open(f"{IMG_DIR}/img{i}.jpg", "wb") as f:
             f.write(img_data)
 
@@ -137,3 +166,17 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+def create_fallback_images():
+    for i in range(5):
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-f", "lavfi",
+                "-i", "color=c=darkslategray:s=1280x720",
+                "-frames:v", "1",
+                f"{IMG_DIR}/img{i}.jpg",
+            ],
+            check=True,
+        )
