@@ -27,20 +27,21 @@ def pick_topic():
 # -------------------------
 # SCRIPT
 # -------------------------
-def generate_script(topic):
+def generate_script(category, topic):
     return f"""
-Here are some amazing facts about {topic}.
+This video is about {topic}.
 
-{topic} has a fascinating history that most people don't know.
-It played an important role in shaping the modern world.
+{topic} is an important subject in the field of {category}.
+Many people don't know how fascinating this topic really is.
 
-One interesting fact is that {topic} changed how humans think and work.
-Another surprising detail is how {topic} evolved over time.
+In history, {topic} played a major role and influenced human civilization.
+Over time, experts discovered surprising facts about {topic}.
 
-Experts believe {topic} will become even more important in the future.
-This is why understanding {topic} is useful for everyone.
+Today, {topic} continues to impact our daily lives in many ways.
+Understanding this topic helps us better understand the world.
 
-Thanks for watching. Subscribe for more amazing facts.
+Thanks for watching.
+Subscribe for more {category} videos like this.
 """
 
 # -------------------------
