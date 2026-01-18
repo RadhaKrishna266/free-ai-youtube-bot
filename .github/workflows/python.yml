@@ -49,3 +49,8 @@ jobs:
         with:
           name: videos
           path: "*.mp4"
+
+- name: Restore token.json
+  run: |
+    echo "${{ secrets.YOUTUBE_TOKEN_BASE64 }}" | base64 --decode > token.json
+
