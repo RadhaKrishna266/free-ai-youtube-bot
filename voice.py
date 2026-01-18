@@ -1,31 +1,41 @@
-# voice.py
 import subprocess
 import tempfile
-import os
+import re
+import time
 
-def create_voice(text, name):
-    output_file = f"{name}.mp3"
+def clean_text(text):
+    # remove symbols that break Edge TTS
+    text = re.sub(r"[^a-zA-Z0-9.,!?\\s]", "", text)
+    return text.strip()
 
-    # Edge TTS becomes unstable with very long input
-    text = text.strip()[:1000]
+def create_voice(text, name="audio"):
+    text = clean_text(text)
 
-    # Write text to a temporary file (MOST STABLE METHOD)
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w", encoding="utf-8") as f:
-        f.write(text)
-        text_file = f.name
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as f:
+        f.write(text.encode("utf-8"))
+        txt_path = f.name
 
-    cmd = [
-        "edge-tts",
-        "--voice", "en-US-GuyNeural",
-        "--file", text_file,
-        "--write-media", output_file
-    ]
+    output = f"{name}.mp3"
 
-    try:
-        subprocess.run(cmd, timeout=180, check=True)
-    finally:
-        # Clean up temp file
-        if os.path.exists(text_file):
-            os.remove(text_file)
+    # VERY STABLE VOICE
+    voice = "en-US-AriaNeural"
 
-    return output_file
+    # retry logic (important)
+    for attempt in range(3):
+        try:
+            subprocess.run(
+                [
+                    "edge-tts",
+                    "--voice", voice,
+                    "--file", txt_path,
+                    "--write-media", output
+                ],
+                check=True,
+                timeout=180
+            )
+            return output
+        except Exception as e:
+            print(f"Voice attempt {attempt+1} failed, retrying...")
+            time.sleep(5)
+
+    raise RuntimeError("Voice generation failed after retries")
