@@ -2,6 +2,7 @@ import os
 import subprocess
 import random
 import requests
+import json
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
@@ -15,9 +16,9 @@ IMAGE_DIR = "images"
 CATEGORY = "History"
 TOPICS = [
     "The lost city of Mohenjo-daro",
-    "How ancient Egyptians built pyramids",
+    "The mystery of Stonehenge",
     "Secrets of the Roman Empire",
-    "The mystery of Stonehenge"
+    "How ancient Egyptians built pyramids"
 ]
 
 # ----------------------------------------
@@ -27,27 +28,23 @@ def generate_script(category, topic):
     return f"""
 Welcome to today's documentary.
 
-Today we explore {topic}, one of the most fascinating subjects in {category}.
+Today we explore {topic}, one of the most fascinating mysteries in {category}.
 
-The origins of {topic} date back thousands of years.
-Historians believe it played a major role in shaping civilization.
+Archaeologists believe this site was built thousands of years ago.
+The engineering techniques used still puzzle modern scientists.
 
-Archaeological discoveries reveal advanced engineering,
-careful urban planning, and a deep understanding of science.
+Massive structures were created without modern tools.
+Many theories exist, from religious rituals to astronomical purposes.
 
-Many mysteries about {topic} remain unsolved.
-Researchers continue to debate how ancient people achieved such feats.
+Despite decades of research, many secrets remain hidden.
+New discoveries continue to reshape our understanding.
 
-Understanding {topic} helps us understand humanity itself.
-
-Subscribe for more history and technology documentaries.
+If you enjoy deep history and ancient mysteries,
+subscribe for more documentaries like this.
 """
 
 
 def generate_voice(text):
-    with open("script.txt", "w") as f:
-        f.write(text)
-
     subprocess.run([
         "edge-tts",
         "--voice", "en-US-GuyNeural",
@@ -57,40 +54,54 @@ def generate_voice(text):
     ], check=True)
 
 
+def safe_json(response):
+    try:
+        return response.json()
+    except Exception:
+        return None
+
+
 def download_images(topic):
     os.makedirs(IMAGE_DIR, exist_ok=True)
-    images_downloaded = 0
+    downloaded = 0
 
-    search_url = "https://en.wikipedia.org/w/api.php"
+    url = "https://en.wikipedia.org/w/api.php"
     params = {
         "action": "query",
         "format": "json",
         "generator": "search",
         "gsrsearch": topic,
-        "gsrlimit": 5,
+        "gsrlimit": 6,
         "prop": "pageimages",
         "piprop": "original"
     }
 
-    r = requests.get(search_url, params=params).json()
-    pages = r.get("query", {}).get("pages", {})
+    try:
+        resp = requests.get(url, params=params, timeout=10)
+        data = safe_json(resp)
+        if not data:
+            raise ValueError("No JSON")
 
-    for i, page in enumerate(pages.values()):
-        if "original" in page:
-            img_url = page["original"]["source"]
-            img_path = f"{IMAGE_DIR}/img_{i:02d}.jpg"
-            img_data = requests.get(img_url).content
-            with open(img_path, "wb") as f:
-                f.write(img_data)
-            images_downloaded += 1
+        pages = data.get("query", {}).get("pages", {})
+        for i, page in enumerate(pages.values()):
+            if "original" in page:
+                img_url = page["original"]["source"]
+                img_data = requests.get(img_url, timeout=10).content
+                with open(f"{IMAGE_DIR}/img_{i:02d}.jpg", "wb") as f:
+                    f.write(img_data)
+                downloaded += 1
 
-    if images_downloaded == 0:
+    except Exception:
+        downloaded = 0
+
+    if downloaded < 3:
+        print("No usable images — using fallback")
         create_fallback_images()
 
 
 def create_fallback_images():
     os.makedirs(IMAGE_DIR, exist_ok=True)
-    for i in range(5):
+    for i in range(6):
         subprocess.run([
             "ffmpeg", "-y",
             "-f", "lavfi",
@@ -100,14 +111,27 @@ def create_fallback_images():
         ], check=True)
 
 
+def get_audio_duration():
+    result = subprocess.check_output([
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        VOICE_FILE
+    ])
+    return float(result.strip())
+
+
 def create_video():
+    duration = get_audio_duration()
+    img_duration = duration / 6
+
     subprocess.run([
         "ffmpeg", "-y",
-        "-r", "1/5",
+        "-framerate", f"1/{img_duration}",
         "-i", f"{IMAGE_DIR}/img_%02d.jpg",
         "-i", VOICE_FILE,
         "-vf",
-        "zoompan=z='min(zoom+0.0015,1.1)':d=125:s=1280x720",
+        "zoompan=z='min(zoom+0.002,1.15)':d=125:s=1280x720",
         "-c:v", "libx264",
         "-pix_fmt", "yuv420p",
         "-shortest",
@@ -125,7 +149,7 @@ def upload_video(title, description):
             "snippet": {
                 "title": title,
                 "description": description,
-                "tags": ["history", "documentary", "education"],
+                "tags": ["history", "documentary", "ancient"],
                 "categoryId": "27"
             },
             "status": {
@@ -136,7 +160,7 @@ def upload_video(title, description):
     )
 
     response = request.execute()
-    print("Uploaded:", response["id"])
+    print("Uploaded video ID:", response["id"])
 
 
 def main():
@@ -151,10 +175,7 @@ def main():
     download_images(topic)
     create_video()
 
-    upload_video(
-        title=topic,
-        description=script
-    )
+    upload_video(topic, script)
 
 
 if __name__ == "__main__":
