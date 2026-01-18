@@ -54,3 +54,7 @@ if __name__ == "__main__":
         title="Test Upload from Bot",
         is_short=True
     )
+
+if __name__ == "__main__":
+    print("Starting YouTube upload...")
+    upload_video()
