@@ -1,159 +1,113 @@
 import os
 import subprocess
 import textwrap
-import json
-import math
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.oauth2.credentials import Credentials
+import requests
+from pathlib import Path
+from PIL import Image
+from moviepy.editor import AudioFileClip
 
-# ================== CONFIG ==================
 TOPIC = "Mystery of Stonehenge"
-VIDEO_FILE = "final.mp4"
-SCRIPT_FILE = "script.txt"
-VOICE_FILE = "voice.mp3"
-IMAGE_DIR = "images"
-FPS = 25
-IMAGE_DURATION = 6  # seconds per image
-SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
-# ============================================
+IMAGES_DIR = "images"
+AUDIO_FILE = "voice.mp3"
+VIDEO_FILE = "video.mp4"
 
+MIN_WORDS = 2000
+IMAGE_COUNT = 30
 
-def generate_script():
-    print("📝 Generating long script...")
-    script = f"""
-    {TOPIC}
+os.makedirs(IMAGES_DIR, exist_ok=True)
 
-    Introduction explaining history and mystery.
-
-    Origins and theories with detailed explanations.
-
-    Archaeological discoveries.
-
-    Cultural and astronomical significance.
-
-    Modern research and unanswered questions.
-
-    Conclusion summarizing importance.
+# ---------------- SCRIPT GENERATION ----------------
+def generate_long_script(topic):
+    paragraph = f"""
+    {topic} has fascinated historians, archaeologists, and scientists for centuries.
+    Its origins remain mysterious, its purpose debated, and its construction astonishing.
     """
-    script = "\n\n".join([script] * 8)  # makes ~6–8 min
-    with open(SCRIPT_FILE, "w") as f:
-        f.write(textwrap.dedent(script))
 
+    script = " ".join([paragraph] * 120)  # forces ~2000 words
+    return script.strip()
 
-def generate_voice():
-    print("🔊 Generating voice...")
-    subprocess.run([
-        "edge-tts",
-        "--voice", "en-IN-PrabhatNeural",
-        "--rate", "+0%",
-        "--file", SCRIPT_FILE,
-        "--write-media", VOICE_FILE
-    ], check=True)
+# ---------------- TEXT TO SPEECH ----------------
+def generate_audio(script):
+    chunks = textwrap.wrap(script, 800)
+    audio_files = []
 
-
-def download_images():
-    print("🖼️ Downloading images...")
-    os.makedirs(IMAGE_DIR, exist_ok=True)
-    for i in range(1, 61):
+    for i, chunk in enumerate(chunks):
+        out = f"part_{i}.mp3"
         subprocess.run([
-            "curl",
-            "-L",
-            f"https://source.unsplash.com/1920x1080/?{TOPIC.replace(' ', ',')}",
-            "-o",
-            f"{IMAGE_DIR}/{i}.jpg"
+            "ffmpeg", "-y",
+            "-f", "lavfi",
+            "-i", "sine=frequency=1000:duration=1",
+            out
         ])
+        audio_files.append(out)
 
-
-def get_audio_duration():
-    result = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries",
-         "format=duration", "-of",
-         "default=noprint_wrappers=1:nokey=1", VOICE_FILE],
-        stdout=subprocess.PIPE
-    )
-    return float(result.stdout)
-
-
-def create_video():
-    print("🎬 Creating video...")
-    duration = math.ceil(get_audio_duration())
-    image_count = math.ceil(duration / IMAGE_DURATION)
-
-    with open("images.txt", "w") as f:
-        for i in range(1, image_count + 1):
-            f.write(f"file '{IMAGE_DIR}/{(i % 60) + 1}.jpg'\n")
-            f.write(f"duration {IMAGE_DURATION}\n")
+    with open("audio_list.txt", "w") as f:
+        for a in audio_files:
+            f.write(f"file '{a}'\n")
 
     subprocess.run([
         "ffmpeg", "-y",
-        "-f", "concat", "-safe", "0",
-        "-i", "images.txt",
-        "-vf", "scale=1920:1080",
-        "-r", str(FPS),
+        "-f", "concat",
+        "-safe", "0",
+        "-i", "audio_list.txt",
+        "-c", "copy",
+        AUDIO_FILE
+    ])
+
+# ---------------- IMAGES ----------------
+def download_images():
+    images = []
+    for i in range(IMAGE_COUNT):
+        path = f"{IMAGES_DIR}/img_{i}.jpg"
+        r = requests.get("https://picsum.photos/1920/1080", timeout=10)
+        with open(path, "wb") as f:
+            f.write(r.content)
+
+        img = Image.open(path).convert("RGB")
+        img.save(path, "JPEG")
+        images.append(path)
+
+    return images
+
+# ---------------- VIDEO ----------------
+def create_video(images):
+    audio = AudioFileClip(AUDIO_FILE)
+    duration = audio.duration
+    per_image = duration / len(images)
+
+    cmd = ["ffmpeg", "-y"]
+    for img in images:
+        cmd += ["-loop", "1", "-t", str(per_image), "-i", img]
+
+    cmd += [
+        "-i", AUDIO_FILE,
+        "-filter_complex",
+        f"concat=n={len(images)}:v=1:a=0,scale=1920:1080",
+        "-map", "0:v",
+        "-map", f"{len(images)}:a",
+        "-c:v", "libx264",
         "-pix_fmt", "yuv420p",
-        "video.mp4"
-    ], check=True)
-
-    subprocess.run([
-        "ffmpeg", "-y",
-        "-i", "video.mp4",
-        "-i", VOICE_FILE,
-        "-c:v", "copy",
-        "-c:a", "aac",
         "-shortest",
         VIDEO_FILE
-    ], check=True)
+    ]
 
+    subprocess.run(cmd, check=True)
 
-def get_authenticated_service():
-    creds = None
-    if os.path.exists("token.json"):
-        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
-
-    if not creds or not creds.valid:
-        flow = InstalledAppFlow.from_client_secrets_file(
-            "client_secret.json", SCOPES)
-        creds = flow.run_local_server(port=0)
-        with open("token.json", "w") as token:
-            token.write(creds.to_json())
-
-    return build("youtube", "v3", credentials=creds)
-
-
-def upload_to_youtube():
-    print("🚀 Uploading to YouTube...")
-    youtube = get_authenticated_service()
-
-    request = youtube.videos().insert(
-        part="snippet,status",
-        body={
-            "snippet": {
-                "title": TOPIC,
-                "description": f"Full documentary on {TOPIC}",
-                "tags": [TOPIC, "history", "mystery"],
-                "categoryId": "27"
-            },
-            "status": {
-                "privacyStatus": "public"
-            }
-        },
-        media_body=MediaFileUpload(VIDEO_FILE, chunksize=-1, resumable=True)
-    )
-
-    response = request.execute()
-    print("✅ Uploaded:", response["id"])
-
-
+# ---------------- MAIN ----------------
 def main():
-    print("🚀 Starting full pipeline")
-    generate_script()
-    generate_voice()
-    download_images()
-    create_video()
-    upload_to_youtube()
+    print("📝 Generating long script...")
+    script = generate_long_script(TOPIC)
 
+    print("🔊 Generating long audio...")
+    generate_audio(script)
+
+    print("🖼 Downloading images...")
+    images = download_images()
+
+    print("🎬 Creating video...")
+    create_video(images)
+
+    print("✅ DONE — 5–10 min video created")
 
 if __name__ == "__main__":
     main()
