@@ -56,7 +56,7 @@ def download_images(topic):
     os.makedirs(IMG_DIR, exist_ok=True)
 
     headers = {
-        "User-Agent": "free-ai-youtube-bot/1.0 (https://github.com)"
+        "User-Agent": "free-ai-youtube-bot/1.0"
     }
 
     search = topic.replace(" ", "_")
@@ -65,37 +65,45 @@ def download_images(topic):
         "?action=query"
         "&generator=search"
         f"&gsrsearch={search}"
-        "&gsrlimit=5"
+        "&gsrlimit=10"
         "&prop=imageinfo"
         "&iiprop=url"
         "&format=json"
     )
 
-    r = requests.get(url, headers=headers, timeout=20)
-
-    if r.status_code != 200:
-        print("Wikimedia request failed, using fallback")
-        create_fallback_images()
-        return
-
     try:
+        r = requests.get(url, headers=headers, timeout=20)
         data = r.json()
     except Exception:
-        print("Invalid JSON, using fallback images")
+        print("Wikimedia failed — using fallback images")
         create_fallback_images()
         return
 
     pages = data.get("query", {}).get("pages", {})
-    if not pages:
-        print("No images found, using fallback")
-        create_fallback_images()
-        return
 
-    for i, page in enumerate(pages.values()):
-        img_url = page["imageinfo"][0]["url"]
-        img_data = requests.get(img_url, headers=headers).content
-        with open(f"{IMG_DIR}/img{i}.jpg", "wb") as f:
-            f.write(img_data)
+    saved = 0
+    for page in pages.values():
+        if "imageinfo" not in page:
+            continue
+
+        img_url = page["imageinfo"][0].get("url")
+        if not img_url:
+            continue
+
+        try:
+            img_data = requests.get(img_url, headers=headers, timeout=20).content
+            with open(f"{IMG_DIR}/img{saved}.jpg", "wb") as f:
+                f.write(img_data)
+            saved += 1
+        except Exception:
+            continue
+
+        if saved >= 5:
+            break
+
+    if saved == 0:
+        print("No usable images — using fallback")
+        create_fallback_images()
 
 # -------------------------
 # CREATE ANIMATED VIDEO
