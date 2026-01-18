@@ -1,82 +1,103 @@
 import os
-import json
-import pickle
+import random
+import subprocess
+from datetime import datetime
+
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
-from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
 
-# -----------------------------
+# -------------------------
 # CONFIG
-# -----------------------------
+# -------------------------
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
-CLIENT_SECRET_FILE = "client_secret.json"
 TOKEN_FILE = "token.json"
+BACKGROUND_IMAGE = "assets/background.jpg"
+OUTPUT_VIDEO = "output.mp4"
+OUTPUT_AUDIO = "voice.mp3"
 
-# -----------------------------
-# AUTHENTICATION
-# -----------------------------
-def get_authenticated_service():
-    creds = None
+# -------------------------
+# TOPIC PICKER
+# -------------------------
+def pick_topic():
+    category = random.choice(["history", "tech"])
+    with open(f"topics/{category}.txt", "r") as f:
+        topic = random.choice(f.readlines()).strip()
+    return category, topic
 
-    # token.json MUST exist (created by GitHub Actions)
-    if os.path.exists(TOKEN_FILE):
-        creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+# -------------------------
+# SCRIPT GENERATOR (FREE)
+# -------------------------
+def generate_script(category, topic):
+    if category == "history":
+        return (
+            f"Did you know? {topic}. "
+            f"This moment changed history forever. "
+            f"Many people still don't know this fact. "
+            f"History is full of surprises."
+        )
+    else:
+        return (
+            f"Let’s understand {topic}. "
+            f"It works in a very simple way. "
+            f"This technology affects our daily life more than you think. "
+            f"Technology is shaping the future."
+        )
 
-    # Refresh or create token if needed
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                CLIENT_SECRET_FILE, SCOPES
-            )
-            creds = flow.run_console()
+# -------------------------
+# VOICE GENERATION (EDGE TTS)
+# -------------------------
+def generate_voice(text):
+    subprocess.run([
+        "edge-tts",
+        "--voice", "en-US-GuyNeural",
+        "--text", text,
+        "--write-media", OUTPUT_AUDIO
+    ], check=True)
 
-        # Save token.json (for local runs)
-        with open(TOKEN_FILE, "w") as token:
-            token.write(creds.to_json())
+# -------------------------
+# VIDEO CREATION (FFMPEG)
+# -------------------------
+def create_video():
+    subprocess.run([
+        "ffmpeg",
+        "-y",
+        "-loop", "1",
+        "-i", BACKGROUND_IMAGE,
+        "-i", OUTPUT_AUDIO,
+        "-c:v", "libx264",
+        "-tune", "stillimage",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-pix_fmt", "yuv420p",
+        "-shortest",
+        OUTPUT_VIDEO
+    ], check=True)
 
-    return build("youtube", "v3", credentials=creds)
-
-
-# -----------------------------
-# VIDEO UPLOAD
-# -----------------------------
-def upload_video(
-    video_file,
-    title,
-    description,
-    tags,
-    category_id="27",  # Education
-    privacy_status="public",
-):
-    youtube = get_authenticated_service()
+# -------------------------
+# YOUTUBE UPLOAD
+# -------------------------
+def upload_video(title, description):
+    creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+    youtube = build("youtube", "v3", credentials=creds)
 
     body = {
         "snippet": {
-            "title": title,
+            "title": title[:95],
             "description": description,
-            "tags": tags,
-            "categoryId": category_id,
+            "categoryId": "27",
         },
         "status": {
-            "privacyStatus": privacy_status,
-        },
+            "privacyStatus": "public"
+        }
     }
 
-    media = MediaFileUpload(
-        video_file,
-        chunksize=-1,
-        resumable=True,
-        mimetype="video/mp4",
-    )
+    media = MediaFileUpload(OUTPUT_VIDEO, resumable=True)
 
     request = youtube.videos().insert(
         part="snippet,status",
         body=body,
-        media_body=media,
+        media_body=media
     )
 
     response = None
@@ -85,17 +106,24 @@ def upload_video(
         if status:
             print(f"Upload progress: {int(status.progress() * 100)}%")
 
-    print("✅ Upload complete!")
-    print("🎬 Video ID:", response["id"])
+    print("UPLOAD SUCCESS:", response["id"])
 
+# -------------------------
+# MAIN
+# -------------------------
+def main():
+    category, topic = pick_topic()
+    print("Topic:", topic)
 
-# -----------------------------
-# EXAMPLE CALL
-# -----------------------------
+    script = generate_script(category, topic)
+    generate_voice(script)
+    create_video()
+
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    title = f"{topic} | {today}"
+    description = script
+
+    upload_video(title, description)
+
 if __name__ == "__main__":
-    upload_video(
-        video_file="output.mp4",
-        title="Test Video Upload",
-        description="This video was uploaded automatically.",
-        tags=["facts", "history", "tech", "ai"],
-    )
+    main()
