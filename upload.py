@@ -1,195 +1,161 @@
 import os
-import random
 import subprocess
+import random
 import requests
-from datetime import datetime
-
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
 
-SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+# ---------------- CONFIG ----------------
 
-TOKEN_PATH = "token.json"
-AUDIO_FILE = "voice.mp3"
 VIDEO_FILE = "output.mp4"
-IMG_DIR = "images"
+VOICE_FILE = "voice.mp3"
+IMAGE_DIR = "images"
 
-# -------------------------
-# PICK TOPIC
-# -------------------------
-def pick_topic():
-    category = random.choice(["history", "tech"])
-    with open(f"topics/{category}.txt", "r", encoding="utf-8") as f:
-        topics = [t.strip() for t in f if t.strip()]
-    return category, random.choice(topics)
+CATEGORY = "History"
+TOPICS = [
+    "The lost city of Mohenjo-daro",
+    "How ancient Egyptians built pyramids",
+    "Secrets of the Roman Empire",
+    "The mystery of Stonehenge"
+]
 
-# -------------------------
-# SCRIPT
-# -------------------------
+# ----------------------------------------
+
+
 def generate_script(category, topic):
     return f"""
-This video is about {topic}.
+Welcome to today's documentary.
 
-{topic} is an important subject in the field of {category}.
-Many people don't know how fascinating this topic really is.
+Today we explore {topic}, one of the most fascinating subjects in {category}.
 
-In history, {topic} played a major role and influenced human civilization.
-Over time, experts discovered surprising facts about {topic}.
+The origins of {topic} date back thousands of years.
+Historians believe it played a major role in shaping civilization.
 
-Today, {topic} continues to impact our daily lives in many ways.
-Understanding this topic helps us better understand the world.
+Archaeological discoveries reveal advanced engineering,
+careful urban planning, and a deep understanding of science.
 
-Thanks for watching.
-Subscribe for more {category} videos like this.
+Many mysteries about {topic} remain unsolved.
+Researchers continue to debate how ancient people achieved such feats.
+
+Understanding {topic} helps us understand humanity itself.
+
+Subscribe for more history and technology documentaries.
 """
 
-# -------------------------
-# VOICE
-# -------------------------
+
 def generate_voice(text):
-    subprocess.run(
-        ["python", "-m", "edge_tts", "--voice", "en-US-GuyNeural",
-         "--text", text, "--write-media", AUDIO_FILE],
-        check=True
-    )
-def create_fallback_images():
-    os.makedirs(IMG_DIR, exist_ok=True)
-    for i in range(5):
-        subprocess.run(
-            [
-                "ffmpeg",
-                "-y",
-                "-f", "lavfi",
-                "-i", "color=c=darkslategray:s=1280x720",
-                "-frames:v", "1",
-                f"{IMG_DIR}/img{i}.jpg",
-            ],
-            check=True,
-        )
+    with open("script.txt", "w") as f:
+        f.write(text)
 
-# -------------------------
-# DOWNLOAD WIKIMEDIA IMAGES
-# -------------------------
+    subprocess.run([
+        "edge-tts",
+        "--voice", "en-US-GuyNeural",
+        "--rate", "+0%",
+        "--text", text,
+        "--write-media", VOICE_FILE
+    ], check=True)
+
+
 def download_images(topic):
-    os.makedirs(IMG_DIR, exist_ok=True)
+    os.makedirs(IMAGE_DIR, exist_ok=True)
+    images_downloaded = 0
 
-    headers = {
-        "User-Agent": "free-ai-youtube-bot/1.0"
+    search_url = "https://en.wikipedia.org/w/api.php"
+    params = {
+        "action": "query",
+        "format": "json",
+        "generator": "search",
+        "gsrsearch": topic,
+        "gsrlimit": 5,
+        "prop": "pageimages",
+        "piprop": "original"
     }
 
-    search = topic.replace(" ", "_")
-    url = (
-        "https://commons.wikimedia.org/w/api.php"
-        "?action=query"
-        "&generator=search"
-        f"&gsrsearch={search}"
-        "&gsrlimit=10"
-        "&prop=imageinfo"
-        "&iiprop=url"
-        "&format=json"
-    )
+    r = requests.get(search_url, params=params).json()
+    pages = r.get("query", {}).get("pages", {})
 
-    try:
-        r = requests.get(url, headers=headers, timeout=20)
-        data = r.json()
-    except Exception:
-        print("Wikimedia failed — using fallback images")
-        create_fallback_images()
-        return
-
-    pages = data.get("query", {}).get("pages", {})
-
-    saved = 0
-    for page in pages.values():
-        if "imageinfo" not in page:
-            continue
-
-        img_url = page["imageinfo"][0].get("url")
-        if not img_url:
-            continue
-
-        try:
-            img_data = requests.get(img_url, headers=headers, timeout=20).content
-            with open(f"{IMG_DIR}/img{saved}.jpg", "wb") as f:
+    for i, page in enumerate(pages.values()):
+        if "original" in page:
+            img_url = page["original"]["source"]
+            img_path = f"{IMAGE_DIR}/img_{i:02d}.jpg"
+            img_data = requests.get(img_url).content
+            with open(img_path, "wb") as f:
                 f.write(img_data)
-            saved += 1
-        except Exception:
-            continue
+            images_downloaded += 1
 
-        if saved >= 5:
-            break
-
-    if saved == 0:
-        print("No usable images — using fallback")
+    if images_downloaded == 0:
         create_fallback_images()
 
-# -------------------------
-# CREATE ANIMATED VIDEO
-# -------------------------
-def create_video():
-    os.system("""
-ffmpeg -y -r 1/5 -i images/img_%02d.jpg -i voice.mp3 \
--vf "zoompan=z='min(zoom+0.0008,1.08)':d=125:s=1280x720" \
--c:v libx264 -pix_fmt yuv420p -shortest output.mp4
-""")
 
-# -------------------------
-# UPLOAD
-# -------------------------
+def create_fallback_images():
+    os.makedirs(IMAGE_DIR, exist_ok=True)
+    for i in range(5):
+        subprocess.run([
+            "ffmpeg", "-y",
+            "-f", "lavfi",
+            "-i", "color=c=darkslategray:s=1280x720",
+            "-frames:v", "1",
+            f"{IMAGE_DIR}/img_{i:02d}.jpg"
+        ], check=True)
+
+
+def create_video():
+    subprocess.run([
+        "ffmpeg", "-y",
+        "-r", "1/5",
+        "-i", f"{IMAGE_DIR}/img_%02d.jpg",
+        "-i", VOICE_FILE,
+        "-vf",
+        "zoompan=z='min(zoom+0.0015,1.1)':d=125:s=1280x720",
+        "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
+        "-shortest",
+        VIDEO_FILE
+    ], check=True)
+
+
 def upload_video(title, description):
-    creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
+    creds = Credentials.from_authorized_user_file("token.json")
     youtube = build("youtube", "v3", credentials=creds)
 
-    body = {
-        "snippet": {
-            "title": title[:95],
-            "description": description,
-            "categoryId": "27"
-        },
-        "status": {"privacyStatus": "public"}
-    }
-
-    media = MediaFileUpload(VIDEO_FILE, resumable=True)
     request = youtube.videos().insert(
-        part="snippet,status", body=body, media_body=media
+        part="snippet,status",
+        body={
+            "snippet": {
+                "title": title,
+                "description": description,
+                "tags": ["history", "documentary", "education"],
+                "categoryId": "27"
+            },
+            "status": {
+                "privacyStatus": "public"
+            }
+        },
+        media_body=MediaFileUpload(VIDEO_FILE, resumable=True)
     )
 
-    while True:
-        status, response = request.next_chunk()
-        if response:
-            print("UPLOADED:", response["id"])
-            break
+    response = request.execute()
+    print("Uploaded:", response["id"])
 
-# -------------------------
-# MAIN
-# -------------------------
+
 def main():
-    category, topic = pick_topic()
-    script = generate_script(category, topic)
+    print("Starting auto video pipeline...")
 
+    topic = random.choice(TOPICS)
+    print("Topic:", topic)
+
+    script = generate_script(CATEGORY, topic)
     generate_voice(script)
+
     download_images(topic)
     create_video()
 
     upload_video(
-        f"{topic} | Explained",
-        script
+        title=topic,
+        description=script
     )
+
 
 if __name__ == "__main__":
     main()
-
-def create_fallback_images():
-    for i in range(5):
-        subprocess.run(
-            [
-                "ffmpeg",
-                "-y",
-                "-f", "lavfi",
-                "-i", "color=c=darkslategray:s=1280x720",
-                "-frames:v", "1",
-                f"{IMG_DIR}/img{i}.jpg",
-            ],
-            check=True,
-        )
