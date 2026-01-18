@@ -12,12 +12,6 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
-- name: Install dependencies
-  run: |
-    pip install --upgrade pip
-    pip install edge-tts google-api-python-client google-auth google-auth-oauthlib
-    sudo apt-get update
-    sudo apt-get install -y ffmpeg
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -26,7 +20,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install google-api-python-client google-auth google-auth-oauthlib google-auth-httplib2
+          pip install --upgrade pip
+          pip install edge-tts google-api-python-client google-auth google-auth-oauthlib
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
 
       - name: Restore token.json
         run: |
