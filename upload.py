@@ -1,75 +1,55 @@
 import os
+import sys
 import subprocess
-import textwrap
-import random
 import requests
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
-from google.oauth2.credentials import Credentials
+import textwrap
+import math
+from pathlib import Path
 
+# ================== CONFIG ==================
+TOPIC = os.getenv("TOPIC", "The mystery of Stonehenge")
 VOICE = "en-IN-PrabhatNeural"
-IMAGE_COUNT = 40
-IMAGE_DURATION = 8
-FPS = 30
-VIDEO_SIZE = "1280x720"
+IMAGE_COUNT = 40          # capped for speed
+VIDEO_SIZE = "1920x1080"
+IMAGE_DURATION = 7        # seconds per image
+WORKDIR = Path("work")
+WORKDIR.mkdir(exist_ok=True)
 
-def get_topic():
-    return random.choice([
-        "How ancient Egyptians built pyramids",
-        "Secrets of the Roman Colosseum",
-        "The mystery of Stonehenge",
-        "How Vikings navigated the oceans"
-    ])
-
+# ================== SCRIPT ==================
 def generate_script(topic):
-    print("Generating script...")
-    text = []
-    for i in range(20):
-        text.append(
-            f"{topic}. This section explains the history, engineering methods, "
-            f"scientific theories, cultural importance, and modern discoveries "
-            f"in simple language."
+    print("Generating long script...")
+    paragraphs = []
+    for i in range(1, 9):  # 8 sections ≈ 6–8 mins
+        paragraphs.append(
+            f"Section {i}. {topic}. "
+            f"This part explains historical background, theories, evidence, "
+            f"and expert opinions in a detailed and engaging way. "
+            f"We explore facts, mysteries, and unanswered questions."
         )
-    script = "\n\n".join(text)
-    open("script.txt", "w", encoding="utf-8").write(script)
+    script = "\n\n".join(paragraphs)
+    Path("script.txt").write_text(script, encoding="utf-8")
     return script
 
-def split_script(script, max_chars=2500):
-    chunks = []
-    current = ""
-    for line in script.split("\n"):
-        if len(current) + len(line) < max_chars:
-            current += line + " "
-        else:
-            chunks.append(current.strip())
-            current = line + " "
-    if current:
-        chunks.append(current.strip())
-    return chunks
-
-def generate_voice(script):
+# ================== VOICE ==================
+def generate_voice():
     print("Generating voice safely...")
-    os.makedirs("audio", exist_ok=True)
-    chunks = split_script(script)
+    audio_parts = []
+    text = Path("script.txt").read_text(encoding="utf-8")
 
-    audio_files = []
+    chunks = textwrap.wrap(text, 800)
     for i, chunk in enumerate(chunks):
-        txt = f"audio/part_{i}.txt"
-        mp3 = f"audio/part_{i}.mp3"
-        open(txt, "w", encoding="utf-8").write(chunk)
-
+        out = WORKDIR / f"voice_{i}.mp3"
         subprocess.run([
             "edge-tts",
             "--voice", VOICE,
-            "--file", txt,
-            "--write-media", mp3
+            "--text", chunk,
+            "--write-media", str(out)
         ], check=True)
-
-        audio_files.append(mp3)
+        audio_parts.append(out)
 
     with open("audio_list.txt", "w") as f:
-        for a in audio_files:
-            f.write(f"file '{a}'\n")
+        for a in audio_parts:
+            f.write(f"file '{a.resolve()}'\n")
 
     subprocess.run([
         "ffmpeg", "-y",
@@ -79,40 +59,45 @@ def generate_voice(script):
         "voice.mp3"
     ], check=True)
 
+# ================== IMAGES ==================
 def download_images(topic):
-    print("Downloading images...")
-    os.makedirs("images", exist_ok=True)
-    count = 0
+    print("Downloading topic images...")
+    headers = {"User-Agent": "Mozilla/5.0"}
+    images = []
 
-    while count < IMAGE_COUNT:
-        try:
-            url = f"https://source.unsplash.com/1600x900/?{topic.replace(' ', ',')}"
-            r = requests.get(url, timeout=10)
-            if r.status_code == 200:
-                open(f"images/img_{count}.jpg", "wb").write(r.content)
-                count += 1
-        except:
-            pass
+    for i in range(IMAGE_COUNT):
+        url = f"https://source.unsplash.com/1600x900/?{topic.replace(' ', ',')},{i}"
+        img_path = WORKDIR / f"img_{i}.jpg"
+        r = requests.get(url, headers=headers, timeout=20)
+        img_path.write_bytes(r.content)
+        images.append(img_path)
 
-def create_video():
+    return images
+
+# ================== VIDEO ==================
+def create_video(images):
     print("Creating animated video...")
-    with open("list.txt", "w") as f:
-        for img in sorted(os.listdir("images")):
-            f.write(f"file 'images/{img}'\n")
+    with open("images.txt", "w") as f:
+        for img in images:
+            f.write(f"file '{img.resolve()}'\n")
             f.write(f"duration {IMAGE_DURATION}\n")
+        f.write(f"file '{images[-1].resolve()}'\n")
 
     subprocess.run([
         "ffmpeg", "-y",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", "list.txt",
+        "-f", "concat", "-safe", "0",
+        "-i", "images.txt",
         "-vf",
-        f"scale={VIDEO_SIZE},zoompan=z='zoom+0.0006':d={IMAGE_DURATION*FPS}",
+        f"scale={VIDEO_SIZE},zoompan=z='min(zoom+0.0005,1.1)':d=125",
         "-pix_fmt", "yuv420p",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
         "video.mp4"
     ], check=True)
 
-def merge_audio():
+# ================== MERGE ==================
+def merge_audio_video():
+    print("Merging audio + video...")
     subprocess.run([
         "ffmpeg", "-y",
         "-i", "video.mp4",
@@ -120,43 +105,21 @@ def merge_audio():
         "-c:v", "copy",
         "-c:a", "aac",
         "-shortest",
-        "final.mp4"
+        "final_video.mp4"
     ], check=True)
 
-def upload_to_youtube(topic):
-    print("Uploading to YouTube...")
-    creds = Credentials.from_authorized_user_file(
-        "token.json",
-        ["https://www.googleapis.com/auth/youtube.upload"]
-    )
-
-    youtube = build("youtube", "v3", credentials=creds)
-
-    youtube.videos().insert(
-        part="snippet,status",
-        body={
-            "snippet": {
-                "title": topic,
-                "description": topic + "\n\nAuto-generated educational video",
-                "categoryId": "27",
-                "tags": ["history", "facts", "education"]
-            },
-            "status": {"privacyStatus": "public"}
-        },
-        media_body=MediaFileUpload("final.mp4")
-    ).execute()
-
+# ================== MAIN ==================
 def main():
     print("Starting auto video pipeline...")
-    topic = get_topic()
-    print("Topic:", topic)
+    print("Topic:", TOPIC)
 
-    script = generate_script(topic)
-    generate_voice(script)
-    download_images(topic)
-    create_video()
-    merge_audio()
-    upload_to_youtube(topic)
+    generate_script(TOPIC)
+    generate_voice()
+    images = download_images(TOPIC)
+    create_video(images)
+    merge_audio_video()
+
+    print("DONE ✅ final_video.mp4 ready")
 
 if __name__ == "__main__":
     main()
