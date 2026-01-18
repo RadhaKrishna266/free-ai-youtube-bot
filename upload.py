@@ -10,8 +10,11 @@ from google.oauth2.credentials import Credentials
 # ---------------- CONFIG ----------------
 VOICE = "en-IN-PrabhatNeural"
 IMAGE_COUNT = 15
-IMAGE_DURATION = 8  # seconds per image
+IMAGE_DURATION = 8
 VIDEO_RES = "1280x720"
+HEADERS = {
+    "User-Agent": "FreeAIYouTubeBot/1.0 (contact: example@email.com)"
+}
 # --------------------------------------
 
 
@@ -19,25 +22,25 @@ def generate_script(topic):
     sections = [
         "Introduction",
         "Historical Background",
-        "Discovery",
-        "Construction Techniques",
+        "Origins",
+        "Construction",
         "Cultural Importance",
-        "Scientific Theories",
+        "Scientific Studies",
         "Unsolved Mysteries",
-        "Modern Research",
-        "Why It Still Fascinates Us",
+        "Modern Discoveries",
+        "Why It Still Matters",
         "Conclusion"
     ]
 
     script = ""
     for sec in sections:
-        script += f"\n{sec}.\n"
+        script += f"\n{sec}\n"
         script += textwrap.fill(
-            f"{topic} has fascinated historians and scientists for generations. "
-            "This section explores the subject in depth, explaining facts, theories, "
-            "and discoveries in a clear and engaging way. "
-            "Each detail helps us better understand how advanced ancient civilizations truly were. "
-            "Even today, researchers continue to uncover surprising insights.",
+            f"{topic} has remained one of history’s most fascinating subjects. "
+            "In this section we explore key facts, discoveries, and theories in detail. "
+            "Experts continue to study this topic using modern technology, uncovering "
+            "insights that challenge what we once believed. "
+            "Each discovery deepens our understanding of ancient civilizations.",
             80
         ) + "\n\n"
 
@@ -56,6 +59,18 @@ def generate_voice(script):
     ], check=True)
 
 
+def create_fallback_images():
+    os.makedirs("images", exist_ok=True)
+    for i in range(IMAGE_COUNT):
+        subprocess.run([
+            "ffmpeg", "-y",
+            "-f", "lavfi",
+            "-i", f"color=c=darkslategray:s={VIDEO_RES}",
+            "-frames:v", "1",
+            f"images/img_{i}.jpg"
+        ], check=True)
+
+
 def download_images(topic):
     os.makedirs("images", exist_ok=True)
 
@@ -70,22 +85,32 @@ def download_images(topic):
         "format": "json"
     }
 
-    r = requests.get(url, params=params).json()
-    pages = r.get("query", {}).get("pages", {})
+    try:
+        r = requests.get(url, params=params, headers=HEADERS, timeout=10)
+        if r.status_code != 200:
+            raise Exception("Non-200 response")
 
-    images = []
-    for page in pages.values():
-        if "original" in page:
-            img_url = page["original"]["source"]
-            img_path = f"images/img_{len(images)}.jpg"
-            with open(img_path, "wb") as f:
-                f.write(requests.get(img_url).content)
-            images.append(img_path)
+        data = r.json()
+        pages = data.get("query", {}).get("pages", {})
 
-    if not images:
-        raise Exception("No images downloaded")
+        images = []
+        for page in pages.values():
+            if "original" in page:
+                img_url = page["original"]["source"]
+                img_path = f"images/img_{len(images)}.jpg"
+                with open(img_path, "wb") as f:
+                    f.write(requests.get(img_url, headers=HEADERS).content)
+                images.append(img_path)
 
-    return images
+        if not images:
+            raise Exception("No images found")
+
+        return images
+
+    except Exception as e:
+        print("Image download failed, using animated fallback:", e)
+        create_fallback_images()
+        return [f"images/img_{i}.jpg" for i in range(IMAGE_COUNT)]
 
 
 def create_video(images):
@@ -101,7 +126,7 @@ def create_video(images):
         "-i", "images.txt",
         "-i", "voice.mp3",
         "-vf",
-        "scale=1280:720,zoompan=z='min(zoom+0.0004,1.15)':d=200",
+        "scale=1280:720,zoompan=z='min(zoom+0.0005,1.2)':d=200",
         "-pix_fmt", "yuv420p",
         "-shortest",
         "output.mp4"
@@ -112,7 +137,7 @@ def upload_video(title, description):
     creds = Credentials.from_authorized_user_file("token.json")
     youtube = build("youtube", "v3", credentials=creds)
 
-    request = youtube.videos().insert(
+    youtube.videos().insert(
         part="snippet,status",
         body={
             "snippet": {
@@ -125,17 +150,15 @@ def upload_video(title, description):
             }
         },
         media_body=MediaFileUpload("output.mp4", resumable=True)
-    )
-
-    request.execute()
+    ).execute()
 
 
 def main():
     topic = random.choice([
         "The mystery of Stonehenge",
+        "Secrets of the Roman Colosseum",
         "How ancient Egyptians built pyramids",
-        "The lost city of Mohenjo-daro",
-        "Secrets of the Roman Colosseum"
+        "The lost city of Mohenjo-daro"
     ])
 
     print("Starting auto video pipeline...")
@@ -143,10 +166,8 @@ def main():
 
     script = generate_script(topic)
     generate_voice(script)
-
     images = download_images(topic)
     create_video(images)
-
     upload_video(topic, script[:4500])
 
 
