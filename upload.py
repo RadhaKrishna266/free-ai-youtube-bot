@@ -48,6 +48,20 @@ def generate_voice(text):
          "--text", text, "--write-media", AUDIO_FILE],
         check=True
     )
+def create_fallback_images():
+    os.makedirs(IMG_DIR, exist_ok=True)
+    for i in range(5):
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-f", "lavfi",
+                "-i", "color=c=darkslategray:s=1280x720",
+                "-frames:v", "1",
+                f"{IMG_DIR}/img{i}.jpg",
+            ],
+            check=True,
+        )
 
 # -------------------------
 # DOWNLOAD WIKIMEDIA IMAGES
