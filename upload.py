@@ -4,29 +4,36 @@ import pickle
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
 
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 
 def get_youtube_service():
     creds = None
 
+    # token.pickle stores your login session
     if os.path.exists("token.pickle"):
         with open("token.pickle", "rb") as token:
             creds = pickle.load(token)
 
+    # If token is invalid or expired
     if not creds or not creds.valid:
-        flow = InstalledAppFlow.from_client_secrets_file(
-            "client_secret.json",
-            SCOPES
-        )
-        creds = flow.run_console()
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file(
+                "client_secret.json",
+                SCOPES
+            )
+            creds = flow.run_local_server(port=0)
 
+        # Save token for future automatic runs
         with open("token.pickle", "wb") as token:
             pickle.dump(creds, token)
 
     return build("youtube", "v3", credentials=creds)
 
-def upload_video(video_file, title, is_short=False):
+def upload_video(video_file, title):
     youtube = get_youtube_service()
 
     request = youtube.videos().insert(
@@ -39,22 +46,4 @@ def upload_video(video_file, title, is_short=False):
                 "categoryId": "27"
             },
             "status": {
-                "privacyStatus": "public"
-            }
-        },
-        media_body=MediaFileUpload(video_file)
-    )
-
-    response = request.execute()
-    print("✅ Uploaded video ID:", response["id"])
-
-if __name__ == "__main__":
-    upload_video(
-        video_file="short_video.mp4",
-        title="Test Upload from Bot",
-        is_short=True
-    )
-
-if __name__ == "__main__":
-    print("Starting YouTube upload...")
-    upload_video()
+                "
