@@ -1,166 +1,107 @@
-import os
-import subprocess
-import textwrap
-import requests
-import random
-from PIL import Image
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
-from google.oauth2.credentials import Credentials
+import os, random, subprocess, math
+from moviepy.editor import *
+from PIL import Image, ImageDraw, ImageFont
 
 # ================= CONFIG =================
-TOPICS = [
-    "How ancient Egyptians built pyramids",
-    "Secrets of the Roman Colosseum",
-    "Mystery of Stonehenge",
-]
 
 VOICE = "en-IN-PrabhatNeural"
-MIN_IMAGES = 25
-VIDEO_SIZE = "1920:1080"
-SCRIPT_WORDS = 1200  # ~8–10 minutes
-BG_MUSIC = "music.mp3"
+FPS = 30
+WIDTH, HEIGHT = 1920, 1080
+TARGET_MINUTES = 7
 
-# ==========================================
+TOPICS = [
+    "Mystery of Stonehenge",
+    "Secrets of Egyptian Pyramids",
+    "Lost City of Atlantis",
+    "Ancient Roman Colosseum"
+]
 
-def clean():
-    for f in os.listdir():
-        if f.startswith(("img_", "part_", "audio_")):
-            os.remove(f)
+# ================= SCRIPT =================
 
 def generate_script(topic):
-    print("Generating long script...")
     paragraphs = []
-    for i in range(10):
+    for i in range(22):
         paragraphs.append(
-            f"{topic} section {i+1}. "
-            f"This section explains historical context, facts, theories, and mysteries in detail. "
-            f"It provides clear explanations, examples, and storytelling to engage viewers."
+            f"{topic} is one of the most fascinating subjects in human history. "
+            f"This section explains its origins, theories, construction methods, "
+            f"and unanswered questions in a clear and engaging way. "
+            f"Historians and scientists still debate its true purpose today."
         )
-    script = " ".join(paragraphs)
-    script = " ".join(script.split()[:SCRIPT_WORDS])
+    script = "\n\n".join(paragraphs)
+
     with open("script.txt", "w", encoding="utf-8") as f:
         f.write(script)
+
     return script
 
+# ================= VOICE =================
+
 def generate_voice():
-    print("Generating voice safely...")
-    with open("script.txt", "r", encoding="utf-8") as f:
-        text = f.read()
-
-    chunks = textwrap.wrap(text, 4000)
-    audio_files = []
-
-    for i, chunk in enumerate(chunks):
-        part = f"audio_{i}.mp3"
-        subprocess.run([
-            "edge-tts",
-            "--voice", VOICE,
-            "--text", chunk,
-            "--write-media", part
-        ], check=True)
-        audio_files.append(part)
-
-    with open("audio_list.txt", "w") as f:
-        for a in audio_files:
-            f.write(f"file '{a}'\n")
-
     subprocess.run([
-        "ffmpeg", "-y",
-        "-f", "concat", "-safe", "0",
-        "-i", "audio_list.txt",
-        "-c", "copy",
-        "voice.mp3"
+        "edge-tts",
+        "--voice", VOICE,
+        "--file", "script.txt",
+        "--write-media", "voice.mp3"
     ], check=True)
 
-def download_images(topic):
-    print("Downloading images...")
-    os.makedirs("images", exist_ok=True)
-    urls = [
-        f"https://source.unsplash.com/1600x900/?{topic.replace(' ','-')}",
-        f"https://source.unsplash.com/1600x900/?history",
-        f"https://source.unsplash.com/1600x900/?ancient",
-    ]
+# ================= FALLBACK IMAGES =================
 
+def generate_fallback_images(topic, count=40):
+    os.makedirs("frames", exist_ok=True)
     images = []
-    for i in range(MIN_IMAGES):
-        url = random.choice(urls)
-        path = f"img_{i}.jpg"
-        r = requests.get(url, timeout=20)
-        with open(path, "wb") as f:
-            f.write(r.content)
-        try:
-            img = Image.open(path).convert("RGB")
-            img.save(path, "JPEG", quality=95)
-            images.append(path)
-        except:
-            os.remove(path)
 
-    if len(images) < MIN_IMAGES:
-        images *= (MIN_IMAGES // len(images) + 1)
+    for i in range(count):
+        img = Image.new("RGB", (WIDTH, HEIGHT), (20, 20, 20))
+        draw = ImageDraw.Draw(img)
 
-    return images[:MIN_IMAGES]
+        text = topic.upper()
+        draw.text((WIDTH//2-400, HEIGHT//2-30), text, fill=(255,255,255))
+
+        path = f"frames/frame_{i}.png"
+        img.save(path)
+        images.append(path)
+
+    return images
+
+# ================= VIDEO =================
 
 def create_video(images):
-    print("Creating animated video...")
-    with open("images.txt", "w") as f:
-        for img in images:
-            f.write(f"file '{img}'\n")
-            f.write("duration 5\n")
+    clips = []
+    for img in images:
+        clip = ImageClip(img).set_duration(4)
+        clips.append(clip)
 
-    subprocess.run([
-        "ffmpeg", "-y",
-        "-f", "concat", "-safe", "0",
-        "-i", "images.txt",
-        "-i", "voice.mp3",
-        "-stream_loop", "-1",
-        "-i", BG_MUSIC,
-        "-filter_complex",
-        f"[0:v]scale={VIDEO_SIZE},zoompan=z='min(zoom+0.0005,1.2)':d=125:s={VIDEO_SIZE}[v];"
-        "[2:a]volume=0.05[a2]",
-        "-map", "[v]",
-        "-map", "1:a",
-        "-map", "[a2]",
-        "-shortest",
-        "-c:v", "libx264",
-        "-pix_fmt", "yuv420p",
-        "final_video.mp4"
-    ], check=True)
+    video = concatenate_videoclips(clips, method="compose")
+    audio = AudioFileClip("voice.mp3")
 
-def upload_youtube():
-    print("Uploading to YouTube...")
-    creds = Credentials.from_authorized_user_file("token.json", ["https://www.googleapis.com/auth/youtube.upload"])
-    youtube = build("youtube", "v3", credentials=creds)
+    loops = math.ceil(audio.duration / video.duration)
+    video = concatenate_videoclips([video] * loops)
+    video = video.subclip(0, audio.duration)
 
-    request = youtube.videos().insert(
-        part="snippet,status",
-        body={
-            "snippet": {
-                "title": "Ancient History Explained",
-                "description": "AI generated documentary",
-                "tags": ["history", "ancient", "documentary"],
-                "categoryId": "27"
-            },
-            "status": {
-                "privacyStatus": "public"
-            }
-        },
-        media_body=MediaFileUpload("final_video.mp4")
+    final = video.set_audio(audio)
+
+    final.write_videofile(
+        "final.mp4",
+        fps=FPS,
+        codec="libx264",
+        audio_codec="aac"
     )
-    request.execute()
+
+# ================= MAIN =================
 
 def main():
-    clean()
+    print("🚀 Starting Auto Video Generator")
+
     topic = random.choice(TOPICS)
     print("Topic:", topic)
 
     generate_script(topic)
     generate_voice()
-    images = download_images(topic)
-    create_video(images)
-    upload_youtube()
 
-    print("DONE ✅")
+    images = generate_fallback_images(topic)
+    create_video(images)
+
+    print("✅ Video created successfully")
 
 if __name__ == "__main__":
     main()
