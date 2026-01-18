@@ -1,4 +1,3 @@
-import os
 from topic import get_topic
 from script import generate_scripts
 from voice import create_voice
@@ -17,12 +16,9 @@ def run():
     short_video = make_short(short_audio)
     long_video = make_long(long_audio)
 
-    if os.environ.get("GITHUB_ACTIONS") != "true":
-        from upload import upload_video
-        upload_video(short_video, topic, is_short=True)
-        upload_video(long_video, topic, is_short=False)
-    else:
-        print("⚠️ CI detected — skipping upload step")
+    # Always upload (local OR GitHub Actions)
+    upload_video(short_video, topic, is_short=True)
+    upload_video(long_video, topic, is_short=False)
 
 if __name__ == "__main__":
     run()
