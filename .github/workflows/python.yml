@@ -1,16 +1,17 @@
-name: Auto YouTube Upload
+name: Auto YouTube Video Bot
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 9 * * *"
+  push:
+    branches:
+      - main
 
 jobs:
-  upload:
+  run-bot:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -18,19 +19,25 @@ jobs:
         with:
           python-version: "3.10"
 
-      - name: Install dependencies
+      - name: Install system dependencies
         run: |
-          pip install --upgrade pip
-          pip install pillow requests edge-tts google-api-python-client google-auth google-auth-oauthlib google-auth-httplib2
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          sudo apt update
+          sudo apt install -y ffmpeg
 
-      - name: Restore token.json
+      - name: Install Python dependencies
         run: |
-          echo "${{ secrets.YOUTUBE_TOKEN_BASE64 }}" | base64 --decode > token.json
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: Debug files
-        run: ls -la
+      # 🔑 WRITE TOKEN.JSON FROM SECRET
+      - name: Restore YouTube token.json
+        run: |
+          echo '${{ secrets.YOUTUBE_TOKEN_JSON }}' > token.json
 
-      - name: Run uploader
-        run: python upload.py
+      # 🚀 RUN FULL PIPELINE
+      - name: Run auto video pipeline
+        env:
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        run: |
+          python upload.py
