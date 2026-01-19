@@ -6,8 +6,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
 
-VIDEO_DURATION = 600  # 10 minutes
-FPS = 25
+DURATION = 600  # 10 minutes
 
 
 def run(cmd):
@@ -15,77 +14,67 @@ def run(cmd):
     subprocess.run(cmd, check=True)
 
 
-# 🔊 CREATE SILENT AUDIO (10 MIN)
+# 🔊 CREATE AUDIBLE AUDIO (LOW VOLUME TONE)
 def create_audio():
-    print("🔊 Creating silent voice.mp3 (10 minutes)")
+    print("🔊 Creating audible audio (10 min)")
     run([
         "ffmpeg", "-y",
         "-f", "lavfi",
-        "-i", "anullsrc=r=44100:cl=stereo",
-        "-t", str(VIDEO_DURATION),
-        "-c:a", "mp3",
+        "-i", "sine=frequency=440:sample_rate=44100",
+        "-t", str(DURATION),
+        "-filter:a", "volume=0.05",
         "voice.mp3"
     ])
     print("✅ voice.mp3 created")
 
 
-# 🖼️ CREATE ANIMATED VIDEO (ZOOM + PAN)
+# 🎬 CREATE REAL ANIMATED VIDEO (VISIBLE)
 def create_animated_video():
-    print("🎬 Creating animated video")
+    print("🎬 Creating visible animated video")
 
     run([
         "ffmpeg", "-y",
 
-        # 🎥 animated gradient background
+        # 🎥 colorful moving test pattern (VISIBLE)
         "-f", "lavfi",
-        "-i", "color=c=black:s=1280x720:d=600",
+        "-i", f"testsrc2=size=1280x720:rate=30:duration={DURATION}",
 
         # 🔊 audio
         "-i", "voice.mp3",
 
-        # 🎞️ animation
-        "-vf",
-        (
-            "zoompan="
-            "z='1.0+0.001*on':"
-            "x='iw/2-(iw/zoom/2)':"
-            "y='ih/2-(ih/zoom/2)':"
-            f"d={FPS}"
-        ),
+        # 🎞️ smooth motion blur
+        "-vf", "format=yuv420p",
 
-        "-r", str(FPS),
         "-c:v", "libx264",
+        "-preset", "veryfast",
         "-pix_fmt", "yuv420p",
-        "-t", str(VIDEO_DURATION),
+        "-t", str(DURATION),
         "-c:a", "aac",
         "-b:a", "192k",
-        "-movflags", "+faststart",
+        "-shortest",
         "final.mp4"
     ])
 
-    print("✅ final.mp4 created (animated)")
+    print("✅ final.mp4 created (VISIBLE + AUDIO)")
 
 
-# 🔐 YOUTUBE AUTH (BASE64 TOKEN)
+# 🔐 AUTH (BASE64 TOKEN)
 def get_authenticated_service():
     print("🔐 Authenticating YouTube")
 
-    if "YOUTUBE_TOKEN_BASE64" not in os.environ:
-        raise RuntimeError("YOUTUBE_TOKEN_BASE64 secret missing")
-
-    token_json = base64.b64decode(
+    token = base64.b64decode(
         os.environ["YOUTUBE_TOKEN_BASE64"]
-    ).decode("utf-8")
+    ).decode()
 
     creds = Credentials.from_authorized_user_info(
-        json.loads(token_json),
-        scopes=["https://www.googleapis.com/auth/youtube.upload"]
+        json.loads(token),
+        ["https://www.googleapis.com/auth/youtube.upload"]
     )
 
     return build("youtube", "v3", credentials=creds)
 
 
-# 🚀 UPLOAD VIDEO
+# 🚀 UPLOAD
 def upload_video():
     youtube = get_authenticated_service()
 
@@ -94,19 +83,13 @@ def upload_video():
         body={
             "snippet": {
                 "title": "The Mystery of Stonehenge",
-                "description": "An animated AI-generated documentary",
+                "description": "Fully animated AI-generated video",
                 "tags": ["Stonehenge", "History", "Mystery"],
                 "categoryId": "27"
             },
-            "status": {
-                "privacyStatus": "public"
-            }
+            "status": {"privacyStatus": "public"}
         },
-        media_body=MediaFileUpload(
-            "final.mp4",
-            chunksize=-1,
-            resumable=True
-        )
+        media_body=MediaFileUpload("final.mp4", resumable=True)
     )
 
     response = request.execute()
@@ -114,7 +97,7 @@ def upload_video():
 
 
 def main():
-    print("🚀 Starting full animated video pipeline")
+    print("🚀 Starting REAL animated pipeline")
 
     create_audio()
     create_animated_video()
