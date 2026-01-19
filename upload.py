@@ -9,15 +9,35 @@ VIDEO_FILE = "final.mp4"
 VOICE_FILE = "voice.mp3"
 TEMP_VIDEO = "video.mp4"
 
-VIDEO_DURATION = 600  # 600 sec = 10 min (change to 300 for 5 min)
+VIDEO_DURATION = 600  # 600 = 10 min | 300 = 5 min
 
 # -----------------------------
-# CREATE VIDEO (NO IMAGES NEEDED)
+# CREATE SILENT AUDIO IF MISSING
+# -----------------------------
+def ensure_voice():
+    if os.path.exists(VOICE_FILE):
+        print("🔊 voice.mp3 found")
+        return
+
+    print("⚠️ voice.mp3 not found → generating silent narration")
+
+    subprocess.run([
+        "ffmpeg", "-y",
+        "-f", "lavfi",
+        "-i", "anullsrc=r=24000:cl=mono",
+        "-t", str(VIDEO_DURATION),
+        "-q:a", "9",
+        VOICE_FILE
+    ], check=True)
+
+    print("✅ Silent voice.mp3 created")
+
+# -----------------------------
+# CREATE VIDEO (ANIMATED BG)
 # -----------------------------
 def create_video():
-    print("🎬 Creating video...")
+    print("🎬 Creating video background...")
 
-    # Animated gradient background (safe & fast)
     subprocess.run([
         "ffmpeg", "-y",
         "-f", "lavfi",
@@ -29,7 +49,8 @@ def create_video():
         TEMP_VIDEO
     ], check=True)
 
-    # Merge audio + video (RE-ENCODE video → avoids crash)
+    print("🎧 Merging audio + video...")
+
     subprocess.run([
         "ffmpeg", "-y",
         "-i", TEMP_VIDEO,
@@ -44,7 +65,7 @@ def create_video():
         VIDEO_FILE
     ], check=True)
 
-    print("✅ Video created:", VIDEO_FILE)
+    print("✅ final.mp4 created")
 
 # -----------------------------
 # YOUTUBE AUTH
@@ -67,7 +88,7 @@ def get_authenticated_service():
     return build("youtube", "v3", credentials=creds)
 
 # -----------------------------
-# UPLOAD TO YOUTUBE
+# UPLOAD VIDEO
 # -----------------------------
 def upload_to_youtube():
     youtube = get_authenticated_service()
@@ -78,7 +99,7 @@ def upload_to_youtube():
             "snippet": {
                 "title": "Mystery of Stonehenge",
                 "description": "Auto-generated documentary video",
-                "tags": ["mystery", "history", "documentary"],
+                "tags": ["history", "mystery", "stonehenge"],
                 "categoryId": "22"
             },
             "status": {
@@ -96,9 +117,7 @@ def upload_to_youtube():
 # MAIN
 # -----------------------------
 def main():
-    if not os.path.exists(VOICE_FILE):
-        raise FileNotFoundError("❌ voice.mp3 not found")
-
+    ensure_voice()
     create_video()
     upload_to_youtube()
 
