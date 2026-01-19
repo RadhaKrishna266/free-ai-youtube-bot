@@ -5,47 +5,50 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
 
-# ================= CONFIG =================
 VIDEO_FILE = "final.mp4"
+VOICE_FILE = "voice.mp3"
+BG_IMAGE = "bg.jpg"
+
 TITLE = "The Mystery of Stonehenge"
 DESCRIPTION = "An AI-generated animated documentary about Stonehenge."
-TAGS = ["Stonehenge", "History", "Ancient", "AI Documentary"]
-CATEGORY_ID = "27"  # Education
+TAGS = ["Stonehenge", "History", "Ancient"]
+CATEGORY_ID = "27"
 PRIVACY = "public"
 
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
-
-# =========================================
 
 
 def run(cmd):
     subprocess.run(cmd, check=True)
 
 
-# ---------- AUTH (GITHUB ACTIONS SAFE) ----------
-def get_authenticated_service():
-    print("🔐 Authenticating YouTube (token-based)...")
+# ---------- CREATE BACKGROUND IMAGE ----------
+def create_background():
+    if os.path.exists(BG_IMAGE):
+        return
 
-    token_json = os.environ.get("YOUTUBE_TOKEN_JSON")
-    if not token_json:
-        raise RuntimeError("YOUTUBE_TOKEN_JSON secret missing")
+    print("🖼️ Creating fallback background image...")
+    run([
+        "ffmpeg", "-y",
+        "-f", "lavfi",
+        "-i", "color=c=darkslategray:s=1280x720",
+        "-frames:v", "1",
+        BG_IMAGE
+    ])
 
-    creds_info = json.loads(token_json)
-    creds = Credentials.from_authorized_user_info(creds_info, SCOPES)
 
-    return build("youtube", "v3", credentials=creds)
-
-
-# ---------- VIDEO CREATION (ANIMATED) ----------
-def create_animated_video():
-    print("🎬 Creating animated video background...")
+# ---------- CREATE ANIMATED VIDEO ----------
+def create_video():
+    print("🎬 Creating animated video...")
+    create_background()
 
     run([
         "ffmpeg", "-y",
         "-loop", "1",
-        "-i", "images/bg.jpg",
-        "-i", "voice.mp3",
-        "-vf", "zoompan=z='min(zoom+0.0005,1.15)':d=25",
+        "-i", BG_IMAGE,
+        "-i", VOICE_FILE,
+        "-vf",
+        "zoompan=z='min(zoom+0.0015,1.2)':d=25,scale=1280:720",
         "-c:v", "libx264",
         "-tune", "stillimage",
         "-pix_fmt", "yuv420p",
@@ -56,8 +59,19 @@ def create_animated_video():
     print("✅ final.mp4 created")
 
 
+# ---------- AUTH ----------
+def get_authenticated_service():
+    print("🔐 Authenticating YouTube...")
+
+    token_json = os.environ["YOUTUBE_TOKEN_JSON"]
+    creds_info = json.loads(token_json)
+    creds = Credentials.from_authorized_user_info(creds_info, SCOPES)
+
+    return build("youtube", "v3", credentials=creds)
+
+
 # ---------- UPLOAD ----------
-def upload_to_youtube():
+def upload_video():
     youtube = get_authenticated_service()
 
     request = youtube.videos().insert(
@@ -69,29 +83,24 @@ def upload_to_youtube():
                 "tags": TAGS,
                 "categoryId": CATEGORY_ID
             },
-            "status": {
-                "privacyStatus": PRIVACY
-            }
+            "status": {"privacyStatus": PRIVACY}
         },
-        media_body=MediaFileUpload(
-            VIDEO_FILE,
-            chunksize=-1,
-            resumable=True
-        )
+        media_body=MediaFileUpload(VIDEO_FILE, resumable=True)
     )
 
     response = request.execute()
-    print(f"✅ Uploaded successfully: https://youtu.be/{response['id']}")
+    print(f"✅ Uploaded: https://youtu.be/{response['id']}")
 
 
 # ---------- MAIN ----------
 def main():
     print("🚀 Starting full animated video pipeline")
 
-    if not os.path.exists(VIDEO_FILE):
-        create_animated_video()
+    if not os.path.exists(VOICE_FILE):
+        raise RuntimeError("voice.mp3 missing")
 
-    upload_to_youtube()
+    create_video()
+    upload_video()
 
 
 if __name__ == "__main__":
