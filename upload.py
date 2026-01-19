@@ -1,9 +1,7 @@
 import os
 import json
-import random
 import subprocess
 from pathlib import Path
-
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
@@ -16,14 +14,13 @@ VOICE = "en-US-GuyNeural"
 TARGET_MINUTES = 11
 WORDS_PER_MIN = 140
 
-IMAGE_COUNT = 80
+IMAGE_COUNT = 90
 FPS = 25
 RESOLUTION = "1280x720"
 
+IMAGE_DIR = "images"
 AUDIO_FILE = "voice.mp3"
 VIDEO_FILE = "output.mp4"
-
-IMAGE_DIR = "images"
 
 # =========================================
 
@@ -36,13 +33,12 @@ def run(cmd):
 
 def generate_script():
     base = f"""
-    Today we explore {TOPIC}. One of the greatest mysteries in human history.
-    Built thousands of years ago, this ancient structure continues to puzzle scientists.
-    Archaeologists debate its purpose, construction methods, and cultural significance.
+    Today we explore {TOPIC}. One of the most mysterious ancient structures on Earth.
+    Built thousands of years ago, its purpose remains debated by scientists.
+    Many believe it was used for astronomy, rituals, or ancient ceremonies.
     """
-    words_needed = TARGET_MINUTES * WORDS_PER_MIN
-    script = (" ".join([base] * 50)).split()[:words_needed]
-    return " ".join(script)
+    words = (" ".join([base] * 60)).split()
+    return " ".join(words[:TARGET_MINUTES * WORDS_PER_MIN])
 
 
 # ---------- VOICE ----------
@@ -52,7 +48,7 @@ def generate_voice(script):
     run([
         "edge-tts",
         "--voice", VOICE,
-        "--rate", "+0%",
+        "--rate", "-15%",
         "--text", script,
         "--write-media", AUDIO_FILE
     ])
@@ -61,16 +57,13 @@ def generate_voice(script):
 # ---------- IMAGES ----------
 
 def download_images():
-    print("🖼️ Generating placeholder images...")
+    print("🖼️ Downloading animated images...")
     Path(IMAGE_DIR).mkdir(exist_ok=True)
+
     for i in range(IMAGE_COUNT):
-        run([
-            "ffmpeg", "-y",
-            "-f", "lavfi",
-            "-i", f"color=c=darkslategray:s={RESOLUTION}",
-            "-frames:v", "1",
-            f"{IMAGE_DIR}/img_{i:03d}.jpg"
-        ])
+        img = f"{IMAGE_DIR}/img_{i:03d}.jpg"
+        url = f"https://picsum.photos/1280/720?random={i}"
+        run(["curl", "-L", url, "-o", img])
 
 
 # ---------- VIDEO ----------
@@ -86,7 +79,7 @@ def get_audio_duration():
 
 
 def create_video():
-    print("🎞️ Creating animated video...")
+    print("🎞️ Creating cinematic animated video...")
     duration = get_audio_duration()
     img_time = duration / IMAGE_COUNT
 
@@ -96,7 +89,7 @@ def create_video():
         "-i", f"{IMAGE_DIR}/img_%03d.jpg",
         "-i", AUDIO_FILE,
         "-vf",
-        "zoompan=z='min(zoom+0.0015,1.15)':d=125:s=1280x720",
+        "zoompan=z='min(zoom+0.002,1.2)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=125:s=1280x720",
         "-c:v", "libx264",
         "-pix_fmt", "yuv420p",
         "-shortest",
@@ -115,7 +108,8 @@ def load_credentials():
 
     raw = os.getenv("YOUTUBE_TOKEN_JSON")
     if not raw:
-        raise RuntimeError("YOUTUBE_TOKEN_JSON missing")
+        print("⚠️ No YouTube credentials — skipping upload")
+        return None
 
     return Credentials.from_authorized_user_info(
         json.loads(raw),
@@ -124,8 +118,11 @@ def load_credentials():
 
 
 def upload_to_youtube():
-    print("🚀 Uploading to YouTube...")
     creds = load_credentials()
+    if not creds:
+        return
+
+    print("🚀 Uploading to YouTube...")
     youtube = build("youtube", "v3", credentials=creds)
 
     request = youtube.videos().insert(
@@ -149,7 +146,7 @@ def upload_to_youtube():
 # ---------- MAIN ----------
 
 def main():
-    print("🚀 Starting 10+ min animated video pipeline")
+    print("🚀 Starting full animated video pipeline")
 
     script = generate_script()
     generate_voice(script)
