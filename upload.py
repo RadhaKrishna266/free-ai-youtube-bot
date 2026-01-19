@@ -11,33 +11,45 @@ SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 VIDEO_FILE = "final.mp4"
 TITLE = "Mystery of Stonehenge"
 DESCRIPTION = "An AI generated documentary about the mystery of Stonehenge."
-TAGS = ["stonehenge", "mystery", "history", "ai documentary"]
-CATEGORY_ID = "22"  # People & Blogs
+TAGS = ["stonehenge", "mystery", "history", "documentary"]
+CATEGORY_ID = "22"
 PRIVACY_STATUS = "public"
 
 
 # -------------------- VIDEO CREATION --------------------
 def create_video():
-    print("🎬 Creating video using FFmpeg...")
+    print("🎬 Creating video...")
 
-    # Create image list
-    with open("images.txt", "w") as f:
-        for img in sorted(os.listdir("images")):
-            if img.lower().endswith((".png", ".jpg", ".jpeg")):
-                f.write(f"file 'images/{img}'\n")
-                f.write("duration 6\n")  # 6 sec per image
+    if os.path.exists("images") and len(os.listdir("images")) > 0:
+        print("🖼 Using images folder")
 
-    # Create silent video
-    subprocess.run([
-        "ffmpeg", "-y",
-        "-f", "concat", "-safe", "0",
-        "-i", "images.txt",
-        "-vf", "scale=1920:1080,format=yuv420p",
-        "-r", "25",
-        "video.mp4"
-    ], check=True)
+        with open("images.txt", "w") as f:
+            for img in sorted(os.listdir("images")):
+                if img.lower().endswith((".png", ".jpg", ".jpeg")):
+                    f.write(f"file 'images/{img}'\n")
+                    f.write("duration 6\n")
 
-    # Merge voice
+        subprocess.run([
+            "ffmpeg", "-y",
+            "-f", "concat", "-safe", "0",
+            "-i", "images.txt",
+            "-vf", "scale=1920:1080,zoompan=z='zoom+0.0005':d=150",
+            "-r", "25",
+            "video.mp4"
+        ], check=True)
+
+    else:
+        print("⚠️ images/ not found → generating animated background")
+
+        subprocess.run([
+            "ffmpeg", "-y",
+            "-f", "lavfi",
+            "-i", "color=c=black:s=1920x1080:r=25",
+            "-vf", "drawtext=text='Mystery of Stonehenge':fontcolor=white:fontsize=72:x=(w-text_w)/2:y=(h-text_h)/2",
+            "-t", "600",
+            "video.mp4"
+        ], check=True)
+
     subprocess.run([
         "ffmpeg", "-y",
         "-i", "video.mp4",
@@ -48,7 +60,7 @@ def create_video():
         VIDEO_FILE
     ], check=True)
 
-    print("✅ Video created:", VIDEO_FILE)
+    print("✅ Video ready:", VIDEO_FILE)
 
 
 # -------------------- YOUTUBE AUTH --------------------
@@ -56,19 +68,17 @@ def get_authenticated_service():
     print("🔐 Authenticating YouTube...")
 
     client_secret = json.loads(os.environ["YOUTUBE_CLIENT_SECRET"])
+    token_json = os.environ.get("YOUTUBE_TOKEN_JSON")
 
-    token_data = os.environ.get("YOUTUBE_TOKEN_JSON")
     creds = None
-
-    if token_data:
-        creds = Credentials.from_authorized_user_info(json.loads(token_data), SCOPES)
+    if token_json:
+        creds = Credentials.from_authorized_user_info(json.loads(token_json), SCOPES)
 
     if not creds or not creds.valid:
         flow = InstalledAppFlow.from_client_config(client_secret, SCOPES)
         creds = flow.run_console()
-
-        print("💾 Saving new token...")
-        print(json.dumps(json.loads(creds.to_json())))
+        print("🔑 SAVE THIS TOKEN AS YOUTUBE_TOKEN_JSON:")
+        print(creds.to_json())
 
     return googleapiclient.discovery.build("youtube", "v3", credentials=creds)
 
@@ -99,9 +109,9 @@ def upload_video():
     while response is None:
         status, response = request.next_chunk()
         if status:
-            print(f"⬆️ Upload progress: {int(status.progress() * 100)}%")
+            print(f"⬆️ Upload {int(status.progress() * 100)}%")
 
-    print("🎉 UPLOADED SUCCESSFULLY!")
+    print("🎉 UPLOADED!")
     print("🔗 https://youtube.com/watch?v=" + response["id"])
 
 
