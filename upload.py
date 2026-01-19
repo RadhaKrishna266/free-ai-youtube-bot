@@ -6,96 +6,78 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
 
-# ================= CONFIG =================
 VIDEO_FILE = "final.mp4"
-VOICE_FILE = "voice.mp3"
-BG_IMAGE = "bg.jpg"
-DURATION_SECONDS = 600  # 10 minutes
-SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
-
-TITLE = "The Mystery of Stonehenge"
-DESCRIPTION = "An AI-generated documentary with animated visuals and narration."
-TAGS = ["Stonehenge", "History", "Mystery", "AI video"]
-CATEGORY_ID = "27"  # Education
-# ==========================================
-
 
 def run(cmd):
     subprocess.run(cmd, check=True)
 
-
-# ---------- AUDIO ----------
-def create_voice():
-    if os.path.exists(VOICE_FILE):
+# -----------------------------
+# VIDEO GENERATION
+# -----------------------------
+def create_silent_audio():
+    if os.path.exists("voice.mp3"):
         return
     print("🔊 Creating silent voice.mp3 (10 minutes)")
     run([
         "ffmpeg", "-y",
         "-f", "lavfi",
         "-i", "anullsrc=r=44100:cl=stereo",
-        "-t", str(DURATION_SECONDS),
-        VOICE_FILE
+        "-t", "600",
+        "voice.mp3"
     ])
     print("✅ voice.mp3 created")
 
-
-# ---------- IMAGE ----------
 def create_background():
-    if os.path.exists(BG_IMAGE):
-        return
     print("🖼️ Creating background image")
     run([
         "ffmpeg", "-y",
         "-f", "lavfi",
-        "-i", "color=c=darkslategray:s=1920x1080",
+        "-i", "color=c=black:s=1280x720",
         "-frames:v", "1",
-        BG_IMAGE
+        "bg.jpg"
     ])
 
-
-# ---------- VIDEO ----------
 def create_video():
-    if os.path.exists(VIDEO_FILE):
-        return
     print("🎬 Creating animated video")
     run([
         "ffmpeg", "-y",
         "-loop", "1",
-        "-i", BG_IMAGE,
-        "-i", VOICE_FILE,
-        "-vf",
-        "zoompan=z='min(zoom+0.0003,1.15)':d=125,scale=1920:1080",
-        "-t", str(DURATION_SECONDS),
+        "-i", "bg.jpg",
+        "-i", "voice.mp3",
+        "-vf", "zoompan=z='min(zoom+0.0003,1.15)':d=125",
+        "-t", "600",
         "-c:v", "libx264",
         "-pix_fmt", "yuv420p",
-        "-c:a", "aac",
         "-shortest",
-        VIDEO_FILE
+        "final.mp4"
     ])
     print("✅ final.mp4 created")
 
-
-# ---------- AUTH ----------
+# -----------------------------
+# YOUTUBE AUTH (BASE64 TOKEN)
+# -----------------------------
 def get_authenticated_service():
-    print("🔐 Authenticating YouTube")
+    print("🔐 Authenticating YouTube (BASE64 TOKEN)")
 
-    # Preferred: BASE64 token
-    if "YOUTUBE_TOKEN_BASE64" in os.environ:
-        token_json = base64.b64decode(
-            os.environ["YOUTUBE_TOKEN_BASE64"]
-        ).decode()
-    else:
-        token_json = os.environ["YOUTUBE_TOKEN_JSON"]
+    token_b64 = os.getenv("YOUTUBE_TOKEN_BASE64")
+    if not token_b64:
+        raise RuntimeError("YOUTUBE_TOKEN_BASE64 secret missing")
 
-    creds = Credentials.from_authorized_user_info(
-        json.loads(token_json),
-        SCOPES
+    token_json = base64.b64decode(token_b64).decode("utf-8")
+
+    with open("token.json", "w") as f:
+        f.write(token_json)
+
+    creds = Credentials.from_authorized_user_file(
+        "token.json",
+        scopes=["https://www.googleapis.com/auth/youtube.upload"]
     )
 
     return build("youtube", "v3", credentials=creds)
 
-
-# ---------- UPLOAD ----------
+# -----------------------------
+# UPLOAD VIDEO
+# -----------------------------
 def upload_video():
     youtube = get_authenticated_service()
 
@@ -103,35 +85,31 @@ def upload_video():
         part="snippet,status",
         body={
             "snippet": {
-                "title": TITLE,
-                "description": DESCRIPTION,
-                "tags": TAGS,
-                "categoryId": CATEGORY_ID
+                "title": "The Mystery of Stonehenge",
+                "description": "An AI-generated documentary video.",
+                "tags": ["Stonehenge", "history", "AI video"],
+                "categoryId": "22"
             },
             "status": {
                 "privacyStatus": "public"
             }
         },
-        media_body=MediaFileUpload(
-            VIDEO_FILE,
-            chunksize=-1,
-            resumable=True
-        )
+        media_body=MediaFileUpload(VIDEO_FILE, chunksize=-1, resumable=True)
     )
 
     response = request.execute()
-    print("🚀 Upload successful!")
-    print("🎥 Video ID:", response["id"])
+    print("🎉 Uploaded successfully!")
+    print("📺 Video ID:", response["id"])
 
-
-# ---------- MAIN ----------
+# -----------------------------
+# MAIN
+# -----------------------------
 def main():
     print("🚀 Starting full animated video pipeline")
-    create_voice()
+    create_silent_audio()
     create_background()
     create_video()
     upload_video()
-
 
 if __name__ == "__main__":
     main()
