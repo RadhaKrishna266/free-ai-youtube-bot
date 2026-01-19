@@ -1,161 +1,83 @@
 import os
-import subprocess
-import textwrap
 import json
-import requests
-from pathlib import Path
-
-# ================= CONFIG =================
-TOPIC = "Mystery of Stonehenge"
-TARGET_MINUTES = 7            # change 5–10
-VOICE = "en-IN-PrabhatNeural"
-FPS = 25
-RESOLUTION = "1920x1080"
-IMAGE_DURATION = 6            # seconds per image
-MIN_IMAGES = 60
-# =========================================
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+from google.oauth2.credentials import Credentials
 
 
-def generate_long_script(topic, minutes):
-    words = minutes * 140
-    paragraph = f"""
-    Today we explore {topic}. This ancient monument has fascinated historians,
-    archaeologists, and scientists for centuries. Located in England, Stonehenge
-    raises questions about human intelligence, astronomy, and forgotten civilizations.
+SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+VIDEO_FILE = "final.mp4"
+
+
+def load_credentials():
     """
-    script = (" ".join([paragraph] * 20))[:words * 6]
-    return textwrap.fill(script, 90)
+    Loads OAuth credentials from GitHub secret:
+    YOUTUBE_CLIENT_SECRET (full authorized user JSON)
+    """
+    raw = os.environ.get("YOUTUBE_CLIENT_SECRET")
+
+    if not raw:
+        raise RuntimeError("YOUTUBE_CLIENT_SECRET not set")
+
+    try:
+        info = json.loads(raw)
+    except json.JSONDecodeError:
+        raise RuntimeError("YOUTUBE_CLIENT_SECRET is not valid JSON")
+
+    required = {"client_id", "client_secret", "refresh_token", "token_uri"}
+    missing = required - info.keys()
+
+    if missing:
+        raise RuntimeError(f"Missing OAuth fields: {missing}")
+
+    return Credentials.from_authorized_user_info(info, SCOPES)
 
 
-def generate_voice(script):
-    Path("chunks").mkdir(exist_ok=True)
-    words = script.split()
-    chunk_size = 400
-    audio_files = []
+def upload_video(
+    title,
+    description,
+    tags=None,
+    category_id="22",
+    privacy="public",
+):
+    if not os.path.exists(VIDEO_FILE):
+        raise FileNotFoundError(f"{VIDEO_FILE} not found")
 
-    for i in range(0, len(words), chunk_size):
-        chunk = " ".join(words[i:i + chunk_size])
-        txt = f"chunks/{i}.txt"
-        mp3 = f"chunks/{i}.mp3"
-
-        with open(txt, "w") as f:
-            f.write(chunk)
-
-        subprocess.run([
-            "edge-tts",
-            "--voice", VOICE,
-            "--file", txt,
-            "--write-media", mp3
-        ], check=True)
-
-        audio_files.append(mp3)
-
-    with open("audio_list.txt", "w") as f:
-        for a in audio_files:
-            f.write(f"file '{a}'\n")
-
-    subprocess.run([
-        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-        "-i", "audio_list.txt", "-c", "copy", "voice.mp3"
-    ], check=True)
-
-
-def download_images(topic):
-    Path("images").mkdir(exist_ok=True)
-    images = []
-
-    for i in range(MIN_IMAGES):
-        url = f"https://picsum.photos/1920/1080?random={i}"
-        img = f"images/{i}.jpg"
-        r = requests.get(url, timeout=10)
-        with open(img, "wb") as f:
-            f.write(r.content)
-        images.append(img)
-
-    return images
-
-
-def build_video(images):
-    with open("images.txt", "w") as f:
-        for img in images:
-            f.write(f"file '{img}'\n")
-            f.write(f"duration {IMAGE_DURATION}\n")
-
-    subprocess.run([
-        "ffmpeg", "-y",
-        "-f", "concat", "-safe", "0",
-        "-i", "images.txt",
-        "-vf", f"scale={RESOLUTION}",
-        "-r", str(FPS),
-        "-pix_fmt", "yuv420p",
-        "video.mp4"
-    ], check=True)
-
-
-def merge_audio_video():
-    subprocess.run([
-        "ffmpeg", "-y",
-        "-i", "video.mp4",
-        "-i", "voice.mp3",
-        "-c:v", "copy",
-        "-c:a", "aac",
-        "-shortest",
-        "final.mp4"
-    ], check=True)
-
-
-# ============ YOUTUBE (OPTIONAL) ============
-def upload_to_youtube():
-    if "YOUTUBE_CLIENT_SECRET" not in os.environ:
-        print("⚠️ YouTube secrets missing → skipping upload")
-        return
-
-    from googleapiclient.discovery import build
-    from googleapiclient.http import MediaFileUpload
-    from google.oauth2.credentials import Credentials
-
-    creds = Credentials.from_authorized_user_info(
-        json.loads(os.environ["YOUTUBE_CLIENT_SECRET"]),
-        ["https://www.googleapis.com/auth/youtube.upload"]
-    )
-
+    creds = load_credentials()
     youtube = build("youtube", "v3", credentials=creds)
 
     request = youtube.videos().insert(
         part="snippet,status",
         body={
             "snippet": {
-                "title": TOPIC,
-                "description": f"Complete documentary about {TOPIC}",
-                "tags": ["history", "mystery", "documentary"],
-                "categoryId": "22"
+                "title": title,
+                "description": description,
+                "tags": tags or [],
+                "categoryId": category_id,
             },
             "status": {
-                "privacyStatus": "public"
-            }
+                "privacyStatus": privacy,
+            },
         },
-        media_body=MediaFileUpload("final.mp4", resumable=True)
+        media_body=MediaFileUpload(
+            VIDEO_FILE,
+            chunksize=-1,
+            resumable=True,
+        ),
     )
 
     response = request.execute()
-    print("✅ Uploaded:", response["id"])
-
-
-def main():
-    print("🚀 Starting auto video pipeline")
-    print("Topic:", TOPIC)
-
-    script = generate_long_script(TOPIC, TARGET_MINUTES)
-    generate_voice(script)
-
-    images = download_images(TOPIC)
-    build_video(images)
-
-    merge_audio_video()
-    print("✅ final.mp4 created")
-
-    upload_to_youtube()
+    return response["id"]
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        video_id = upload_video(
+            title="Mystery of Stonehenge",
+            description="Complete documentary about the Mystery of Stonehenge.",
+            tags=["history", "mystery", "documentary"],
+        )
+        print(f"✅ Uploaded successfully: https://youtu.be/{video_id}")
+
+    except Exception as e:
+        print(f"❌ Upload failed: {e}")
