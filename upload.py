@@ -9,9 +9,11 @@ VIDEO_FILE = "final.mp4"
 VOICE_FILE = "voice.mp3"
 BG_IMAGE = "bg.jpg"
 
+DURATION_SECONDS = 600  # 10 minutes
+
 TITLE = "The Mystery of Stonehenge"
 DESCRIPTION = "An AI-generated animated documentary about Stonehenge."
-TAGS = ["Stonehenge", "History", "Ancient"]
+TAGS = ["Stonehenge", "Ancient History", "Mystery"]
 CATEGORY_ID = "27"
 PRIVACY = "public"
 
@@ -22,12 +24,30 @@ def run(cmd):
     subprocess.run(cmd, check=True)
 
 
-# ---------- CREATE BACKGROUND IMAGE ----------
+# ---------- VOICE (AUTO-GENERATED SILENT FALLBACK) ----------
+def generate_voice():
+    if os.path.exists(VOICE_FILE):
+        print("🔊 voice.mp3 already exists")
+        return
+
+    print("🔊 Creating silent voice.mp3 (10 minutes)")
+    run([
+        "ffmpeg", "-y",
+        "-f", "lavfi",
+        "-i", f"anullsrc=r=44100:cl=stereo",
+        "-t", str(DURATION_SECONDS),
+        "-q:a", "9",
+        VOICE_FILE
+    ])
+    print("✅ voice.mp3 created")
+
+
+# ---------- BACKGROUND IMAGE ----------
 def create_background():
     if os.path.exists(BG_IMAGE):
         return
 
-    print("🖼️ Creating fallback background image...")
+    print("🖼️ Creating background image")
     run([
         "ffmpeg", "-y",
         "-f", "lavfi",
@@ -37,9 +57,9 @@ def create_background():
     ])
 
 
-# ---------- CREATE ANIMATED VIDEO ----------
+# ---------- ANIMATED VIDEO ----------
 def create_video():
-    print("🎬 Creating animated video...")
+    print("🎬 Creating animated video")
     create_background()
 
     run([
@@ -48,7 +68,7 @@ def create_video():
         "-i", BG_IMAGE,
         "-i", VOICE_FILE,
         "-vf",
-        "zoompan=z='min(zoom+0.0015,1.2)':d=25,scale=1280:720",
+        "zoompan=z='min(zoom+0.001,1.25)':d=25,scale=1280:720",
         "-c:v", "libx264",
         "-tune", "stillimage",
         "-pix_fmt", "yuv420p",
@@ -59,9 +79,9 @@ def create_video():
     print("✅ final.mp4 created")
 
 
-# ---------- AUTH ----------
+# ---------- YOUTUBE AUTH ----------
 def get_authenticated_service():
-    print("🔐 Authenticating YouTube...")
+    print("🔐 Authenticating YouTube")
 
     token_json = os.environ["YOUTUBE_TOKEN_JSON"]
     creds_info = json.loads(token_json)
@@ -81,11 +101,11 @@ def upload_video():
                 "title": TITLE,
                 "description": DESCRIPTION,
                 "tags": TAGS,
-                "categoryId": CATEGORY_ID
+                "categoryId": CATEGORY_ID,
             },
-            "status": {"privacyStatus": PRIVACY}
+            "status": {"privacyStatus": PRIVACY},
         },
-        media_body=MediaFileUpload(VIDEO_FILE, resumable=True)
+        media_body=MediaFileUpload(VIDEO_FILE, resumable=True),
     )
 
     response = request.execute()
@@ -96,9 +116,7 @@ def upload_video():
 def main():
     print("🚀 Starting full animated video pipeline")
 
-    if not os.path.exists(VOICE_FILE):
-        raise RuntimeError("voice.mp3 missing")
-
+    generate_voice()
     create_video()
     upload_video()
 
