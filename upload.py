@@ -1,144 +1,159 @@
 import os
 import json
 import subprocess
-from pathlib import Path
+import sys
+from glob import glob
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 
-# ============== CONFIG =================
-
-TOPIC = "The Mystery of Stonehenge"
+# ---------------- CONFIG ----------------
+TITLE = "The Mystery of Stonehenge"
+DESCRIPTION = "An animated documentary exploring the mystery of Stonehenge."
+TAGS = ["stonehenge", "history", "mystery", "documentary"]
 VOICE = "en-US-GuyNeural"
-
-TARGET_MINUTES = 11
-WORDS_PER_MIN = 140
-
-IMAGE_COUNT = 90
-
-SCRIPT_FILE = "script.txt"
-AUDIO_FILE = "voice.mp3"
-VIDEO_FILE = "output.mp4"
-IMAGE_DIR = "images"
-
-# ======================================
+IMAGE_QUERY = "Stonehenge ancient monument"
+DURATION_PER_IMAGE = 6  # seconds
+FPS = 30
+# ---------------------------------------
 
 
 def run(cmd):
     subprocess.run(cmd, check=True)
 
 
-# ---------- SCRIPT ----------
-
 def generate_script():
-    base = (
-        f"Today we explore {TOPIC}. "
-        "One of the most mysterious ancient structures on Earth. "
-        "Built thousands of years ago, its purpose remains debated by scientists. "
-        "Many believe it was used for astronomy, rituals, or ancient ceremonies. "
-    )
-
-    script = " ".join((base * 80).split()[:TARGET_MINUTES * WORDS_PER_MIN])
-    Path(SCRIPT_FILE).write_text(script)
-    return script
+    return (
+        "Stonehenge is one of the most mysterious ancient structures on Earth. "
+        "Built over four thousand years ago, its massive stones were transported "
+        "from great distances. Scholars believe it was used for astronomy, rituals, "
+        "or spiritual ceremonies. Despite decades of research, its true purpose "
+        "remains unknown, making Stonehenge a timeless mystery."
+    ) * 8  # repeat to reach ~10 minutes
 
 
-# ---------- VOICE ----------
-
-def generate_voice():
+def generate_voice(script):
     print("🔊 Generating voice narration...")
-
     run([
         "edge-tts",
         "--voice", VOICE,
-        "--rate=-15%",
-        "--file", SCRIPT_FILE,
-        "--write-media", AUDIO_FILE
+        "--text", script,
+        "--write-media", "voice.mp3"
     ])
 
-
-# ---------- IMAGES ----------
 
 def download_images():
     print("🖼️ Downloading images...")
-    Path(IMAGE_DIR).mkdir(exist_ok=True)
-
-    for i in range(IMAGE_COUNT):
-        run([
-            "curl", "-L",
-            f"https://picsum.photos/1280/720?random={i}",
-            "-o", f"{IMAGE_DIR}/img_{i:03d}.jpg"
-        ])
-
-
-# ---------- VIDEO ----------
-
-def create_video():
-    print("🎞️ Creating animated video...")
+    os.makedirs("images", exist_ok=True)
 
     run([
-        "ffmpeg", "-y",
-        "-framerate", "1/7",
-        "-i", f"{IMAGE_DIR}/img_%03d.jpg",
-        "-i", AUDIO_FILE,
-        "-vf", "zoompan=z='min(zoom+0.0015,1.2)':d=175:s=1280x720",
-        "-c:v", "libx264",
-        "-pix_fmt", "yuv420p",
-        "-shortest",
-        VIDEO_FILE
+        "python", "-m", "bing_image_downloader",
+        IMAGE_QUERY,
+        "--limit", "20",
+        "--output_dir", "images",
+        "--adult_filter_off",
+        "--force_replace",
+        "--timeout", "60"
     ])
 
 
-# ---------- YOUTUBE (SAFE) ----------
+def create_animated_video():
+    print("🎞️ Creating animated video...")
+    os.makedirs("clips", exist_ok=True)
 
-def upload_to_youtube():
-    raw = os.getenv("YOUTUBE_CLIENT_SECRET")
+    images = glob("images/*/*.jpg")
+    if not images:
+        raise RuntimeError("No images found")
 
+    clips = []
+
+    for i, img in enumerate(images):
+        clip = f"clips/clip_{i}.mp4"
+        clips.append(clip)
+
+        run([
+            "ffmpeg", "-y",
+            "-loop", "1",
+            "-i", img,
+            "-vf",
+            "zoompan=z='min(zoom+0.0008,1.15)':"
+            "x='iw/2-(iw/zoom/2)':"
+            "y='ih/2-(ih/zoom/2)':"
+            f"d={DURATION_PER_IMAGE * FPS}:s=1280x720",
+            "-t", str(DURATION_PER_IMAGE),
+            "-r", str(FPS),
+            "-pix_fmt", "yuv420p",
+            clip
+        ])
+
+    with open("clips/list.txt", "w") as f:
+        for c in clips:
+            f.write(f"file '{c}'\n")
+
+    run([
+        "ffmpeg", "-y",
+        "-f", "concat",
+        "-safe", "0",
+        "-i", "clips/list.txt",
+        "-i", "voice.mp3",
+        "-c:v", "libx264",
+        "-c:a", "aac",
+        "-shortest",
+        "-pix_fmt", "yuv420p",
+        "final.mp4"
+    ])
+
+
+def load_credentials():
+    raw = os.getenv("YOUTUBE_TOKEN_JSON")
     if not raw:
-        print("⚠️ YOUTUBE_CLIENT_SECRET not set — skipping upload")
-        return
+        raise RuntimeError("YOUTUBE_TOKEN_JSON missing")
 
     try:
-        creds_data = json.loads(raw)
-    except Exception as e:
-        print("⚠️ Invalid YouTube credential JSON — skipping upload")
-        print("Error:", e)
-        return
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        raise RuntimeError("Invalid YOUTUBE_TOKEN_JSON")
 
-    from google.oauth2.credentials import Credentials
-    from googleapiclient.discovery import build
-    from googleapiclient.http import MediaFileUpload
+    return Credentials.from_authorized_user_info(data, ["https://www.googleapis.com/auth/youtube.upload"])
 
-    creds = Credentials.from_authorized_user_info(
-        creds_data,
-        ["https://www.googleapis.com/auth/youtube.upload"]
-    )
 
+def upload_to_youtube():
+    print("🚀 Uploading to YouTube...")
+    creds = load_credentials()
     youtube = build("youtube", "v3", credentials=creds)
 
     request = youtube.videos().insert(
         part="snippet,status",
         body={
             "snippet": {
-                "title": TOPIC,
-                "description": f"Full documentary about {TOPIC}",
+                "title": TITLE,
+                "description": DESCRIPTION,
+                "tags": TAGS,
                 "categoryId": "27"
             },
-            "status": {"privacyStatus": "public"}
+            "status": {
+                "privacyStatus": "public"
+            }
         },
-        media_body=MediaFileUpload(VIDEO_FILE, resumable=True)
+        media_body=MediaFileUpload("final.mp4", resumable=True)
     )
 
     response = request.execute()
-    print("✅ Uploaded video ID:", response["id"])
+    print("✅ Uploaded:", response["id"])
 
-
-# ---------- MAIN ----------
 
 def main():
     print("🚀 Starting full animated video pipeline")
-    generate_script()
-    generate_voice()
+
+    script = generate_script()
+    generate_voice(script)
     download_images()
-    create_video()
-    upload_to_youtube()
+    create_animated_video()
+
+    if os.getenv("YOUTUBE_TOKEN_JSON"):
+        upload_to_youtube()
+    else:
+        print("⚠️ No YouTube credentials — skipping upload")
 
 
 if __name__ == "__main__":
