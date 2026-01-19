@@ -7,22 +7,26 @@ from google.oauth2.credentials import Credentials
 
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 
+# Try common output names
+VIDEO_CANDIDATES = ["output.mp4", "final.mp4"]
 
-def find_video(filename="final.mp4"):
-    """
-    Recursively find final.mp4 anywhere in the repo
-    """
-    for path in Path(".").rglob(filename):
-        return path
+
+def find_video():
+    for name in VIDEO_CANDIDATES:
+        for path in Path(".").rglob(name):
+            return path
     return None
 
 
 def load_credentials():
     raw = os.environ.get("YOUTUBE_CLIENT_SECRET")
     if not raw:
-        raise RuntimeError("YOUTUBE_CLIENT_SECRET not set")
+        raise RuntimeError("YOUTUBE_CLIENT_SECRET is not set")
 
-    info = json.loads(raw)
+    try:
+        info = json.loads(raw)
+    except json.JSONDecodeError:
+        raise RuntimeError("YOUTUBE_CLIENT_SECRET is not valid JSON")
 
     required = {"client_id", "client_secret", "refresh_token", "token_uri"}
     missing = required - info.keys()
@@ -41,18 +45,21 @@ def upload_video(video_path: Path):
         body={
             "snippet": {
                 "title": "Mystery of Stonehenge",
-                "description": "Complete documentary about the Mystery of Stonehenge.",
-                "tags": ["history", "mystery", "documentary"],
-                "categoryId": "22",
+                "description": (
+                    "A 10+ minute documentary exploring the mystery of Stonehenge, "
+                    "its origins, theories, and historical significance."
+                ),
+                "tags": ["history", "documentary", "ancient", "mystery"],
+                "categoryId": "27"
             },
             "status": {
-                "privacyStatus": "public",
-            },
+                "privacyStatus": "public"
+            }
         },
         media_body=MediaFileUpload(
             str(video_path),
             chunksize=-1,
-            resumable=True,
+            resumable=True
         ),
     )
 
@@ -61,18 +68,17 @@ def upload_video(video_path: Path):
 
 
 if __name__ == "__main__":
-    print("🔍 Searching for final.mp4 ...")
+    print("🔍 Searching for video file...")
     video = find_video()
 
     if not video:
-        print("❌ final.mp4 not found anywhere in repository")
+        print("❌ No video file found (output.mp4 / final.mp4)")
         print("📂 Files present:")
-        for p in Path(".").rglob("*"):
-            if p.is_file():
-                print(" -", p)
+        for f in Path(".").rglob("*.mp4"):
+            print(" -", f)
         raise SystemExit(1)
 
-    print(f"✅ Found video at: {video}")
+    print(f"✅ Found video: {video}")
 
     try:
         video_id = upload_video(video)
