@@ -2,11 +2,8 @@ import os
 import json
 import subprocess
 from pathlib import Path
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
-from google.oauth2.credentials import Credentials
 
-# ================= CONFIG =================
+# ============== CONFIG =================
 
 TOPIC = "The Mystery of Stonehenge"
 VOICE = "en-US-GuyNeural"
@@ -15,14 +12,13 @@ TARGET_MINUTES = 11
 WORDS_PER_MIN = 140
 
 IMAGE_COUNT = 90
-RESOLUTION = "1280x720"
 
-IMAGE_DIR = "images"
 SCRIPT_FILE = "script.txt"
 AUDIO_FILE = "voice.mp3"
 VIDEO_FILE = "output.mp4"
+IMAGE_DIR = "images"
 
-# =========================================
+# ======================================
 
 
 def run(cmd):
@@ -39,9 +35,7 @@ def generate_script():
         "Many believe it was used for astronomy, rituals, or ancient ceremonies. "
     )
 
-    words = (base * 80).split()
-    script = " ".join(words[:TARGET_MINUTES * WORDS_PER_MIN])
-
+    script = " ".join((base * 80).split()[:TARGET_MINUTES * WORDS_PER_MIN])
     Path(SCRIPT_FILE).write_text(script)
     return script
 
@@ -67,9 +61,11 @@ def download_images():
     Path(IMAGE_DIR).mkdir(exist_ok=True)
 
     for i in range(IMAGE_COUNT):
-        out = f"{IMAGE_DIR}/img_{i:03d}.jpg"
-        url = f"https://picsum.photos/1280/720?random={i}"
-        run(["curl", "-L", url, "-o", out])
+        run([
+            "curl", "-L",
+            f"https://picsum.photos/1280/720?random={i}",
+            "-o", f"{IMAGE_DIR}/img_{i:03d}.jpg"
+        ])
 
 
 # ---------- VIDEO ----------
@@ -82,8 +78,7 @@ def create_video():
         "-framerate", "1/7",
         "-i", f"{IMAGE_DIR}/img_%03d.jpg",
         "-i", AUDIO_FILE,
-        "-vf",
-        "zoompan=z='min(zoom+0.0015,1.2)':d=175:s=1280x720",
+        "-vf", "zoompan=z='min(zoom+0.0015,1.2)':d=175:s=1280x720",
         "-c:v", "libx264",
         "-pix_fmt", "yuv420p",
         "-shortest",
@@ -91,26 +86,30 @@ def create_video():
     ])
 
 
-# ---------- YOUTUBE ----------
-
-def load_credentials():
-    raw = os.getenv("YOUTUBE_CLIENT_SECRET")
-    if not raw:
-        print("⚠️ No YouTube credentials found — skipping upload")
-        return None
-
-    return Credentials.from_authorized_user_info(
-        json.loads(raw),
-        ["https://www.googleapis.com/auth/youtube.upload"]
-    )
-
+# ---------- YOUTUBE (SAFE) ----------
 
 def upload_to_youtube():
-    creds = load_credentials()
-    if not creds:
+    raw = os.getenv("YOUTUBE_CLIENT_SECRET")
+
+    if not raw:
+        print("⚠️ YOUTUBE_CLIENT_SECRET not set — skipping upload")
         return
 
-    print("🚀 Uploading to YouTube...")
+    try:
+        creds_data = json.loads(raw)
+    except Exception as e:
+        print("⚠️ Invalid YouTube credential JSON — skipping upload")
+        print("Error:", e)
+        return
+
+    from google.oauth2.credentials import Credentials
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaFileUpload
+
+    creds = Credentials.from_authorized_user_info(
+        creds_data,
+        ["https://www.googleapis.com/auth/youtube.upload"]
+    )
 
     youtube = build("youtube", "v3", credentials=creds)
 
@@ -120,7 +119,7 @@ def upload_to_youtube():
             "snippet": {
                 "title": TOPIC,
                 "description": f"Full documentary about {TOPIC}",
-                "categoryId": "27",
+                "categoryId": "27"
             },
             "status": {"privacyStatus": "public"}
         },
@@ -135,7 +134,6 @@ def upload_to_youtube():
 
 def main():
     print("🚀 Starting full animated video pipeline")
-
     generate_script()
     generate_voice()
     download_images()
