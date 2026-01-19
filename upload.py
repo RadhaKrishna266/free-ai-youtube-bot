@@ -5,37 +5,36 @@ import subprocess
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
+from PIL import Image
 
-VIDEO_FILE = "final.mp4"
+VIDEO_DURATION = 600  # 10 minutes
+
 
 def run(cmd):
+    print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-# -----------------------------
-# VIDEO GENERATION
-# -----------------------------
-def create_silent_audio():
+
+def create_audio():
     if os.path.exists("voice.mp3"):
         return
-    print("🔊 Creating silent voice.mp3 (10 minutes)")
+    print("🔊 Creating 10-minute audio")
     run([
         "ffmpeg", "-y",
         "-f", "lavfi",
         "-i", "anullsrc=r=44100:cl=stereo",
-        "-t", "600",
+        "-t", str(VIDEO_DURATION),
         "voice.mp3"
     ])
-    print("✅ voice.mp3 created")
+
 
 def create_background():
+    if os.path.exists("bg.jpg"):
+        return
     print("🖼️ Creating background image")
-    run([
-        "ffmpeg", "-y",
-        "-f", "lavfi",
-        "-i", "color=c=black:s=1280x720",
-        "-frames:v", "1",
-        "bg.jpg"
-    ])
+    img = Image.new("RGB", (1280, 720), (15, 15, 15))
+    img.save("bg.jpg")
+
 
 def create_video():
     print("🎬 Creating animated video")
@@ -44,40 +43,37 @@ def create_video():
         "-loop", "1",
         "-i", "bg.jpg",
         "-i", "voice.mp3",
-        "-vf", "zoompan=z='min(zoom+0.0003,1.15)':d=125",
-        "-t", "600",
+        "-vf",
+        "zoompan=z='min(zoom+0.0003,1.15)':d=25,scale=1280:720",
         "-c:v", "libx264",
+        "-tune", "stillimage",
         "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", "192k",
         "-shortest",
+        "-movflags", "+faststart",
         "final.mp4"
     ])
-    print("✅ final.mp4 created")
 
-# -----------------------------
-# YOUTUBE AUTH (BASE64 TOKEN)
-# -----------------------------
+
 def get_authenticated_service():
-    print("🔐 Authenticating YouTube (BASE64 TOKEN)")
+    print("🔐 Authenticating YouTube")
 
-    token_b64 = os.getenv("YOUTUBE_TOKEN_BASE64")
+    token_b64 = os.environ.get("YOUTUBE_TOKEN_BASE64")
     if not token_b64:
         raise RuntimeError("YOUTUBE_TOKEN_BASE64 secret missing")
 
-    token_json = base64.b64decode(token_b64).decode("utf-8")
+    token_json = base64.b64decode(token_b64).decode()
+    token_info = json.loads(token_json)
 
-    with open("token.json", "w") as f:
-        f.write(token_json)
-
-    creds = Credentials.from_authorized_user_file(
-        "token.json",
+    creds = Credentials.from_authorized_user_info(
+        token_info,
         scopes=["https://www.googleapis.com/auth/youtube.upload"]
     )
 
     return build("youtube", "v3", credentials=creds)
 
-# -----------------------------
-# UPLOAD VIDEO
-# -----------------------------
+
 def upload_video():
     youtube = get_authenticated_service()
 
@@ -86,30 +82,28 @@ def upload_video():
         body={
             "snippet": {
                 "title": "The Mystery of Stonehenge",
-                "description": "An AI-generated documentary video.",
-                "tags": ["Stonehenge", "history", "AI video"],
-                "categoryId": "22"
+                "description": "Auto-generated educational video",
+                "tags": ["history", "stonehenge", "mystery"],
+                "categoryId": "27"
             },
             "status": {
                 "privacyStatus": "public"
             }
         },
-        media_body=MediaFileUpload(VIDEO_FILE, chunksize=-1, resumable=True)
+        media_body=MediaFileUpload("final.mp4", resumable=True)
     )
 
     response = request.execute()
-    print("🎉 Uploaded successfully!")
-    print("📺 Video ID:", response["id"])
+    print("✅ Uploaded:", response["id"])
 
-# -----------------------------
-# MAIN
-# -----------------------------
+
 def main():
     print("🚀 Starting full animated video pipeline")
-    create_silent_audio()
+    create_audio()
     create_background()
     create_video()
     upload_video()
+
 
 if __name__ == "__main__":
     main()
