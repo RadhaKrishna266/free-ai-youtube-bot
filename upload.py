@@ -1,83 +1,98 @@
 import os
 import subprocess
+import textwrap
 import json
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
+import requests
+from pathlib import Path
 
 # ================= CONFIG =================
 TOPIC = "Mystery of Stonehenge"
-TITLE = "Mystery of Stonehenge | Full Documentary"
-DESCRIPTION = "A detailed AI-generated documentary on Stonehenge."
-TAGS = ["stonehenge", "history", "documentary"]
-CATEGORY_ID = "27"  # Education
-VIDEO_FILE = "final.mp4"
-SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
-# ==========================================
+TARGET_MINUTES = 7            # change 5–10
+VOICE = "en-IN-PrabhatNeural"
+FPS = 25
+RESOLUTION = "1920x1080"
+IMAGE_DURATION = 6            # seconds per image
+MIN_IMAGES = 60
+# =========================================
 
-def generate_script():
-    print("📝 Generating long script...")
-    text = (
-        "Stonehenge is one of the most mysterious monuments on Earth. "
-        "Located in England, this ancient stone circle has puzzled historians for centuries. "
-        "Researchers believe it was built over several phases. "
-        "The stones align with the solstices, suggesting astronomical importance. "
-        "Some theories claim it was a burial site, others say a healing center. "
-        "Despite modern technology, many questions remain unanswered. "
-    ) * 70  # ~7–9 minutes
 
-    with open("script.txt", "w") as f:
-        f.write(text)
+def generate_long_script(topic, minutes):
+    words = minutes * 140
+    paragraph = f"""
+    Today we explore {topic}. This ancient monument has fascinated historians,
+    archaeologists, and scientists for centuries. Located in England, Stonehenge
+    raises questions about human intelligence, astronomy, and forgotten civilizations.
+    """
+    script = (" ".join([paragraph] * 20))[:words * 6]
+    return textwrap.fill(script, 90)
 
-def generate_voice():
-    print("🎤 Generating voice...")
-    subprocess.run([
-        "edge-tts",
-        "--voice", "en-IN-PrabhatNeural",
-        "--file", "script.txt",
-        "--write-media", "voice.mp3"
-    ], check=True)
 
-def get_audio_duration():
-    print("⏱ Getting audio duration...")
-    result = subprocess.check_output([
-        "ffprobe", "-v", "error",
-        "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1",
-        "voice.mp3"
-    ])
-    return float(result.strip())
+def generate_voice(script):
+    Path("chunks").mkdir(exist_ok=True)
+    words = script.split()
+    chunk_size = 400
+    audio_files = []
 
-def generate_images():
-    print("🖼 Creating images...")
-    os.makedirs("images", exist_ok=True)
-    for i in range(1, 11):
+    for i in range(0, len(words), chunk_size):
+        chunk = " ".join(words[i:i + chunk_size])
+        txt = f"chunks/{i}.txt"
+        mp3 = f"chunks/{i}.mp3"
+
+        with open(txt, "w") as f:
+            f.write(chunk)
+
         subprocess.run([
-            "ffmpeg", "-y",
-            "-f", "lavfi",
-            "-i", "color=c=black:s=1920x1080",
-            "-frames:v", "1",
-            f"images/img{i}.png"
+            "edge-tts",
+            "--voice", VOICE,
+            "--file", txt,
+            "--write-media", mp3
         ], check=True)
 
-def generate_video(audio_duration):
-    print("🎞 Creating video...")
-    per_image = audio_duration / 10
+        audio_files.append(mp3)
 
+    with open("audio_list.txt", "w") as f:
+        for a in audio_files:
+            f.write(f"file '{a}'\n")
+
+    subprocess.run([
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+        "-i", "audio_list.txt", "-c", "copy", "voice.mp3"
+    ], check=True)
+
+
+def download_images(topic):
+    Path("images").mkdir(exist_ok=True)
+    images = []
+
+    for i in range(MIN_IMAGES):
+        url = f"https://picsum.photos/1920/1080?random={i}"
+        img = f"images/{i}.jpg"
+        r = requests.get(url, timeout=10)
+        with open(img, "wb") as f:
+            f.write(r.content)
+        images.append(img)
+
+    return images
+
+
+def build_video(images):
     with open("images.txt", "w") as f:
-        for i in range(1, 11):
-            f.write(f"file 'images/img{i}.png'\n")
-            f.write(f"duration {per_image}\n")
+        for img in images:
+            f.write(f"file '{img}'\n")
+            f.write(f"duration {IMAGE_DURATION}\n")
 
     subprocess.run([
         "ffmpeg", "-y",
         "-f", "concat", "-safe", "0",
         "-i", "images.txt",
-        "-vf", "scale=1920:1080,format=yuv420p",
-        "-r", "25",
+        "-vf", f"scale={RESOLUTION}",
+        "-r", str(FPS),
+        "-pix_fmt", "yuv420p",
         "video.mp4"
     ], check=True)
 
+
+def merge_audio_video():
     subprocess.run([
         "ffmpeg", "-y",
         "-i", "video.mp4",
@@ -85,53 +100,62 @@ def generate_video(audio_duration):
         "-c:v", "copy",
         "-c:a", "aac",
         "-shortest",
-        VIDEO_FILE
+        "final.mp4"
     ], check=True)
 
-def get_authenticated_service():
-    print("🔐 Authenticating YouTube...")
-    secret_json = os.environ["YOUTUBE_CLIENT_SECRET"]
-    with open("client_secret.json", "w") as f:
-        f.write(secret_json)
 
-    flow = InstalledAppFlow.from_client_secrets_file(
-        "client_secret.json", SCOPES
-    )
-    creds = flow.run_console()
-    return build("youtube", "v3", credentials=creds)
-
+# ============ YOUTUBE (OPTIONAL) ============
 def upload_to_youtube():
-    print("⬆ Uploading to YouTube...")
-    youtube = get_authenticated_service()
+    if "YOUTUBE_CLIENT_SECRET" not in os.environ:
+        print("⚠️ YouTube secrets missing → skipping upload")
+        return
+
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaFileUpload
+    from google.oauth2.credentials import Credentials
+
+    creds = Credentials.from_authorized_user_info(
+        json.loads(os.environ["YOUTUBE_CLIENT_SECRET"]),
+        ["https://www.googleapis.com/auth/youtube.upload"]
+    )
+
+    youtube = build("youtube", "v3", credentials=creds)
 
     request = youtube.videos().insert(
         part="snippet,status",
         body={
             "snippet": {
-                "title": TITLE,
-                "description": DESCRIPTION,
-                "tags": TAGS,
-                "categoryId": CATEGORY_ID
+                "title": TOPIC,
+                "description": f"Complete documentary about {TOPIC}",
+                "tags": ["history", "mystery", "documentary"],
+                "categoryId": "22"
             },
             "status": {
                 "privacyStatus": "public"
             }
         },
-        media_body=MediaFileUpload(VIDEO_FILE)
+        media_body=MediaFileUpload("final.mp4", resumable=True)
     )
+
     response = request.execute()
-    print("✅ Uploaded Video ID:", response["id"])
+    print("✅ Uploaded:", response["id"])
+
 
 def main():
-    print("🚀 Starting pipeline")
-    generate_script()
-    generate_voice()
-    duration = get_audio_duration()
-    print(f"🎯 Video length: {int(duration//60)} minutes")
-    generate_images()
-    generate_video(duration)
+    print("🚀 Starting auto video pipeline")
+    print("Topic:", TOPIC)
+
+    script = generate_long_script(TOPIC, TARGET_MINUTES)
+    generate_voice(script)
+
+    images = download_images(TOPIC)
+    build_video(images)
+
+    merge_audio_video()
+    print("✅ final.mp4 created")
+
     upload_to_youtube()
-    print("🎉 DONE")
+
 
 if __name__ == "__main__":
     main()
