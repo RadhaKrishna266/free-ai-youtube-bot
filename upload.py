@@ -1,189 +1,112 @@
 import os
 import json
 import subprocess
-import requests
-from glob import glob
+import googleapiclient.discovery
+import googleapiclient.http
 from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
+from google_auth_oauthlib.flow import InstalledAppFlow
 
-# ---------------- CONFIG ----------------
-TITLE = "The Mystery of Stonehenge"
-DESCRIPTION = "A fully animated documentary exploring the mystery of Stonehenge."
-TAGS = ["stonehenge", "history", "documentary", "ancient"]
-VOICE = "en-US-GuyNeural"
-QUERY = "Stonehenge"
-FPS = 30
-IMG_DURATION = 8  # seconds per image
-TARGET_MINUTES = 10
-# ---------------------------------------
+SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+
+VIDEO_FILE = "final.mp4"
+TITLE = "Mystery of Stonehenge"
+DESCRIPTION = "An AI generated documentary about the mystery of Stonehenge."
+TAGS = ["stonehenge", "mystery", "history", "ai documentary"]
+CATEGORY_ID = "22"  # People & Blogs
+PRIVACY_STATUS = "public"
 
 
-def run(cmd):
-    subprocess.run(cmd, check=True)
-
-
-def generate_script():
-    base = (
-        "Stonehenge is one of the most mysterious ancient monuments in the world. "
-        "Built over four thousand years ago, its massive stones were transported "
-        "from distant regions using unknown techniques. Scholars believe it may "
-        "have been used for astronomical observations, sacred rituals, or burial "
-        "ceremonies. Despite modern technology, its true purpose remains debated. "
-    )
-    return base * 40  # ~10 minutes narration
-
-
-def generate_voice(text):
-    print("🔊 Generating voice narration...")
-    run([
-        "edge-tts",
-        "--voice", VOICE,
-        "--text", text,
-        "--write-media", "voice.mp3"
-    ])
-
-
-def download_images():
-    print("🖼️ Downloading images from Wikipedia...")
-    os.makedirs("images", exist_ok=True)
-
-    url = "https://en.wikipedia.org/w/api.php"
-    params = {
-        "action": "query",
-        "generator": "search",
-        "gsrsearch": QUERY,
-        "gsrlimit": 25,
-        "prop": "pageimages",
-        "piprop": "original",
-        "format": "json"
-    }
-
-    r = requests.get(url, params=params, timeout=20)
-    data = r.json()
-
-    pages = data.get("query", {}).get("pages", {})
-    count = 0
-
-    for page in pages.values():
-        if "original" in page:
-            img_url = page["original"]["source"]
-            img_data = requests.get(img_url, timeout=20).content
-            with open(f"images/img_{count:02d}.jpg", "wb") as f:
-                f.write(img_data)
-            count += 1
-
-    if count < 5:
-        print("⚠️ Not enough images — generating fallback images")
-        create_fallback_images()
-
-
-def create_fallback_images():
-    for i in range(20):
-        run([
-            "ffmpeg", "-y",
-            "-f", "lavfi",
-            "-i", "color=c=darkslategray:s=1280x720",
-            "-frames:v", "1",
-            f"images/img_{i:02d}.jpg"
-        ])
-
-
+# -------------------- VIDEO CREATION --------------------
 def create_video():
-    print("🎞️ Creating animated video...")
-    os.makedirs("clips", exist_ok=True)
+    print("🎬 Creating video using FFmpeg...")
 
-    images = sorted(glob("images/*.jpg"))
-    if not images:
-        raise RuntimeError("No images available")
+    # Create image list
+    with open("images.txt", "w") as f:
+        for img in sorted(os.listdir("images")):
+            if img.lower().endswith((".png", ".jpg", ".jpeg")):
+                f.write(f"file 'images/{img}'\n")
+                f.write("duration 6\n")  # 6 sec per image
 
-    clips = []
-
-    for i, img in enumerate(images):
-        clip = f"clips/c_{i}.mp4"
-        clips.append(clip)
-
-        run([
-            "ffmpeg", "-y",
-            "-loop", "1",
-            "-i", img,
-            "-vf",
-            "zoompan=z='min(zoom+0.001,1.2)':"
-            "x='iw/2-(iw/zoom/2)':"
-            "y='ih/2-(ih/zoom/2)':"
-            f"d={IMG_DURATION*FPS}:s=1280x720",
-            "-t", str(IMG_DURATION),
-            "-r", str(FPS),
-            "-pix_fmt", "yuv420p",
-            clip
-        ])
-
-    with open("clips/list.txt", "w") as f:
-        for c in clips:
-            f.write(f"file '{c}'\n")
-
-    run([
+    # Create silent video
+    subprocess.run([
         "ffmpeg", "-y",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", "clips/list.txt",
+        "-f", "concat", "-safe", "0",
+        "-i", "images.txt",
+        "-vf", "scale=1920:1080,format=yuv420p",
+        "-r", "25",
+        "video.mp4"
+    ], check=True)
+
+    # Merge voice
+    subprocess.run([
+        "ffmpeg", "-y",
+        "-i", "video.mp4",
         "-i", "voice.mp3",
-        "-c:v", "libx264",
+        "-c:v", "copy",
         "-c:a", "aac",
         "-shortest",
-        "-pix_fmt", "yuv420p",
-        "final.mp4"
-    ])
+        VIDEO_FILE
+    ], check=True)
+
+    print("✅ Video created:", VIDEO_FILE)
 
 
-def load_credentials():
-    raw = os.getenv("YOUTUBE_TOKEN_JSON")
-    if not raw:
-        print("⚠️ No YouTube token — skipping upload")
-        return None
+# -------------------- YOUTUBE AUTH --------------------
+def get_authenticated_service():
+    print("🔐 Authenticating YouTube...")
 
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        print("⚠️ Invalid token JSON — skipping upload")
-        return None
+    client_secret = json.loads(os.environ["YOUTUBE_CLIENT_SECRET"])
 
-    return Credentials.from_authorized_user_info(
-        data, ["https://www.googleapis.com/auth/youtube.upload"]
-    )
+    token_data = os.environ.get("YOUTUBE_TOKEN_JSON")
+    creds = None
+
+    if token_data:
+        creds = Credentials.from_authorized_user_info(json.loads(token_data), SCOPES)
+
+    if not creds or not creds.valid:
+        flow = InstalledAppFlow.from_client_config(client_secret, SCOPES)
+        creds = flow.run_console()
+
+        print("💾 Saving new token...")
+        print(json.dumps(json.loads(creds.to_json())))
+
+    return googleapiclient.discovery.build("youtube", "v3", credentials=creds)
 
 
+# -------------------- UPLOAD --------------------
 def upload_video():
-    creds = load_credentials()
-    if not creds:
-        return
+    youtube = get_authenticated_service()
 
-    print("🚀 Uploading to YouTube...")
-    yt = build("youtube", "v3", credentials=creds)
-
-    req = yt.videos().insert(
+    request = youtube.videos().insert(
         part="snippet,status",
         body={
             "snippet": {
                 "title": TITLE,
                 "description": DESCRIPTION,
                 "tags": TAGS,
-                "categoryId": "27"
+                "categoryId": CATEGORY_ID
             },
-            "status": {"privacyStatus": "public"}
+            "status": {
+                "privacyStatus": PRIVACY_STATUS
+            }
         },
-        media_body=MediaFileUpload("final.mp4", resumable=True)
+        media_body=googleapiclient.http.MediaFileUpload(
+            VIDEO_FILE, chunksize=-1, resumable=True
+        )
     )
 
-    res = req.execute()
-    print("✅ Uploaded video ID:", res["id"])
+    response = None
+    while response is None:
+        status, response = request.next_chunk()
+        if status:
+            print(f"⬆️ Upload progress: {int(status.progress() * 100)}%")
+
+    print("🎉 UPLOADED SUCCESSFULLY!")
+    print("🔗 https://youtube.com/watch?v=" + response["id"])
 
 
+# -------------------- MAIN --------------------
 def main():
-    print("🚀 Starting full animated video pipeline")
-    script = generate_script()
-    generate_voice(script)
-    download_images()
     create_video()
     upload_video()
 
