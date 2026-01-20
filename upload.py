@@ -8,7 +8,9 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
 
-DURATION_PER_SCENE = 8
+PIXABAY_KEY = os.environ["PIXABAY_API_KEY"]
+
+TOPIC = "unknown science facts"
 FACTS = [
     "Octopuses have three hearts",
     "Honey never spoils",
@@ -17,7 +19,8 @@ FACTS = [
     "Wombat poop is cube shaped"
 ]
 
-PIXABAY_KEY = os.environ["PIXABAY_API_KEY"]
+IMG_DIR = "images"
+os.makedirs(IMG_DIR, exist_ok=True)
 
 
 def run(cmd):
@@ -25,60 +28,67 @@ def run(cmd):
     subprocess.run(cmd, check=True)
 
 
-# 🎤 VOICE
-def create_voice():
-    text = "Unknown facts you never knew. " + ". ".join(FACTS)
-    gTTS(text=text, lang="en").save("voice.mp3")
-    print("✅ voice.mp3 created")
-
-
-# 🖼️ DOWNLOAD IMAGES
+# 🖼️ DOWNLOAD REAL IMAGES
 def download_images():
-    os.makedirs("images", exist_ok=True)
-
+    print("🖼️ Downloading images from Pixabay")
     for i, fact in enumerate(FACTS):
         query = fact.split()[0]
         url = (
             f"https://pixabay.com/api/?key={PIXABAY_KEY}"
             f"&q={query}&image_type=photo&per_page=3"
         )
-
         r = requests.get(url).json()
         img_url = r["hits"][0]["largeImageURL"]
+        img_data = requests.get(img_url).content
 
-        img_path = f"images/{i}.jpg"
-        with open(img_path, "wb") as f:
-            f.write(requests.get(img_url).content)
+        with open(f"{IMG_DIR}/{i}.jpg", "wb") as f:
+            f.write(img_data)
 
-        print(f"✅ Image downloaded for: {fact}")
+    print("✅ Images downloaded")
 
 
-# 🎬 ANIMATED VIDEO FROM IMAGES
+# 🔊 VOICE (CLEAR)
+def create_voice():
+    text = "Unknown facts you never knew. " + ". ".join(FACTS)
+    gTTS(text=text, lang="en", slow=False).save("voice.mp3")
+    print("✅ voice.mp3 created")
+
+
+# 🎬 ANIMATED VIDEO
 def create_video():
-    with open("list.txt", "w") as f:
-        for i in range(len(FACTS)):
-            f.write(f"file 'images/{i}.jpg'\n")
-            f.write(f"duration {DURATION_PER_SCENE}\n")
+    inputs = []
+    filters = []
 
-    run([
+    for i in range(len(FACTS)):
+        inputs.extend(["-loop", "1", "-t", "6", "-i", f"{IMG_DIR}/{i}.jpg"])
+        filters.append(
+            f"[{i}:v]scale=1280:720,zoompan=z='min(zoom+0.0008,1.2)':d=180,fade=t=in:st=0:d=0.5,fade=t=out:st=5:d=0.5[v{i}]"
+        )
+
+    concat = "".join([f"[v{i}]" for i in range(len(FACTS))])
+    filters.append(f"{concat}concat=n={len(FACTS)}:v=1:a=0[outv]")
+
+    filter_complex = ";".join(filters)
+
+    cmd = [
         "ffmpeg", "-y",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", "list.txt",
-        "-vf",
-        "zoompan=z='min(zoom+0.0005,1.1)':d=240,"
-        "scale=1280:720,format=yuv420p",
+        *inputs,
         "-i", "voice.mp3",
+        "-filter_complex", filter_complex,
+        "-map", "[outv]",
+        "-map", "audio",
         "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
         "-c:a", "aac",
         "-shortest",
         "final.mp4"
-    ])
+    ]
 
-    print("✅ final.mp4 created (REAL images + animation)")
+    run(cmd)
+    print("✅ final.mp4 created (REAL IMAGES + ANIMATION + VOICE)")
 
 
-# 🔐 AUTH
+# 🔐 YOUTUBE AUTH
 def youtube_auth():
     token = base64.b64decode(os.environ["YOUTUBE_TOKEN_BASE64"]).decode()
     creds = Credentials.from_authorized_user_info(
@@ -88,7 +98,7 @@ def youtube_auth():
     return build("youtube", "v3", credentials=creds)
 
 
-# 🚀 UPLOAD (ONCE)
+# 🚀 SINGLE UPLOAD (NO DUPLICATE)
 def upload():
     yt = youtube_auth()
 
@@ -97,7 +107,8 @@ def upload():
         body={
             "snippet": {
                 "title": "Unknown Facts You Never Knew",
-                "description": "Animated facts video with images and narration",
+                "description": "AI animated video with real images and voice",
+                "tags": ["facts", "unknown facts", "science"],
                 "categoryId": "27"
             },
             "status": {"privacyStatus": "public"}
@@ -110,12 +121,12 @@ def upload():
     )
 
     response = request.execute()
-    print("✅ Uploaded:", response["id"])
+    print("✅ Uploaded video ID:", response["id"])
 
 
 def main():
-    create_voice()
     download_images()
+    create_voice()
     create_video()
     upload()
 
