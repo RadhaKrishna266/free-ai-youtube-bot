@@ -1,112 +1,97 @@
-from PIL import Image
-
-# ---- SAFETY PATCH FOR PILLOW 10+ ----
-if not hasattr(Image, "ANTIALIAS"):
-    Image.ANTIALIAS = Image.Resampling.LANCZOS
-
 import os
-import requests
 import subprocess
-from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips
+import textwrap
+import requests
+import random
 
-# ---------------- CONFIG ----------------
-PIXABAY_KEY = os.environ.get("PIXABAY_API_KEY")
-WIDTH, HEIGHT = 1280, 720
+PIXABAY_API_KEY = os.getenv("PIXABAY_API_KEY")
 
 IMAGES_DIR = "images"
-AUDIO_FILE = "voice.m4a"
+VOICE_WAV = "voice.wav"
+VOICE_M4A = "voice.m4a"
 FINAL_VIDEO = "final.mp4"
+
+DURATION_MINUTES = 10
+FPS = 25
+IMG_DURATION = 5  # seconds per image
 
 os.makedirs(IMAGES_DIR, exist_ok=True)
 
-# ---------------- FACTS (AUTO-REPEATED) ----------------
-BASE_FACTS = [
-    ("Venus planet", "A day on Venus is longer than a year on Venus."),
-    ("Octopus ocean", "Octopuses have three hearts and blue blood."),
-    ("Banana fruit", "Bananas are berries, but strawberries are not."),
-    ("Space galaxy", "There are more stars in the universe than grains of sand on Earth."),
-    ("Human brain", "Your brain uses about 20% of your body's energy.")
+FACTS = [
+    "Octopuses have three hearts and blue blood.",
+    "Bananas are berries but strawberries are not.",
+    "The human brain can generate enough electricity to power a small bulb.",
+    "There are more trees on Earth than stars in the Milky Way.",
+    "Honey never spoils and was found in ancient Egyptian tombs.",
+    "Sharks existed before trees.",
+    "A day on Venus is longer than a year on Venus.",
+    "Wombat poop is cube-shaped.",
 ]
 
-FACTS = BASE_FACTS * 6   # 5 facts × 6 = 30 facts → ~10 minutes
+def build_script():
+    repeat = (DURATION_MINUTES * 60) // 15
+    script = []
+    for _ in range(repeat):
+        script.append(random.choice(FACTS))
+    return " ".join(script)
 
-# ---------------- DOWNLOAD REAL IMAGES ----------------
-def download_images(query, limit=3):
+def download_images(query="nature"):
+    print("🖼️ Downloading images")
     url = "https://pixabay.com/api/"
     params = {
-        "key": PIXABAY_KEY,
+        "key": PIXABAY_API_KEY,
         "q": query,
         "image_type": "photo",
-        "per_page": limit,
-        "safesearch": "true"
+        "per_page": 60
     }
     r = requests.get(url, params=params).json()
-    paths = []
+    for i, hit in enumerate(r["hits"][:60]):
+        img = requests.get(hit["largeImageURL"]).content
+        with open(f"{IMAGES_DIR}/{i}.jpg", "wb") as f:
+            f.write(img)
 
-    for i, hit in enumerate(r.get("hits", [])):
-        img_url = hit["largeImageURL"]
-        path = f"{IMAGES_DIR}/{query.replace(' ', '_')}_{i}.jpg"
-        with open(path, "wb") as f:
-            f.write(requests.get(img_url).content)
-        paths.append(path)
+def create_voice(text):
+    print("🎙️ Creating REAL voice with Piper")
 
-    return paths
+    with open("script.txt", "w") as f:
+        f.write(text)
 
-# ---------------- AUDIO (10 MIN) ----------------
-def create_audio():
+    subprocess.run([
+        "./piper/piper",
+        "--model", "./piper/en_US-lessac-medium.onnx",
+        "--output_file", VOICE_WAV
+    ], input=text.encode(), check=True)
+
     subprocess.run([
         "ffmpeg", "-y",
-        "-f", "lavfi",
-        "-i", "sine=frequency=440",
-        "-t", "600",
-        AUDIO_FILE
+        "-i", VOICE_WAV,
+        VOICE_M4A
     ], check=True)
 
-# ---------------- VIDEO ----------------
 def create_video():
-    audio = AudioFileClip(AUDIO_FILE)
-    clips = []
+    print("🎬 Creating 10-minute video")
 
-    fact_duration = 20  # seconds per fact
+    img_pattern = f"{IMAGES_DIR}/%d.jpg"
 
-    for query, text in FACTS:
-        images = download_images(query)
-        if not images:
-            continue
+    subprocess.run([
+        "ffmpeg", "-y",
+        "-framerate", f"{FPS}",
+        "-i", img_pattern,
+        "-i", VOICE_M4A,
+        "-vf", "zoompan=z='min(zoom+0.0005,1.1)':d=125",
+        "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
+        "-shortest",
+        FINAL_VIDEO
+    ], check=True)
 
-        img_duration = fact_duration / len(images)
-
-        for img in images:
-            clip = (
-                ImageClip(img)
-                .resize(height=HEIGHT)
-                .set_duration(img_duration)
-                .fx(lambda c: c.crop(
-                    x_center=c.w / 2,
-                    y_center=c.h / 2,
-                    width=WIDTH,
-                    height=HEIGHT
-                ))
-            )
-            clips.append(clip)
-
-    video = concatenate_videoclips(clips, method="compose")
-    video = video.set_audio(audio.subclip(0, video.duration))
-
-    video.write_videofile(
-        FINAL_VIDEO,
-        fps=24,
-        codec="libx264",
-        audio_codec="aac",
-        threads=2
-    )
-
-# ---------------- MAIN ----------------
 def main():
-    print("🚀 Creating 10-minute REAL IMAGE FACT VIDEO")
-    create_audio()
+    print("🚀 AI FACT VIDEO BOT (REAL VOICE)")
+    script = build_script()
+    download_images("science facts")
+    create_voice(script)
     create_video()
-    print("✅ DONE:", FINAL_VIDEO)
+    print("✅ DONE →", FINAL_VIDEO)
 
 if __name__ == "__main__":
     main()
