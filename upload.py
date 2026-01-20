@@ -1,140 +1,76 @@
 import os
-import json
-import base64
 import subprocess
-import random
-import textwrap
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
-from google.oauth2.credentials import Credentials
 from PIL import Image, ImageDraw, ImageFont
+from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips
 
-# ================= CONFIG =================
-DURATION = 60  # seconds (safe for testing)
-UPLOAD_TO_YOUTUBE = False  # 🔴 SET TRUE ONLY WHEN READY
-OUTPUT_VIDEO = "final.mp4"
-IMAGE_DIR = "images"
-os.makedirs(IMAGE_DIR, exist_ok=True)
+UPLOAD_TO_YOUTUBE = False  # keep False while testing
 
-# ================= FACT ENGINE =================
-FACTS = [
-    "Octopuses have three hearts and blue blood.",
-    "Bananas are berries, but strawberries are not.",
-    "There are more possible games of chess than atoms in the universe.",
-    "Humans glow faintly due to bioluminescence, but our eyes can't see it.",
-    "Your brain rewires itself every time you learn something new.",
-    "A day on Venus is longer than a year on Venus.",
-    "Butterflies remember being caterpillars.",
-    "The human body contains enough carbon to make 9,000 pencils."
-]
+IMAGES_DIR = "images"
+FACE_IMAGE = f"{IMAGES_DIR}/face.png"
+AUDIO_FILE = "voice.m4a"
+FINAL_VIDEO = "final.mp4"
 
-def generate_fact():
-    return random.choice(FACTS)
+os.makedirs(IMAGES_DIR, exist_ok=True)
 
-# ================= AUDIO =================
-def create_audio():
-    subprocess.run([
-        "ffmpeg", "-y",
-        "-f", "lavfi",
-        "-i", "sine=frequency=440",
-        "-t", str(DURATION),
-        "-c:a", "aac",
-        "-b:a", "128k",
-        "voice.m4a"
-    ], check=True)
+def create_face_image():
+    print("🎨 Creating AI face image")
 
-# ================= AI FACE (NO FFMPEG BUG) =================
-def create_face():
-    img = Image.new("RGB", (1024, 1024), "#1f1f1f")
+    img = Image.new("RGB", (1024, 1024), color=(32, 32, 32))
     draw = ImageDraw.Draw(img)
 
     try:
-        font = ImageFont.truetype("DejaVuSans-Bold.ttf", 72)
+        font = ImageFont.truetype("DejaVuSans-Bold.ttf", 80)
     except:
         font = ImageFont.load_default()
 
-    draw.text((512, 420), "AI FACT FACE", fill="white", anchor="mm", font=font)
-    draw.text((512, 520), "Talking AI", fill="#bbbbbb", anchor="mm", font=font)
+    text = "AI FACT FACE"
+    w, h = draw.textsize(text, font=font)
+    draw.text(((1024 - w) / 2, (1024 - h) / 2), text, fill="white", font=font)
 
-    img.save(f"{IMAGE_DIR}/face.jpg")
+    img.save(FACE_IMAGE)
+    print("✅ Face image created")
 
-# ================= SUBTITLES =================
-def create_subtitles(text):
-    wrapped = textwrap.fill(text, 35)
-    with open("subs.txt", "w") as f:
-        f.write(wrapped)
+def create_voice():
+    print("🎧 Creating placeholder voice audio")
 
-# ================= ANIMATED VIDEO =================
-def create_video():
     subprocess.run([
         "ffmpeg", "-y",
-        "-loop", "1",
-        "-i", f"{IMAGE_DIR}/face.jpg",
-        "-i", "voice.m4a",
-        "-vf",
-        (
-            "scale=1280:720,"
-            "zoompan=z='min(zoom+0.0008,1.15)':d=125,"
-            "drawtext=textfile=subs.txt:"
-            "fontcolor=white:fontsize=36:"
-            "x=(w-text_w)/2:y=h-120:"
-            "box=1:boxcolor=black@0.5:boxborderw=10"
-        ),
-        "-t", str(DURATION),
-        "-c:v", "libx264",
-        "-pix_fmt", "yuv420p",
-        "-c:a", "aac",
-        "-shortest",
-        OUTPUT_VIDEO
+        "-f", "lavfi",
+        "-i", "sine=frequency=440:duration=35",
+        AUDIO_FILE
     ], check=True)
 
-# ================= YOUTUBE =================
-def get_youtube():
-    token = base64.b64decode(os.environ["YOUTUBE_TOKEN_BASE64"]).decode()
-    creds = Credentials.from_authorized_user_info(
-        json.loads(token),
-        ["https://www.googleapis.com/auth/youtube.upload"]
-    )
-    return build("youtube", "v3", credentials=creds)
+def create_video():
+    print("🎬 Creating animated video")
 
-def upload_video(title, description):
-    youtube = get_youtube()
-    request = youtube.videos().insert(
-        part="snippet,status",
-        body={
-            "snippet": {
-                "title": title,
-                "description": description,
-                "categoryId": "27"
-            },
-            "status": {"privacyStatus": "public"}
-        },
-        media_body=MediaFileUpload(OUTPUT_VIDEO, resumable=True)
-    )
-    request.execute()
+    audio = AudioFileClip(AUDIO_FILE)
 
-# ================= MAIN =================
-def main():
-    print("🚀 AI Talking Fact Video Generator")
-
-    fact = generate_fact()
-    print("🧠 FACT:", fact)
-
-    create_audio()
-    create_face()
-    create_subtitles(fact)
-    create_video()
-
-    print(f"✅ VIDEO READY: {OUTPUT_VIDEO}")
-
-    if UPLOAD_TO_YOUTUBE:
-        upload_video(
-            title="Unknown Fact That Will Blow Your Mind",
-            description=fact
+    clips = []
+    for i in range(7):
+        zoom = 1 + i * 0.03
+        clip = (
+            ImageClip(FACE_IMAGE)
+            .resize(zoom)
+            .set_duration(audio.duration / 7)
         )
-        print("✅ Uploaded to YouTube")
-    else:
-        print("⬇️ Upload disabled — download video from workflow artifacts")
+        clips.append(clip)
+
+    video = concatenate_videoclips(clips, method="compose")
+    video = video.set_audio(audio)
+
+    video.write_videofile(
+        FINAL_VIDEO,
+        fps=24,
+        codec="libx264",
+        audio_codec="aac"
+    )
+
+def main():
+    print("🚀 Starting AI Talking Face Video Bot")
+    create_face_image()
+    create_voice()
+    create_video()
+    print("✅ Video generated:", FINAL_VIDEO)
 
 if __name__ == "__main__":
     main()
