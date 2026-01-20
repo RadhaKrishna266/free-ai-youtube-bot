@@ -41,6 +41,12 @@ jobs:
           ls -l token.json
 
       # 🚀 RUN FULL PIPELINE
-      - name: Run auto video pipeline
-        run: |
-          python upload.py
+      
+- name: Run auto video pipeline
+  env:
+    YOUTUBE_TOKEN_BASE64: ${{ secrets.YOUTUBE_TOKEN_BASE64 }}
+    YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+    YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+    PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+  run: |
+    python upload.py
