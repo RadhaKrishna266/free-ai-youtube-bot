@@ -3,4 +3,6 @@ google-auth
 google-auth-oauthlib
 google-auth-httplib2
 moviepy
+imageio
+imageio-ffmpeg
 Pillow
