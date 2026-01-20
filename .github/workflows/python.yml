@@ -35,11 +35,24 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # 🔐 Restore YouTube OAuth token
       - name: Restore YouTube token.json
         run: |
           echo "$YOUTUBE_TOKEN_BASE64" | base64 --decode > token.json
           ls -l token.json
 
+      # 🚀 Run video generation + upload logic
       - name: Run auto video pipeline
         run: |
           python upload.py
+
+      # 📦 DOWNLOAD OPTION (VERY IMPORTANT)
+      - name: Upload generated video for download
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-video
+          path: |
+            final.mp4
+            images/
+            voice.m4a
