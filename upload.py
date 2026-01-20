@@ -1,97 +1,116 @@
 import os
 import subprocess
 import textwrap
-import requests
 import random
 
-PIXABAY_API_KEY = os.getenv("PIXABAY_API_KEY")
-
+# ================= CONFIG =================
+DURATION = 600  # 10 minutes
+FPS = 30
 IMAGES_DIR = "images"
 VOICE_WAV = "voice.wav"
 VOICE_M4A = "voice.m4a"
 FINAL_VIDEO = "final.mp4"
 
-DURATION_MINUTES = 10
-FPS = 25
-IMG_DURATION = 5  # seconds per image
-
-os.makedirs(IMAGES_DIR, exist_ok=True)
+PIPER_BIN = "./piper/piper"
+PIPER_MODEL = "./piper/en_US-lessac-medium.onnx"
 
 FACTS = [
     "Octopuses have three hearts and blue blood.",
-    "Bananas are berries but strawberries are not.",
-    "The human brain can generate enough electricity to power a small bulb.",
-    "There are more trees on Earth than stars in the Milky Way.",
-    "Honey never spoils and was found in ancient Egyptian tombs.",
-    "Sharks existed before trees.",
+    "Bananas are berries, but strawberries are not.",
     "A day on Venus is longer than a year on Venus.",
-    "Wombat poop is cube-shaped.",
+    "Honey never spoils, even after thousands of years.",
+    "Sharks existed before trees.",
+    "The human brain uses about twenty percent of the body's energy.",
+    "There are more possible games of chess than atoms in the universe.",
+    "Some turtles can breathe through their butts.",
+    "Wombat poop is cube shaped.",
+    "The Eiffel Tower grows taller in summer."
 ]
 
-def build_script():
-    repeat = (DURATION_MINUTES * 60) // 15
-    script = []
-    for _ in range(repeat):
-        script.append(random.choice(FACTS))
-    return " ".join(script)
+# ==========================================
 
-def download_images(query="nature"):
-    print("🖼️ Downloading images")
-    url = "https://pixabay.com/api/"
-    params = {
-        "key": PIXABAY_API_KEY,
-        "q": query,
-        "image_type": "photo",
-        "per_page": 60
-    }
-    r = requests.get(url, params=params).json()
-    for i, hit in enumerate(r["hits"][:60]):
-        img = requests.get(hit["largeImageURL"]).content
-        with open(f"{IMAGES_DIR}/{i}.jpg", "wb") as f:
-            f.write(img)
+os.makedirs(IMAGES_DIR, exist_ok=True)
 
-def create_voice(text):
-    print("🎙️ Creating REAL voice with Piper")
 
-    with open("script.txt", "w") as f:
-        f.write(text)
+def run(cmd, input_data=None):
+    print("▶", " ".join(cmd))
+    subprocess.run(cmd, input=input_data, check=True)
 
-    subprocess.run([
-        "./piper/piper",
-        "--model", "./piper/en_US-lessac-medium.onnx",
-        "--output_file", VOICE_WAV
-    ], input=text.encode(), check=True)
 
-    subprocess.run([
-        "ffmpeg", "-y",
-        "-i", VOICE_WAV,
-        VOICE_M4A
-    ], check=True)
+# 🎙️ REAL HUMAN VOICE (PIPER)
+def create_voice():
+    print("🎙️ Generating real voice with Piper")
 
+    script = ""
+    while len(script.split()) < 1200:  # ~10 min
+        script += random.choice(FACTS) + " "
+
+    run(
+        [PIPER_BIN, "--model", PIPER_MODEL, "--output_file", VOICE_WAV],
+        input_data=script.encode("utf-8")
+    )
+
+    run(["ffmpeg", "-y", "-i", VOICE_WAV, VOICE_M4A])
+    print("✅ Voice created")
+
+
+# 🖼️ GENERATE FACT IMAGES (TEXT-BASED)
+def create_images():
+    print("🖼️ Creating fact images")
+
+    for i, fact in enumerate(FACTS):
+        wrapped = "\\n".join(textwrap.wrap(fact, 30))
+
+        run([
+            "ffmpeg", "-y",
+            "-f", "lavfi",
+            "-i", "color=c=black:s=1280x720",
+            "-vf",
+            f"drawtext=text='{wrapped}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=(h-text_h)/2",
+            f"{IMAGES_DIR}/img{i}.png"
+        ])
+
+    print("✅ Images created")
+
+
+# 🎬 CREATE ANIMATED VIDEO (NO MOVIEPY)
 def create_video():
-    print("🎬 Creating 10-minute video")
+    print("🎬 Creating animated video")
 
-    img_pattern = f"{IMAGES_DIR}/%d.jpg"
+    images = sorted(os.listdir(IMAGES_DIR))
+    img_duration = DURATION / len(images)
 
-    subprocess.run([
+    with open("list.txt", "w") as f:
+        for img in images:
+            f.write(f"file '{IMAGES_DIR}/{img}'\n")
+            f.write(f"duration {img_duration}\n")
+
+    run([
         "ffmpeg", "-y",
-        "-framerate", f"{FPS}",
-        "-i", img_pattern,
+        "-f", "concat",
+        "-safe", "0",
+        "-i", "list.txt",
+        "-vf",
+        "zoompan=z='min(zoom+0.0005,1.15)':d=1:s=1280x720,format=yuv420p",
+        "-r", str(FPS),
+        "-t", str(DURATION),
         "-i", VOICE_M4A,
-        "-vf", "zoompan=z='min(zoom+0.0005,1.1)':d=125",
         "-c:v", "libx264",
-        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
         "-shortest",
         FINAL_VIDEO
-    ], check=True)
+    ])
+
+    print("✅ final.mp4 created")
+
 
 def main():
-    print("🚀 AI FACT VIDEO BOT (REAL VOICE)")
-    script = build_script()
-    download_images("science facts")
-    create_voice(script)
+    print("🚀 STARTING AI FACT VIDEO BOT")
+    create_voice()
+    create_images()
     create_video()
-    print("✅ DONE →", FINAL_VIDEO)
+    print("🎉 DONE — Video ready:", FINAL_VIDEO)
+
 
 if __name__ == "__main__":
     main()
