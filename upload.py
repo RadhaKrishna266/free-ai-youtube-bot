@@ -1,3 +1,9 @@
+from PIL import Image
+
+# ---- SAFETY PATCH FOR PILLOW 10+ ----
+if not hasattr(Image, "ANTIALIAS"):
+    Image.ANTIALIAS = Image.Resampling.LANCZOS
+
 import os
 import requests
 import subprocess
