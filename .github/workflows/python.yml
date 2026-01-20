@@ -11,13 +11,10 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      YOUTUBE_TOKEN_BASE64: ${{ secrets.YOUTUBE_TOKEN_BASE64 }}
-      YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
-      YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -25,31 +22,27 @@ jobs:
         with:
           python-version: "3.10"
 
-      - name: Install system dependencies
+      - name: Install system tools
         run: |
           sudo apt update
-          sudo apt install -y ffmpeg
+          sudo apt install -y ffmpeg imagemagick
 
-      - name: Install Python dependencies
+      - name: Install Python libs (FORCED)
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          python -m pip install --upgrade pip --no-cache-dir
+          pip install --no-cache-dir Pillow numpy requests
+          pip install --no-cache-dir moviepy==1.0.3 imageio imageio-ffmpeg
+          python - <<EOF
+          import moviepy.editor as mp
+          print("MoviePy OK:", mp.__version__)
+          EOF
 
-      # 🔐 Restore YouTube OAuth token
-      - name: Restore YouTube token.json
-        run: |
-          echo "$YOUTUBE_TOKEN_BASE64" | base64 --decode > token.json
-          ls -l token.json
+      - name: Run bot
+        run: python upload.py
 
-      # 🚀 Run video generation + upload logic
-      - name: Run auto video pipeline
-        run: |
-          python upload.py
-
-      # 📦 DOWNLOAD OPTION (VERY IMPORTANT)
-      - name: Upload generated video for download
-        if: always()
+      - name: Download result
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: generated-video
           path: |
