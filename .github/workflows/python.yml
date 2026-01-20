@@ -16,14 +16,14 @@ jobs:
           sudo apt update
           sudo apt install -y ffmpeg wget tar
 
-      - name: Download Piper (FIXED)
-  run: |
-    mkdir -p piper
-    cd piper
-    wget https://github.com/rhasspy/piper/releases/download/v1.2.0/piper_linux_x86_64_v1.2.0.tar.gz
-    tar -xzf piper_linux_x86_64_v1.2.0.tar.gz
-    chmod +x piper
-    wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx
+      - name: Download Piper (REAL VOICE)
+        run: |
+          mkdir -p piper
+          cd piper
+          wget https://github.com/rhasspy/piper/releases/download/v1.2.0/piper_linux_x86_64_v1.2.0.tar.gz
+          tar -xzf piper_linux_x86_64_v1.2.0.tar.gz
+          chmod +x piper
+          wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx
 
       - name: Run bot
         run: |
