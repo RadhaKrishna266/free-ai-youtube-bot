@@ -1,8 +1,6 @@
 google-api-python-client
 google-auth
 google-auth-oauthlib
-google-auth-httplib2
-moviepy
-imageio
-imageio-ffmpeg
-Pillow
+Pillow==10.2.0
+numpy
+requests
