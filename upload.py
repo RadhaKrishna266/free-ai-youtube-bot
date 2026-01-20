@@ -1,26 +1,17 @@
 import os
-import json
 import base64
+import json
 import subprocess
 import requests
-from gtts import gTTS
+from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
-from google.oauth2.credentials import Credentials
+
+DURATION_PER_IMAGE = 6
+IMAGE_COUNT = 10
+TOTAL_DURATION = DURATION_PER_IMAGE * IMAGE_COUNT
 
 PIXABAY_KEY = os.environ["PIXABAY_API_KEY"]
-
-TOPIC = "unknown science facts"
-FACTS = [
-    "Octopuses have three hearts",
-    "Honey never spoils",
-    "Sharks existed before trees",
-    "Bananas are berries",
-    "Wombat poop is cube shaped"
-]
-
-IMG_DIR = "images"
-os.makedirs(IMG_DIR, exist_ok=True)
 
 
 def run(cmd):
@@ -28,55 +19,63 @@ def run(cmd):
     subprocess.run(cmd, check=True)
 
 
-# 🖼️ DOWNLOAD REAL IMAGES
-def download_images():
-    print("🖼️ Downloading images from Pixabay")
-    for i, fact in enumerate(FACTS):
-        query = fact.split()[0]
-        url = (
-            f"https://pixabay.com/api/?key={PIXABAY_KEY}"
-            f"&q={query}&image_type=photo&per_page=3"
-        )
-        r = requests.get(url).json()
-        img_url = r["hits"][0]["largeImageURL"]
-        img_data = requests.get(img_url).content
+# 🔊 AUDIO
+def create_audio():
+    run([
+        "ffmpeg", "-y",
+        "-f", "lavfi",
+        "-i", "sine=frequency=440",
+        "-t", str(TOTAL_DURATION),
+        "-c:a", "aac",
+        "voice.m4a"
+    ])
+    print("✅ Audio created")
 
-        with open(f"{IMG_DIR}/{i}.jpg", "wb") as f:
+
+# 🖼️ DOWNLOAD FACE IMAGES
+def download_images():
+    os.makedirs("images", exist_ok=True)
+
+    query = "human face portrait"
+    url = (
+        f"https://pixabay.com/api/?key={PIXABAY_KEY}"
+        f"&q={query}&image_type=photo&per_page={IMAGE_COUNT}"
+    )
+
+    data = requests.get(url).json()
+    hits = data["hits"][:IMAGE_COUNT]
+
+    for i, img in enumerate(hits):
+        img_url = img["largeImageURL"]
+        img_data = requests.get(img_url).content
+        with open(f"images/{i}.jpg", "wb") as f:
             f.write(img_data)
 
-    print("✅ Images downloaded")
+    print("✅ Face images downloaded")
 
 
-# 🔊 VOICE (CLEAR)
-def create_voice():
-    text = "Unknown facts you never knew. " + ". ".join(FACTS)
-    gTTS(text=text, lang="en", slow=False).save("voice.mp3")
-    print("✅ voice.mp3 created")
-
-
-# 🎬 ANIMATED VIDEO
+# 🎬 VIDEO (REAL ANIMATION)
 def create_video():
     inputs = []
     filters = []
+    concat_inputs = ""
 
-    for i in range(len(FACTS)):
-        inputs.extend(["-loop", "1", "-t", "6", "-i", f"{IMG_DIR}/{i}.jpg"])
+    for i in range(IMAGE_COUNT):
+        inputs += ["-loop", "1", "-t", str(DURATION_PER_IMAGE), "-i", f"images/{i}.jpg"]
         filters.append(
-            f"[{i}:v]scale=1280:720,zoompan=z='min(zoom+0.0008,1.2)':d=180,fade=t=in:st=0:d=0.5,fade=t=out:st=5:d=0.5[v{i}]"
+            f"[{i}:v]scale=1280:720,zoompan=z='min(zoom+0.0008,1.2)':d=180[v{i}]"
         )
+        concat_inputs += f"[v{i}]"
 
-    concat = "".join([f"[v{i}]" for i in range(len(FACTS))])
-    filters.append(f"{concat}concat=n={len(FACTS)}:v=1:a=0[outv]")
-
-    filter_complex = ";".join(filters)
+    filter_complex = ";".join(filters) + f";{concat_inputs}concat=n={IMAGE_COUNT}:v=1:a=0[outv]"
 
     cmd = [
         "ffmpeg", "-y",
         *inputs,
-        "-i", "voice.mp3",
+        "-i", "voice.m4a",
         "-filter_complex", filter_complex,
         "-map", "[outv]",
-        "-map", "audio",
+        "-map", f"{IMAGE_COUNT}:a",
         "-c:v", "libx264",
         "-pix_fmt", "yuv420p",
         "-c:a", "aac",
@@ -85,48 +84,49 @@ def create_video():
     ]
 
     run(cmd)
-    print("✅ final.mp4 created (REAL IMAGES + ANIMATION + VOICE)")
+    print("✅ Animated video created")
 
 
 # 🔐 YOUTUBE AUTH
-def youtube_auth():
-    token = base64.b64decode(os.environ["YOUTUBE_TOKEN_BASE64"]).decode()
+def youtube_service():
+    token = json.loads(
+        base64.b64decode(os.environ["YOUTUBE_TOKEN_BASE64"]).decode()
+    )
+
     creds = Credentials.from_authorized_user_info(
-        json.loads(token),
+        token,
         ["https://www.googleapis.com/auth/youtube.upload"]
     )
+
     return build("youtube", "v3", credentials=creds)
 
 
-# 🚀 SINGLE UPLOAD (NO DUPLICATE)
+# 🚀 UPLOAD (ONCE)
 def upload():
-    yt = youtube_auth()
+    yt = youtube_service()
 
-    request = yt.videos().insert(
+    req = yt.videos().insert(
         part="snippet,status",
         body={
             "snippet": {
-                "title": "Unknown Facts You Never Knew",
-                "description": "AI animated video with real images and voice",
-                "tags": ["facts", "unknown facts", "science"],
+                "title": "Unknown Facts About Humans",
+                "description": "AI-generated animated facts video",
+                "tags": ["facts", "unknown facts", "human psychology"],
                 "categoryId": "27"
             },
             "status": {"privacyStatus": "public"}
         },
-        media_body=MediaFileUpload(
-            "final.mp4",
-            mimetype="video/mp4",
-            resumable=False
-        )
+        media_body=MediaFileUpload("final.mp4", resumable=False)
     )
 
-    response = request.execute()
-    print("✅ Uploaded video ID:", response["id"])
+    res = req.execute()
+    print("✅ Uploaded:", res["id"])
 
 
 def main():
+    print("🚀 Starting REAL animated face video pipeline")
+    create_audio()
     download_images()
-    create_voice()
     create_video()
     upload()
 
