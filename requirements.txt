@@ -1,5 +1,6 @@
-Pillow
 moviepy==1.0.3
 imageio
 imageio-ffmpeg
+Pillow==9.5.0
 numpy
+requests
