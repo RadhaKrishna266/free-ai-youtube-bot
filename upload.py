@@ -1,129 +1,119 @@
 import os
-import random
-import subprocess
 import textwrap
+import subprocess
 from PIL import Image, ImageDraw, ImageFont
-import moviepy.editor as mp
-import requests
+from moviepy.editor import (
+    ImageClip,
+    AudioFileClip,
+    CompositeVideoClip,
+    concatenate_videoclips
+)
 
-# ================= CONFIG =================
-WIDTH, HEIGHT = 1080, 1920   # Vertical Shorts
+# ---------------- CONFIG ----------------
+WIDTH, HEIGHT = 1024, 1024
 IMAGES_DIR = "images"
-FACE_IMAGE = f"{IMAGES_DIR}/face.png"
-VOICE_FILE = "voice.m4a"
+FACE_BG = f"{IMAGES_DIR}/face_bg.png"
+AUDIO_FILE = "voice.m4a"
 FINAL_VIDEO = "final.mp4"
-
-PIXABAY_KEY = os.environ.get("PIXABAY_API_KEY")
 
 os.makedirs(IMAGES_DIR, exist_ok=True)
 
-# ================= FACT ENGINE =================
+# ---------------- FACTS (FREE) ----------------
 FACTS = [
-    "Octopuses have three hearts.",
+    "Octopuses have three hearts and blue blood.",
     "Bananas are berries, but strawberries are not.",
-    "The human brain uses about 20 percent of the body's energy.",
-    "Honey never spoils, even after thousands of years.",
     "A day on Venus is longer than a year on Venus."
 ]
 
-def get_fact():
-    return random.choice(FACTS)
-
-# ================= FACE IMAGE =================
-def create_face(text):
+# ---------------- CREATE BASE FACE ----------------
+def create_face_bg():
     img = Image.new("RGB", (WIDTH, HEIGHT), (20, 20, 20))
+    img.save(FACE_BG)
+
+# ---------------- CREATE TALKING FRAME ----------------
+def create_frame(text, mouth_open):
+    img = Image.open(FACE_BG).copy()
     draw = ImageDraw.Draw(img)
 
     try:
-        font = ImageFont.truetype("DejaVuSans-Bold.ttf", 70)
+        font = ImageFont.truetype("DejaVuSans-Bold.ttf", 56)
     except:
         font = ImageFont.load_default()
 
-    wrapped = "\n".join(textwrap.wrap(text, 28))
-    w, h = draw.multiline_textsize(wrapped, font=font)
+    wrapped = textwrap.fill(text, 26)
+
+    bbox = draw.multiline_textbbox((0, 0), wrapped, font=font, spacing=8)
+    tw = bbox[2] - bbox[0]
+    th = bbox[3] - bbox[1]
 
     draw.multiline_text(
-        ((WIDTH - w) / 2, HEIGHT / 2 - h),
+        ((WIDTH - tw) // 2, 180),
         wrapped,
         fill="white",
         font=font,
-        align="center"
+        align="center",
+        spacing=8
     )
 
-    img.save(FACE_IMAGE)
+    # 👄 MOUTH (FAKE TALKING)
+    mouth_y = 620
+    if mouth_open:
+        draw.rectangle((450, mouth_y, 574, mouth_y + 40), fill="white")
+    else:
+        draw.rectangle((450, mouth_y + 20, 574, mouth_y + 26), fill="white")
 
-# ================= PIXABAY IMAGE =================
-def download_pixabay():
-    if not PIXABAY_KEY:
-        return None
+    return img
 
-    url = f"https://pixabay.com/api/?key={PIXABAY_KEY}&q=science&image_type=photo&per_page=3"
-    r = requests.get(url).json()
-
-    if "hits" not in r or not r["hits"]:
-        return None
-
-    img_url = random.choice(r["hits"])["largeImageURL"]
-    img_path = f"{IMAGES_DIR}/bg.jpg"
-
-    with open(img_path, "wb") as f:
-        f.write(requests.get(img_url).content)
-
-    return img_path
-
-# ================= AUDIO =================
+# ---------------- CREATE AUDIO ----------------
 def create_voice():
     subprocess.run([
         "ffmpeg", "-y",
         "-f", "lavfi",
-        "-i", "sine=frequency=440:duration=25",
-        VOICE_FILE
+        "-i", "sine=frequency=440:duration=18",
+        AUDIO_FILE
     ], check=True)
 
-# ================= VIDEO =================
-def create_video(bg_image):
-    audio = mp.AudioFileClip(VOICE_FILE)
-    duration = audio.duration
+# ---------------- BUILD VIDEO ----------------
+def create_video():
+    audio = AudioFileClip(AUDIO_FILE)
+    segments = []
 
-    face = (
-        mp.ImageClip(FACE_IMAGE)
-        .set_duration(duration)
-        .resize(1.05)
-        .set_position(("center", "center"))
-    )
+    total_segments = len(FACTS)
+    seg_duration = audio.duration / total_segments
 
-    # Fake talking motion
-    face = face.fx(mp.vfx.resize, lambda t: 1 + 0.02 * (t % 0.5))
+    for fact in FACTS:
+        frames = []
+        for i in range(8):
+            img = create_frame(fact, mouth_open=(i % 2 == 0))
+            path = f"{IMAGES_DIR}/f_{len(frames)}.png"
+            img.save(path)
 
-    if bg_image:
-        bg = (
-            mp.ImageClip(bg_image)
-            .set_duration(duration)
-            .resize(height=HEIGHT)
-        )
-    else:
-        bg = mp.ColorClip((WIDTH, HEIGHT), color=(0, 0, 0), duration=duration)
+            frames.append(
+                ImageClip(path)
+                .set_duration(seg_duration / 8)
+                .resize(1 + i * 0.015)
+            )
 
-    video = mp.CompositeVideoClip([bg, face]).set_audio(audio)
+        segments.append(concatenate_videoclips(frames))
+
+    video = concatenate_videoclips(segments)
+    video = video.set_audio(audio)
 
     video.write_videofile(
         FINAL_VIDEO,
         fps=24,
         codec="libx264",
-        audio_codec="aac"
+        audio_codec="aac",
+        threads=2
     )
 
-# ================= MAIN =================
+# ---------------- MAIN ----------------
 def main():
     print("🚀 AI Fact Face Bot Started")
-
-    fact = get_fact()
-    create_face(fact)
-    bg = download_pixabay()
+    create_face_bg()
     create_voice()
-    create_video(bg)
-
-    print("✅ DONE → final.mp4")
+    create_video()
+    print("✅ FINAL VIDEO READY:", FINAL_VIDEO)
 
 if __name__ == "__main__":
     main()
