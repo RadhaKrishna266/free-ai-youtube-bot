@@ -27,14 +27,17 @@ jobs:
           sudo apt update
           sudo apt install -y ffmpeg imagemagick
 
-      - name: Install Python libs (FORCED)
+      - name: Install Python libs (FORCED & SAFE)
         run: |
-          python -m pip install --upgrade pip --no-cache-dir
-          pip install --no-cache-dir Pillow numpy requests
-          pip install --no-cache-dir moviepy==1.0.3 imageio imageio-ffmpeg
+          python -m pip install --upgrade pip
+          pip uninstall -y Pillow || true
+          pip install Pillow==9.5.0
+          pip install numpy requests
+          pip install moviepy==1.0.3 imageio==2.31.1 imageio-ffmpeg
           python - <<EOF
-          from moviepy.editor import ImageClip, AudioFileClip
-          print("MoviePy import OK")
+          from moviepy.editor import ImageClip
+          from PIL import Image
+          print("MoviePy OK, Pillow:", Image.__version__)
           EOF
 
       - name: Run bot
