@@ -33,12 +33,13 @@ jobs:
           pip install --no-cache-dir Pillow numpy requests
           pip install --no-cache-dir moviepy==1.0.3 imageio imageio-ffmpeg
           python - <<EOF
-          import moviepy.editor as mp
-          print("MoviePy OK:", mp.__version__)
+          from moviepy.editor import ImageClip, AudioFileClip
+          print("MoviePy import OK")
           EOF
 
       - name: Run bot
-        run: python upload.py
+        run: |
+          python upload.py
 
       - name: Download result
         uses: actions/upload-artifact@v4
