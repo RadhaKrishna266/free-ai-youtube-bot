@@ -14,7 +14,7 @@ def run(cmd):
     subprocess.run(cmd, check=True)
 
 
-# 🔊 CREATE AUDIBLE AUDIO (LOW VOLUME TONE)
+# 🔊 CREATE CLEAR AUDIBLE AUDIO
 def create_audio():
     print("🔊 Creating audible audio (10 min)")
     run([
@@ -22,49 +22,50 @@ def create_audio():
         "-f", "lavfi",
         "-i", "sine=frequency=440:sample_rate=44100",
         "-t", str(DURATION),
-        "-filter:a", "volume=0.05",
+        "-filter:a", "volume=0.4",
+        "-c:a", "mp3",
         "voice.mp3"
     ])
     print("✅ voice.mp3 created")
 
 
-# 🎬 CREATE REAL ANIMATED VIDEO (VISIBLE)
+# 🎬 CREATE REAL ANIMATED VIDEO (NOT TEST BARS)
 def create_animated_video():
-    print("🎬 Creating visible animated video")
+    print("🎬 Creating REAL animated video")
 
     run([
         "ffmpeg", "-y",
 
-        # 🎥 colorful moving test pattern (VISIBLE)
+        # 🌈 animated gradient background (REAL animation)
         "-f", "lavfi",
-        "-i", f"testsrc2=size=1280x720:rate=30:duration={DURATION}",
+        "-i", f"gradients=size=1280x720:duration={DURATION}:speed=0.03",
 
         # 🔊 audio
         "-i", "voice.mp3",
 
-        # 🎞️ smooth motion blur
-        "-vf", "format=yuv420p",
-
+        # 🎥 encoding
+        "-map", "0:v",
+        "-map", "1:a",
         "-c:v", "libx264",
         "-preset", "veryfast",
         "-pix_fmt", "yuv420p",
-        "-t", str(DURATION),
+        "-r", "30",
         "-c:a", "aac",
         "-b:a", "192k",
         "-shortest",
         "final.mp4"
     ])
 
-    print("✅ final.mp4 created (VISIBLE + AUDIO)")
+    print("✅ final.mp4 created (ANIMATED + AUDIO)")
 
 
-# 🔐 AUTH (BASE64 TOKEN)
+# 🔐 AUTHENTICATION
 def get_authenticated_service():
     print("🔐 Authenticating YouTube")
 
     token = base64.b64decode(
         os.environ["YOUTUBE_TOKEN_BASE64"]
-    ).decode()
+    ).decode("utf-8")
 
     creds = Credentials.from_authorized_user_info(
         json.loads(token),
@@ -74,7 +75,7 @@ def get_authenticated_service():
     return build("youtube", "v3", credentials=creds)
 
 
-# 🚀 UPLOAD
+# 🚀 UPLOAD VIDEO
 def upload_video():
     youtube = get_authenticated_service()
 
@@ -83,24 +84,33 @@ def upload_video():
         body={
             "snippet": {
                 "title": "The Mystery of Stonehenge",
-                "description": "Fully animated AI-generated video",
-                "tags": ["Stonehenge", "History", "Mystery"],
+                "description": "Fully animated AI-generated video with audio",
+                "tags": ["Stonehenge", "History", "Mystery", "AI Video"],
                 "categoryId": "27"
             },
-            "status": {"privacyStatus": "public"}
+            "status": {
+                "privacyStatus": "public",
+                "selfDeclaredMadeForKids": False
+            }
         },
-        media_body=MediaFileUpload("final.mp4", resumable=True)
+        media_body=MediaFileUpload(
+            "final.mp4",
+            chunksize=-1,
+            resumable=True
+        )
     )
 
     response = request.execute()
-    print("✅ Uploaded:", response["id"])
+    print("✅ Uploaded video ID:", response["id"])
 
 
 def main():
-    print("🚀 Starting REAL animated pipeline")
+    print("🚀 Starting FULL animated pipeline")
 
     create_audio()
     create_animated_video()
+
+    # ⚠️ Upload may fail if daily limit exceeded
     upload_video()
 
 
