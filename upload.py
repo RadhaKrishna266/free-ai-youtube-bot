@@ -1,17 +1,16 @@
 import os
-import base64
 import json
+import base64
 import subprocess
 import requests
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-DURATION_PER_IMAGE = 6
-IMAGE_COUNT = 10
-TOTAL_DURATION = DURATION_PER_IMAGE * IMAGE_COUNT
-
 PIXABAY_KEY = os.environ["PIXABAY_API_KEY"]
+IMAGE_COUNT = 10
+IMAGE_DURATION = 6
+TOTAL_DURATION = IMAGE_COUNT * IMAGE_DURATION
 
 
 def run(cmd):
@@ -27,63 +26,53 @@ def create_audio():
         "-i", "sine=frequency=440",
         "-t", str(TOTAL_DURATION),
         "-c:a", "aac",
+        "-b:a", "128k",
         "voice.m4a"
     ])
     print("✅ Audio created")
 
 
-# 🖼️ DOWNLOAD FACE IMAGES
+# 🖼️ IMAGES
 def download_images():
     os.makedirs("images", exist_ok=True)
 
-    query = "human face portrait"
     url = (
         f"https://pixabay.com/api/?key={PIXABAY_KEY}"
-        f"&q={query}&image_type=photo&per_page={IMAGE_COUNT}"
+        "&q=human+face+portrait"
+        "&image_type=photo&per_page=20"
     )
 
     data = requests.get(url).json()
     hits = data["hits"][:IMAGE_COUNT]
 
     for i, img in enumerate(hits):
-        img_url = img["largeImageURL"]
-        img_data = requests.get(img_url).content
-        with open(f"images/{i}.jpg", "wb") as f:
+        img_data = requests.get(img["largeImageURL"]).content
+        with open(f"images/{i:03d}.jpg", "wb") as f:
             f.write(img_data)
 
-    print("✅ Face images downloaded")
+    print("✅ Images downloaded")
 
 
-# 🎬 VIDEO (REAL ANIMATION)
+# 🎬 VIDEO (SAFE ANIMATION)
 def create_video():
-    inputs = []
-    filters = []
-    concat_inputs = ""
-
-    for i in range(IMAGE_COUNT):
-        inputs += ["-loop", "1", "-t", str(DURATION_PER_IMAGE), "-i", f"images/{i}.jpg"]
-        filters.append(
-            f"[{i}:v]scale=1280:720,zoompan=z='min(zoom+0.0008,1.2)':d=180[v{i}]"
-        )
-        concat_inputs += f"[v{i}]"
-
-    filter_complex = ";".join(filters) + f";{concat_inputs}concat=n={IMAGE_COUNT}:v=1:a=0[outv]"
-
-    cmd = [
+    run([
         "ffmpeg", "-y",
-        *inputs,
+        "-framerate", f"1/{IMAGE_DURATION}",
+        "-i", "images/%03d.jpg",
         "-i", "voice.m4a",
-        "-filter_complex", filter_complex,
-        "-map", "[outv]",
-        "-map", f"{IMAGE_COUNT}:a",
+        "-vf",
+        (
+            "scale=1280:720:force_original_aspect_ratio=decrease,"
+            "pad=1280:720:(ow-iw)/2:(oh-ih)/2,"
+            "zoompan=z='if(lte(zoom,1.0),1.0,zoom-0.0005)':d=150"
+        ),
         "-c:v", "libx264",
         "-pix_fmt", "yuv420p",
         "-c:a", "aac",
         "-shortest",
         "final.mp4"
-    ]
+    ])
 
-    run(cmd)
     print("✅ Animated video created")
 
 
@@ -105,13 +94,13 @@ def youtube_service():
 def upload():
     yt = youtube_service()
 
-    req = yt.videos().insert(
+    request = yt.videos().insert(
         part="snippet,status",
         body={
             "snippet": {
-                "title": "Unknown Facts About Humans",
-                "description": "AI-generated animated facts video",
-                "tags": ["facts", "unknown facts", "human psychology"],
+                "title": "Unknown Human Facts You Never Knew",
+                "description": "Animated AI facts video with real images",
+                "tags": ["facts", "human psychology", "unknown facts"],
                 "categoryId": "27"
             },
             "status": {"privacyStatus": "public"}
@@ -119,12 +108,12 @@ def upload():
         media_body=MediaFileUpload("final.mp4", resumable=False)
     )
 
-    res = req.execute()
+    res = request.execute()
     print("✅ Uploaded:", res["id"])
 
 
 def main():
-    print("🚀 Starting REAL animated face video pipeline")
+    print("🚀 Starting stable animated video pipeline")
     create_audio()
     download_images()
     create_video()
