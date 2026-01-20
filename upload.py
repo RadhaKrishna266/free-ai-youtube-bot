@@ -2,12 +2,7 @@ import os
 import textwrap
 import subprocess
 from PIL import Image, ImageDraw, ImageFont
-from moviepy.editor import (
-    ImageClip,
-    AudioFileClip,
-    CompositeVideoClip,
-    concatenate_videoclips
-)
+from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips
 
 # ---------------- CONFIG ----------------
 WIDTH, HEIGHT = 1024, 1024
@@ -18,7 +13,7 @@ FINAL_VIDEO = "final.mp4"
 
 os.makedirs(IMAGES_DIR, exist_ok=True)
 
-# ---------------- FACTS (FREE) ----------------
+# ---------------- FACTS ----------------
 FACTS = [
     "Octopuses have three hearts and blue blood.",
     "Bananas are berries, but strawberries are not.",
@@ -31,7 +26,7 @@ def create_face_bg():
     img.save(FACE_BG)
 
 # ---------------- CREATE TALKING FRAME ----------------
-def create_frame(text, mouth_open):
+def create_frame(text, mouth_open, index):
     img = Image.open(FACE_BG).copy()
     draw = ImageDraw.Draw(img)
 
@@ -44,7 +39,6 @@ def create_frame(text, mouth_open):
 
     bbox = draw.multiline_textbbox((0, 0), wrapped, font=font, spacing=8)
     tw = bbox[2] - bbox[0]
-    th = bbox[3] - bbox[1]
 
     draw.multiline_text(
         ((WIDTH - tw) // 2, 180),
@@ -55,14 +49,16 @@ def create_frame(text, mouth_open):
         spacing=8
     )
 
-    # 👄 MOUTH (FAKE TALKING)
+    # 👄 FAKE TALKING MOUTH
     mouth_y = 620
     if mouth_open:
         draw.rectangle((450, mouth_y, 574, mouth_y + 40), fill="white")
     else:
         draw.rectangle((450, mouth_y + 20, 574, mouth_y + 26), fill="white")
 
-    return img
+    path = f"{IMAGES_DIR}/frame_{index}.png"
+    img.save(path)
+    return path
 
 # ---------------- CREATE AUDIO ----------------
 def create_voice():
@@ -78,25 +74,27 @@ def create_video():
     audio = AudioFileClip(AUDIO_FILE)
     segments = []
 
-    total_segments = len(FACTS)
-    seg_duration = audio.duration / total_segments
+    seg_duration = audio.duration / len(FACTS)
+    frame_index = 0
 
     for fact in FACTS:
-        frames = []
+        clips = []
         for i in range(8):
-            img = create_frame(fact, mouth_open=(i % 2 == 0))
-            path = f"{IMAGES_DIR}/f_{len(frames)}.png"
-            img.save(path)
+            img_path = create_frame(
+                fact,
+                mouth_open=(i % 2 == 0),
+                index=frame_index
+            )
+            frame_index += 1
 
-            frames.append(
-                ImageClip(path)
+            clips.append(
+                ImageClip(img_path)
                 .set_duration(seg_duration / 8)
-                .resize(1 + i * 0.015)
             )
 
-        segments.append(concatenate_videoclips(frames))
+        segments.append(concatenate_videoclips(clips, method="compose"))
 
-    video = concatenate_videoclips(segments)
+    video = concatenate_videoclips(segments, method="compose")
     video = video.set_audio(audio)
 
     video.write_videofile(
