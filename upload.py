@@ -1,89 +1,68 @@
 import os
 import subprocess
-import random
-
-DURATION = 600  # 10 minutes
-FPS = 30
-
-IMAGES_DIR = "images"
-VOICE_WAV = "voice.wav"
-FINAL_VIDEO = "final.mp4"
-
-PIPER_BIN = "./piper/piper"
-PIPER_MODEL = "./piper/en_US-lessac-medium.onnx"
+import textwrap
 
 FACTS = [
-    "A day on Venus is longer than a year on Venus.",
-    "Octopuses have three hearts.",
+    "Octopuses have three hearts and blue blood.",
+    "The human brain uses about twenty percent of the body's energy.",
     "Bananas are berries but strawberries are not.",
-    "Honey never spoils.",
-    "Sharks existed before trees.",
-    "The Eiffel Tower grows in summer.",
-    "Wombats have cube shaped poop.",
+    "A day on Venus is longer than a year on Venus.",
+    "Honey never spoils and can last thousands of years."
 ]
 
-os.makedirs(IMAGES_DIR, exist_ok=True)
+VIDEO_DURATION_MINUTES = 10
+IMAGE_DIR = "images"
+AUDIO_FILE = "voice.wav"
+VIDEO_FILE = "final.mp4"
+PIPER_BIN = "./piper/piper"
+VOICE_MODEL = "./piper/en_US-lessac-medium.onnx"
 
-def run(cmd, input_data=None):
-    subprocess.run(cmd, input=input_data, check=True)
+os.makedirs(IMAGE_DIR, exist_ok=True)
 
-def create_voice():
-    print("🎙️ Creating REAL voice using Piper")
-
-    text = ""
-    while len(text.split()) < 1300:
-        text += random.choice(FACTS) + " "
-
-    run(
-        [PIPER_BIN, "--model", PIPER_MODEL, "--output_file", VOICE_WAV],
-        input_data=text.encode("utf-8")
-    )
-
-def create_images():
-    print("🖼️ Creating images")
-
+def generate_images():
+    print("🖼 Generating fact images")
     for i, fact in enumerate(FACTS):
-        run([
-            "ffmpeg", "-y",
-            "-f", "lavfi",
-            "-i", "color=c=black:s=1280x720",
-            "-vf",
-            f"drawtext=text='{fact}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=(h-text_h)/2",
-            f"{IMAGES_DIR}/img{i}.png"
-        ])
+        img = f"{IMAGE_DIR}/img_{i}.png"
+        subprocess.run([
+            "convert",
+            "-size", "1280x720",
+            "gradient:#0f2027-#203a43",
+            "-gravity", "center",
+            "-fill", "white",
+            "-pointsize", "48",
+            "-annotate", "+0+0", textwrap.fill(fact, 40),
+            img
+        ], check=True)
 
-def create_video():
-    print("🎬 Creating video")
+def generate_voice():
+    print("🎙 Generating REAL voice using Piper")
+    text = ". ".join(FACTS * 20)  # enough for ~10 minutes
+    subprocess.run([
+        PIPER_BIN,
+        "--model", VOICE_MODEL,
+        "--output_file", AUDIO_FILE
+    ], input=text.encode(), check=True)
 
-    images = sorted(os.listdir(IMAGES_DIR))
-    duration_per_image = DURATION / len(images)
-
-    with open("list.txt", "w") as f:
-        for img in images:
-            f.write(f"file '{IMAGES_DIR}/{img}'\n")
-            f.write(f"duration {duration_per_image}\n")
-
-    run([
+def generate_video():
+    print("🎬 Creating 10-minute video")
+    subprocess.run([
         "ffmpeg", "-y",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", "list.txt",
-        "-i", VOICE_WAV,
-        "-vf", "zoompan=z='min(zoom+0.0005,1.15)':d=1:s=1280x720",
-        "-t", str(DURATION),
-        "-r", str(FPS),
+        "-framerate", "1/5",
+        "-i", f"{IMAGE_DIR}/img_%d.png",
+        "-i", AUDIO_FILE,
         "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
         "-c:a", "aac",
         "-shortest",
-        FINAL_VIDEO
-    ])
+        VIDEO_FILE
+    ], check=True)
 
 def main():
     print("🚀 AI FACT VIDEO BOT STARTED")
-    create_voice()
-    create_images()
-    create_video()
-    print("✅ DONE:", FINAL_VIDEO)
+    generate_images()
+    generate_voice()
+    generate_video()
+    print("✅ DONE:", VIDEO_FILE)
 
 if __name__ == "__main__":
     main()
