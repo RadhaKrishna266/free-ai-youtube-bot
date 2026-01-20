@@ -29,13 +29,19 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      - name: Install Piper
-        run: |
-          mkdir piper
-          cd piper
-          wget https://github.com/rhasspy/piper/releases/download/v1.2.0/piper_linux_x86_64.tar.gz
-          tar -xzf piper_linux_x86_64.tar.gz
-          wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx
+      - name: Install Piper (FIXED)
+  run: |
+    mkdir -p piper
+    cd piper
+
+    # Download Piper binary (correct URL)
+    wget https://github.com/rhasspy/piper/releases/latest/download/piper_linux_x86_64.tar.gz
+
+    tar -xzf piper_linux_x86_64.tar.gz
+    chmod +x piper
+
+    # Download voice model
+    wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx
 
       - name: Run bot
         run: |
