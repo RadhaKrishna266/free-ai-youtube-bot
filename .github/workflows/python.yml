@@ -14,6 +14,7 @@ jobs:
       YOUTUBE_TOKEN_BASE64: ${{ secrets.YOUTUBE_TOKEN_BASE64 }}
       YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
       YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+      PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
 
     steps:
       - name: Checkout repository
@@ -34,19 +35,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 🔐 RESTORE token.json FROM BASE64
       - name: Restore YouTube token.json
         run: |
           echo "$YOUTUBE_TOKEN_BASE64" | base64 --decode > token.json
           ls -l token.json
 
-      # 🚀 RUN FULL PIPELINE
-      
-- name: Run auto video pipeline
-  env:
-    YOUTUBE_TOKEN_BASE64: ${{ secrets.YOUTUBE_TOKEN_BASE64 }}
-    YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
-    YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-    PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
-  run: |
-    python upload.py
+      - name: Run auto video pipeline
+        run: |
+          python upload.py
