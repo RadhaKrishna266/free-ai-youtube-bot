@@ -2,12 +2,25 @@ import os
 import json
 import base64
 import subprocess
+from gtts import gTTS
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
 
-DURATION = 600  # 10 minutes
+DURATION = 600
 FPS = 30
+
+
+FACTS = [
+    "Octopuses have three hearts.",
+    "Bananas are berries, strawberries are not.",
+    "Honey never spoils.",
+    "There are more trees on Earth than stars in the Milky Way.",
+    "Sharks existed before trees.",
+    "Your brain uses more energy than your muscles.",
+    "Wombat poop is cube-shaped.",
+    "A day on Venus is longer than a year on Venus."
+]
 
 
 def run(cmd):
@@ -15,72 +28,62 @@ def run(cmd):
     subprocess.run(cmd, check=True)
 
 
-# 🔊 CREATE REAL AUDIBLE AUDIO (YOUTUBE SAFE)
-def create_audio():
-    print("🔊 Creating audio")
-    run([
-        "ffmpeg", "-y",
-        "-f", "lavfi",
-        "-i", "anoisesrc=color=brown:sample_rate=44100",
-        "-t", str(DURATION),
-        "-c:a", "aac",
-        "-b:a", "192k",
-        "-ar", "44100",
-        "audio.aac"
-    ])
-    print("✅ audio.aac created")
+# 🔊 REAL HUMAN VOICE (FREE)
+def create_voice():
+    print("🔊 Creating narration voice")
+    text = "Unknown facts you probably did not know. " + ". ".join(FACTS)
+    tts = gTTS(text=text, lang="en")
+    tts.save("voice.mp3")
+    print("✅ voice.mp3 created")
 
 
-# 🎬 CREATE GUARANTEED-PROCESSABLE VIDEO
+# 🎬 CARTOON-STYLE ANIMATED VIDEO
 def create_video():
-    print("🎬 Creating YouTube-safe animated video")
+    print("🎬 Creating animated cartoon-style video")
+
+    drawtext_filters = []
+    start = 0
+    duration_per_fact = DURATION // len(FACTS)
+
+    for fact in FACTS:
+        drawtext_filters.append(
+            f"drawtext=text='{fact}':"
+            f"fontcolor=white:fontsize=48:"
+            f"x=(w-text_w)/2:y=(h-text_h)/2:"
+            f"enable='between(t,{start},{start+duration_per_fact})'"
+        )
+        start += duration_per_fact
+
+    vf = ",".join(drawtext_filters)
 
     run([
         "ffmpeg", "-y",
-
-        # ✅ guaranteed visible animation
         "-f", "lavfi",
-        "-i", f"testsrc2=size=1280x720:rate={FPS}:duration={DURATION}",
-
-        "-i", "audio.aac",
-
-        "-map", "0:v:0",
-        "-map", "1:a:0",
-
+        "-i", f"color=c=blue:s=1280x720:r={FPS}:d={DURATION}",
+        "-i", "voice.mp3",
+        "-vf", vf,
         "-c:v", "libx264",
-        "-profile:v", "high",
-        "-level", "4.2",
         "-pix_fmt", "yuv420p",
-        "-r", str(FPS),
-        "-g", str(FPS * 2),
-        "-preset", "slow",
         "-movflags", "+faststart",
-
         "-c:a", "aac",
-        "-b:a", "192k",
-
         "-shortest",
         "final.mp4"
     ])
 
-    print("✅ final.mp4 created (YouTube SAFE)")
+    print("✅ final.mp4 created")
 
 
-# 🔐 AUTH USING BASE64 TOKEN
+# 🔐 AUTH
 def get_authenticated_service():
-    token = base64.b64decode(
-        os.environ["YOUTUBE_TOKEN_BASE64"]
-    ).decode("utf-8")
-
+    token = base64.b64decode(os.environ["YOUTUBE_TOKEN_BASE64"]).decode()
     creds = Credentials.from_authorized_user_info(
         json.loads(token),
         ["https://www.googleapis.com/auth/youtube.upload"]
     )
-
     return build("youtube", "v3", credentials=creds)
 
 
-# 🚀 UPLOAD
+# 🚀 UPLOAD (NO DUPLICATES)
 def upload_video():
     youtube = get_authenticated_service()
 
@@ -88,20 +91,19 @@ def upload_video():
         part="snippet,status",
         body={
             "snippet": {
-                "title": "The Mystery of Stonehenge",
-                "description": "Animated educational video",
-                "tags": ["Stonehenge", "History", "Mystery"],
+                "title": "Unknown Facts You Never Knew",
+                "description": "Animated educational video with narration",
+                "tags": ["unknown facts", "education", "animation"],
                 "categoryId": "27"
             },
             "status": {
-                "privacyStatus": "public",
-                "selfDeclaredMadeForKids": False
+                "privacyStatus": "public"
             }
         },
         media_body=MediaFileUpload(
             "final.mp4",
             mimetype="video/mp4",
-            resumable=True
+            resumable=False   # 🚫 NO DUPLICATES
         )
     )
 
@@ -110,8 +112,7 @@ def upload_video():
 
 
 def main():
-    print("🚀 Starting FINAL stable pipeline")
-    create_audio()
+    create_voice()
     create_video()
     upload_video()
 
