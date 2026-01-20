@@ -1,55 +1,36 @@
-name: Auto YouTube Video Bot
+name: AI Fact Video Bot
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
 
 jobs:
-  build:
+  run:
     runs-on: ubuntu-latest
 
-    env:
-      PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
-
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Install system tools
         run: |
           sudo apt update
-          sudo apt install -y ffmpeg wget
+          sudo apt install -y ffmpeg wget tar
 
-      - name: Install Python deps
+      - name: Download Piper (CORRECT)
         run: |
-          pip install -r requirements.txt
-
-      - name: Install Piper (FIXED)
-  run: |
-    mkdir -p piper
-    cd piper
-
-    # Download Piper binary (correct URL)
-    wget https://github.com/rhasspy/piper/releases/latest/download/piper_linux_x86_64.tar.gz
-
-    tar -xzf piper_linux_x86_64.tar.gz
-    chmod +x piper
-
-    # Download voice model
-    wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx
+          mkdir piper
+          cd piper
+          wget https://github.com/rhasspy/piper/releases/download/v1.2.0/piper_linux_x86_64.tar.gz
+          tar -xzf piper_linux_x86_64.tar.gz
+          chmod +x piper
+          wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx
 
       - name: Run bot
         run: |
-          chmod +x piper/piper
           python upload.py
 
       - name: Download video
         uses: actions/upload-artifact@v4
         with:
-          name: generated-video
+          name: final-video
           path: final.mp4
