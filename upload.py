@@ -7,6 +7,7 @@ from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
 
 DURATION = 600  # 10 minutes
+IMAGE_TIME = 6  # seconds per image
 
 
 def run(cmd):
@@ -14,55 +15,49 @@ def run(cmd):
     subprocess.run(cmd, check=True)
 
 
-# 🔊 CREATE CLEAR AUDIBLE AUDIO
+# 🔊 CREATE AUDIBLE BACKGROUND SOUND
 def create_audio():
-    print("🔊 Creating audible audio (10 min)")
+    print("🔊 Creating audible background audio")
     run([
         "ffmpeg", "-y",
         "-f", "lavfi",
-        "-i", "sine=frequency=440:sample_rate=44100",
+        "-i", "anoisesrc=color=pink:sample_rate=44100",
         "-t", str(DURATION),
-        "-filter:a", "volume=0.4",
-        "-c:a", "mp3",
-        "voice.mp3"
-    ])
-    print("✅ voice.mp3 created")
-
-
-# 🎬 CREATE REAL ANIMATED VIDEO (NOT TEST BARS)
-def create_animated_video():
-    print("🎬 Creating REAL animated video")
-
-    run([
-        "ffmpeg", "-y",
-
-        # 🌈 animated gradient background (REAL animation)
-        "-f", "lavfi",
-        "-i", f"gradients=size=1280x720:duration={DURATION}:speed=0.03",
-
-        # 🔊 audio
-        "-i", "voice.mp3",
-
-        # 🎥 encoding
-        "-map", "0:v",
-        "-map", "1:a",
-        "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-pix_fmt", "yuv420p",
-        "-r", "30",
         "-c:a", "aac",
         "-b:a", "192k",
+        "audio.m4a"
+    ])
+    print("✅ audio created")
+
+
+# 🎬 CREATE PHOTO SLIDESHOW WITH ZOOM ANIMATION
+def create_video():
+    print("🎬 Creating animated photo video")
+
+    run([
+        "ffmpeg", "-y",
+        "-stream_loop", "-1",
+        "-framerate", f"1/{IMAGE_TIME}",
+        "-i", "images/%*.jpg",
+        "-i", "audio.m4a",
+
+        "-vf",
+        f"zoompan=z='min(zoom+0.0008,1.08)':d={IMAGE_TIME*30}:s=1280x720,format=yuv420p",
+
+        "-t", str(DURATION),
+        "-r", "30",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-c:a", "aac",
         "-shortest",
         "final.mp4"
     ])
 
-    print("✅ final.mp4 created (ANIMATED + AUDIO)")
+    print("✅ final.mp4 created (PHOTOS + MOTION + AUDIO)")
 
 
-# 🔐 AUTHENTICATION
+# 🔐 AUTH
 def get_authenticated_service():
-    print("🔐 Authenticating YouTube")
-
     token = base64.b64decode(
         os.environ["YOUTUBE_TOKEN_BASE64"]
     ).decode("utf-8")
@@ -75,7 +70,7 @@ def get_authenticated_service():
     return build("youtube", "v3", credentials=creds)
 
 
-# 🚀 UPLOAD VIDEO
+# 🚀 UPLOAD
 def upload_video():
     youtube = get_authenticated_service()
 
@@ -84,8 +79,8 @@ def upload_video():
         body={
             "snippet": {
                 "title": "The Mystery of Stonehenge",
-                "description": "Fully animated AI-generated video with audio",
-                "tags": ["Stonehenge", "History", "Mystery", "AI Video"],
+                "description": "Animated history video with visuals and sound",
+                "tags": ["Stonehenge", "History", "Mystery"],
                 "categoryId": "27"
             },
             "status": {
@@ -93,24 +88,18 @@ def upload_video():
                 "selfDeclaredMadeForKids": False
             }
         },
-        media_body=MediaFileUpload(
-            "final.mp4",
-            chunksize=-1,
-            resumable=True
-        )
+        media_body=MediaFileUpload("final.mp4", resumable=True)
     )
 
     response = request.execute()
-    print("✅ Uploaded video ID:", response["id"])
+    print("✅ Uploaded:", response["id"])
 
 
 def main():
-    print("🚀 Starting FULL animated pipeline")
+    print("🚀 Starting REAL photo animation pipeline")
 
     create_audio()
-    create_animated_video()
-
-    # ⚠️ Upload may fail if daily limit exceeded
+    create_video()
     upload_video()
 
 
