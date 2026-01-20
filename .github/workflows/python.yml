@@ -14,15 +14,19 @@ jobs:
       - name: Install system tools
         run: |
           sudo apt update
-          sudo apt install -y ffmpeg imagemagick nodejs npm
+          sudo apt install -y \
+            ffmpeg \
+            imagemagick \
+            piper-tts \
+            wget
 
-      - name: Install Piper (REAL VOICE)
+      - name: Prepare Piper Voice
         run: |
-          npm install -g @piper/cli
           mkdir -p piper
-          cp $(npm root -g)/@piper/cli/bin/piper piper/piper
+          cp /usr/bin/piper piper/piper
           chmod +x piper/piper
-          wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx -O piper/en_US-lessac-medium.onnx
+          wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx \
+            -O piper/en_US-lessac-medium.onnx
 
       - name: Run bot
         run: python upload.py
