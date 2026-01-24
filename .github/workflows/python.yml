@@ -19,7 +19,9 @@ jobs:
           sudo apt install -y \
             ffmpeg \
             imagemagick \
-            wget
+            wget \
+            sox \
+            libsox-fmt-all  # required for merging audio chunks
 
       # ================= SETUP PYTHON 3.11 =================
       - name: Set up Python 3.11
