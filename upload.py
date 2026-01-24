@@ -3,6 +3,7 @@ import json
 import base64
 import subprocess
 import requests
+from TTS.api import TTS
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -20,15 +21,18 @@ TANPURA_FILE = "audio/tanpura.mp3"
 BELL_FILE = "audio/temple_bell.mp3"
 
 FINAL_VIDEO = "final.mp4"
+
+# Coqui TTS model (Hindi, natural voice)
+TTS_MODEL_NAME = "tts_models/hi/in/vits"  # Automatically downloads from HuggingFace
 # ==========================================
 
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-# ================= AUDIO (FREE, STABLE) =================
+# ================= AUDIO (Coqui TTS) =================
 def create_audio():
-    print("🎤 Creating Hindi narration using eSpeak-NG (FREE)")
+    print("🎤 Creating Hindi devotional narration using Coqui TTS")
 
     if not os.path.exists(SCRIPT_FILE):
         raise RuntimeError("❌ script.txt missing")
@@ -36,20 +40,10 @@ def create_audio():
     with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
         text = f.read()
 
-    subprocess.run(
-        [
-            "espeak-ng",
-            "-v", "hi",
-            "-s", "140",   # slow, calm
-            "-p", "48",    # deep tone
-            "-a", "180",   # volume
-            "-w", VOICE_FILE
-        ],
-        input=text.encode("utf-8"),
-        check=True
-    )
+    tts = TTS(TTS_MODEL_NAME, progress_bar=False, gpu=False)
+    tts.tts_to_file(text=text, file_path=VOICE_FILE)
 
-    print("✅ Hindi narration created (eSpeak-NG)")
+    print("✅ Hindi narration created (Coqui TTS)")
 
 # ================= IMAGES =================
 def download_images():
