@@ -29,11 +29,15 @@ jobs:
         with:
           python-version: "3.11"
 
-      # ================= PYTHON DEPENDENCIES =================
+      # ================= PYTHON DEPENDENCIES (PINNED) =================
       - name: Install Python dependencies
+        env:
+          COQUI_TOS_AGREED: "1"
         run: |
           python -m pip install --upgrade pip
           pip install \
+            torch==2.1.0 \
+            transformers==4.36.2 \
             google-auth \
             google-auth-oauthlib \
             google-api-python-client \
@@ -42,7 +46,7 @@ jobs:
             TTS \
             huggingface_hub
 
-      # ================= PRE-DOWNLOAD TTS MODEL =================
+      # ================= PRE-DOWNLOAD XTTS v2 =================
       - name: Pre-download Coqui XTTS v2 model
         env:
           COQUI_TOS_AGREED: "1"
