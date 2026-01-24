@@ -22,42 +22,6 @@ jobs:
             wget \
             libespeak-ng1
 
-      # ================= INSTALL PIPER =================
-      - name: Install Piper TTS
-        run: |
-          wget https://github.com/rhasspy/piper/releases/latest/download/piper_linux_x86_64.tar.gz
-          tar -xzf piper_linux_x86_64.tar.gz
-
-          sudo mkdir -p /opt/piper
-          sudo cp -r piper/* /opt/piper/
-          sudo chmod +x /opt/piper/piper
-          sudo ln -sf /opt/piper/piper /usr/local/bin/piper
-
-          echo "/opt/piper" | sudo tee /etc/ld.so.conf.d/piper.conf
-          sudo ldconfig
-
-          piper --help
-
-      # ================= HINDI VOICE (✅ REAL & WORKING) =================
-      - name: Prepare Hindi Piper Voice
-        run: |
-          set -e
-
-          mkdir -p piper
-          cp /opt/piper/piper piper/piper
-          chmod +x piper/piper
-
-          VOICE_BASE="https://huggingface.co/rhasspy/piper-voices/resolve/main/hi/hi_IN/cmu_indic/low"
-
-          wget "$VOICE_BASE/hi_IN-cmu_indic-low.onnx" \
-            -O piper/hi_IN-cmu_indic-low.onnx
-
-          wget "$VOICE_BASE/hi_IN-cmu_indic-low.onnx.json" \
-            -O piper/hi_IN-cmu_indic-low.onnx.json
-
-          echo "✅ Hindi LOW voice downloaded"
-          ls -lh piper/
-
       # ================= PYTHON =================
       - name: Install Python dependencies
         run: |
