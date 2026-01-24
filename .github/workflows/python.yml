@@ -38,21 +38,22 @@ jobs:
 
           piper --help
 
-      # ================= HINDI VOICE (FIXED) =================
+      # ================= HINDI VOICE (FIXED & WORKING) =================
       - name: Prepare Hindi Piper Voice
         run: |
           mkdir -p piper
           cp /opt/piper/piper piper/piper
           chmod +x piper/piper
 
-          # Hindi model
-          wget https://huggingface.co/rhasspy/piper-voices/resolve/main/hi/hi_IN/cmu_indic/medium/hi_IN-cmu_indic-medium.onnx \
-            -O piper/hi_IN-cmu_indic-medium.onnx
+          # ✅ Hindi LOW model (THIS EXISTS)
+          wget https://huggingface.co/rhasspy/piper-voices/resolve/main/hi/hi_IN/cmu_indic/low/hi_IN-cmu_indic-low.onnx \
+            -O piper/hi_IN-cmu_indic-low.onnx
 
-          # REQUIRED config file (DO NOT SKIP)
-          wget https://huggingface.co/rhasspy/piper-voices/resolve/main/hi/hi_IN/cmu_indic/medium/hi_IN-cmu_indic-medium.onnx.json \
-            -O piper/hi_IN-cmu_indic-medium.onnx.json
+          # ✅ REQUIRED config file (MANDATORY)
+          wget https://huggingface.co/rhasspy/piper-voices/resolve/main/hi/hi_IN/cmu_indic/low/hi_IN-cmu_indic-low.onnx.json \
+            -O piper/hi_IN-cmu_indic-low.onnx.json
 
+          # Verify
           ls -lh piper/
 
       # ================= PYTHON =================
