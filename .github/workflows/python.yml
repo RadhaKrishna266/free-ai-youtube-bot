@@ -21,7 +21,7 @@ jobs:
             imagemagick \
             wget \
             sox \
-            libsox-fmt-all  # required for merging audio chunks
+            libsox-fmt-all
 
       # ================= SETUP PYTHON 3.11 =================
       - name: Set up Python 3.11
@@ -42,10 +42,13 @@ jobs:
             TTS \
             huggingface_hub
 
-      # ================= PRE-DOWNLOAD TTS MODEL =================
-      - name: Pre-download Coqui TTS model
+      # ================= PRE-DOWNLOAD TTS MODEL (FIXED) =================
+      - name: Pre-download Coqui XTTS v2 model
         run: |
-          python -c "from TTS.api import TTS; TTS('tts_models/multilingual/multi-dataset/vits', progress_bar=False, gpu=False)"
+          python - << 'EOF'
+          from TTS.api import TTS
+          TTS("tts_models/multilingual/multi-dataset/xtts_v2", gpu=False)
+          EOF
 
       # ================= RUN BOT =================
       - name: Run Temple Video Bot
