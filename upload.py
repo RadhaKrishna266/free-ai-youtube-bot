@@ -20,22 +20,15 @@ TANPURA_FILE = "audio/tanpura.mp3"
 BELL_FILE = "audio/temple_bell.mp3"
 
 FINAL_VIDEO = "final.mp4"
-
-# 🔥 MUST MATCH YAML
-PIPER_BIN = "./piper/piper"
-PIPER_MODEL = "piper/hi_IN-cmu_indic-medium.onnx"
 # ==========================================
 
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-# ================= AUDIO =================
+# ================= AUDIO (FREE, STABLE) =================
 def create_audio():
-    print("🎤 Creating Hindi devotional narration")
-
-    if not os.path.exists(PIPER_MODEL):
-        raise RuntimeError("❌ Hindi Piper model missing")
+    print("🎤 Creating Hindi narration using eSpeak-NG (FREE)")
 
     if not os.path.exists(SCRIPT_FILE):
         raise RuntimeError("❌ script.txt missing")
@@ -44,19 +37,26 @@ def create_audio():
         text = f.read()
 
     subprocess.run(
-        [PIPER_BIN, "--model", PIPER_MODEL, "--output_file", VOICE_FILE],
+        [
+            "espeak-ng",
+            "-v", "hi",
+            "-s", "140",   # slow, calm
+            "-p", "48",    # deep tone
+            "-a", "180",   # volume
+            "-w", VOICE_FILE
+        ],
         input=text.encode("utf-8"),
         check=True
     )
 
-    print("✅ Hindi narration created")
+    print("✅ Hindi narration created (eSpeak-NG)")
 
 # ================= IMAGES =================
 def download_images():
     print("🖼️ Downloading temple images")
     os.makedirs("images", exist_ok=True)
 
-    query = "kashi vishwanath temple shiva varanasi"
+    query = "kashi vishwanath temple shiva varanasi ghat"
     url = (
         f"https://pixabay.com/api/?key={PIXABAY_KEY}"
         f"&q={query}&image_type=photo&per_page=200"
@@ -68,9 +68,9 @@ def download_images():
         raise RuntimeError("❌ Not enough temple images")
 
     for i in range(IMAGE_COUNT):
-        img_data = requests.get(hits[i]["largeImageURL"]).content
+        img = requests.get(hits[i]["largeImageURL"]).content
         with open(f"images/{i:03}.jpg", "wb") as f:
-            f.write(img_data)
+            f.write(img)
 
     print("✅ Images downloaded")
 
@@ -99,7 +99,7 @@ def create_video():
 
         "-filter_complex",
         "[2:a]volume=0.25[a2];"
-        "[3:a]volume=0.15[a3];"
+        "[3:a]volume=0.12[a3];"
         "[1:a][a2][a3]amix=inputs=3:dropout_transition=3[a]",
 
         "-map", "0:v",
@@ -138,9 +138,18 @@ def upload():
         part="snippet,status",
         body={
             "snippet": {
-                "title": "काशी विश्वनाथ मंदिर का रहस्य | Shiva Temple History",
-                "description": "काशी विश्वनाथ ज्योतिर्लिंग का दिव्य इतिहास | Shiv Bhakti | Temple Series",
-                "tags": ["kashi", "shiv bhakti", "jyotirlinga", "temple history"],
+                "title": "काशी विश्वनाथ मंदिर का रहस्य | Kashi Vishwanath Temple History",
+                "description": (
+                    "काशी विश्वनाथ ज्योतिर्लिंग का दिव्य इतिहास।\n"
+                    "Shiv Bhakti | Temple Series | Hindu Spirituality"
+                ),
+                "tags": [
+                    "kashi vishwanath",
+                    "shiv bhakti",
+                    "jyotirlinga",
+                    "temple history",
+                    "hindu spirituality"
+                ],
                 "categoryId": "27"
             },
             "status": {"privacyStatus": "public"}
