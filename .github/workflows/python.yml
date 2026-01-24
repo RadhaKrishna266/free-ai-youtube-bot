@@ -25,9 +25,17 @@ jobs:
           wget https://github.com/rhasspy/piper/releases/latest/download/piper_linux_x86_64.tar.gz
           tar -xzf piper_linux_x86_64.tar.gz
 
-          # Move the actual binary
-          sudo mv piper/piper /usr/local/bin/piper
-          sudo chmod +x /usr/local/bin/piper
+          # Install Piper with its shared libraries
+          sudo mkdir -p /opt/piper
+          sudo cp -r piper/* /opt/piper/
+
+          # Symlink binary
+          sudo ln -sf /opt/piper/piper /usr/local/bin/piper
+          sudo chmod +x /opt/piper/piper
+
+          # Register shared libraries
+          echo "/opt/piper" | sudo tee /etc/ld.so.conf.d/piper.conf
+          sudo ldconfig
 
           # Verify
           piper --help
@@ -35,7 +43,7 @@ jobs:
       - name: Prepare Piper Voice
         run: |
           mkdir -p piper
-          cp /usr/local/bin/piper piper/piper
+          cp /opt/piper/piper piper/piper
           chmod +x piper/piper
 
           wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx \
