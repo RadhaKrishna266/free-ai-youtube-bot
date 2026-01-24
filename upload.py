@@ -21,8 +21,9 @@ BELL_FILE = "audio/temple_bell.mp3"
 
 FINAL_VIDEO = "final.mp4"
 
+# 🔥 MUST MATCH YAML
 PIPER_BIN = "./piper/piper"
-PIPER_MODEL = "piper/hi_IN-cmu_indic-low.onnx"
+PIPER_MODEL = "piper/hi_IN-cmu_indic-medium.onnx"
 # ==========================================
 
 def run(cmd):
@@ -35,6 +36,9 @@ def create_audio():
 
     if not os.path.exists(PIPER_MODEL):
         raise RuntimeError("❌ Hindi Piper model missing")
+
+    if not os.path.exists(SCRIPT_FILE):
+        raise RuntimeError("❌ script.txt missing")
 
     with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
         text = f.read()
@@ -64,9 +68,9 @@ def download_images():
         raise RuntimeError("❌ Not enough temple images")
 
     for i in range(IMAGE_COUNT):
-        img = requests.get(hits[i]["largeImageURL"]).content
+        img_data = requests.get(hits[i]["largeImageURL"]).content
         with open(f"images/{i:03}.jpg", "wb") as f:
-            f.write(img)
+            f.write(img_data)
 
     print("✅ Images downloaded")
 
@@ -81,6 +85,9 @@ def create_slideshow():
 def create_video():
     print("🎬 Creating devotional video")
 
+    if not os.path.exists(TANPURA_FILE) or not os.path.exists(BELL_FILE):
+        raise RuntimeError("❌ Tanpura or Bell audio missing")
+
     run([
         "ffmpeg", "-y",
         "-f", "concat", "-safe", "0",
@@ -93,7 +100,7 @@ def create_video():
         "-filter_complex",
         "[2:a]volume=0.25[a2];"
         "[3:a]volume=0.15[a3];"
-        "[1:a][a2][a3]amix=inputs=3[a]",
+        "[1:a][a2][a3]amix=inputs=3:dropout_transition=3[a]",
 
         "-map", "0:v",
         "-map", "[a]",
@@ -132,8 +139,8 @@ def upload():
         body={
             "snippet": {
                 "title": "काशी विश्वनाथ मंदिर का रहस्य | Shiva Temple History",
-                "description": "काशी विश्वनाथ ज्योतिर्लिंग का दिव्य इतिहास",
-                "tags": ["kashi", "shiv bhakti", "jyotirlinga"],
+                "description": "काशी विश्वनाथ ज्योतिर्लिंग का दिव्य इतिहास | Shiv Bhakti | Temple Series",
+                "tags": ["kashi", "shiv bhakti", "jyotirlinga", "temple history"],
                 "categoryId": "27"
             },
             "status": {"privacyStatus": "public"}
