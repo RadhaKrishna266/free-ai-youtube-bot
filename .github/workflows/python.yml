@@ -8,6 +8,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ================= CHECKOUT =================
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -29,31 +30,34 @@ jobs:
 
           sudo mkdir -p /opt/piper
           sudo cp -r piper/* /opt/piper/
-
-          sudo ln -sf /opt/piper/piper /usr/local/bin/piper
           sudo chmod +x /opt/piper/piper
+          sudo ln -sf /opt/piper/piper /usr/local/bin/piper
 
           echo "/opt/piper" | sudo tee /etc/ld.so.conf.d/piper.conf
           sudo ldconfig
 
           piper --help
 
-      # ================= HINDI VOICE (FIXED & WORKING) =================
+      # ================= HINDI VOICE (WORKING) =================
       - name: Prepare Hindi Piper Voice
         run: |
+          set -e
+
           mkdir -p piper
           cp /opt/piper/piper piper/piper
           chmod +x piper/piper
 
-          # ✅ Hindi LOW model (THIS EXISTS)
-          wget https://huggingface.co/rhasspy/piper-voices/resolve/main/hi/hi_IN/cmu_indic/low/hi_IN-cmu_indic-low.onnx \
-            -O piper/hi_IN-cmu_indic-low.onnx
+          VOICE_BASE="https://huggingface.co/rhasspy/piper-voices/resolve/main/hi/hi_IN/cmu_indic/medium"
 
-          # ✅ REQUIRED config file (MANDATORY)
-          wget https://huggingface.co/rhasspy/piper-voices/resolve/main/hi/hi_IN/cmu_indic/low/hi_IN-cmu_indic-low.onnx.json \
-            -O piper/hi_IN-cmu_indic-low.onnx.json
+          wget -q --show-progress \
+            "$VOICE_BASE/hi_IN-cmu_indic-medium.onnx" \
+            -O piper/hi_IN-cmu_indic-medium.onnx
 
-          # Verify
+          wget -q --show-progress \
+            "$VOICE_BASE/hi_IN-cmu_indic-medium.onnx.json" \
+            -O piper/hi_IN-cmu_indic-medium.onnx.json
+
+          echo "✅ Hindi voice downloaded"
           ls -lh piper/
 
       # ================= PYTHON =================
