@@ -27,6 +27,7 @@ TTS_MODEL_NAME = "tts_models/hi/in/vits"
 # ==========================================
 
 def run(cmd):
+    """Run shell command with print"""
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
@@ -42,16 +43,17 @@ def create_audio():
 
     os.makedirs("audio_chunks", exist_ok=True)
 
-    tts = TTS(TTS_MODEL_NAME, progress_bar=False, gpu=False)
+    tts = TTS(TTS_MODEL_NAME, progress_bar=True, gpu=False)
     chunk_files = []
 
+    # Create one audio chunk per line (slide)
     for idx, line in enumerate(lines):
         chunk_file = f"audio_chunks/{idx:03}.wav"
         tts.tts_to_file(text=line, file_path=chunk_file)
         chunk_files.append(chunk_file)
         print(f"✅ Created audio for slide {idx+1}/{len(lines)}")
 
-    # Merge all chunks into final narration
+    # Merge all chunks into single narration file
     run(["sox", *chunk_files, VOICE_FILE])
     print(f"✅ Full narration created at {VOICE_FILE}")
 
