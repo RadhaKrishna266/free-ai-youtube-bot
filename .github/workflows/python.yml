@@ -42,6 +42,11 @@ jobs:
             TTS \
             huggingface_hub
 
+      # ================= PRE-DOWNLOAD TTS MODEL =================
+      - name: Pre-download Coqui TTS model
+        run: |
+          python -c "from TTS.api import TTS; TTS('tts_models/multilingual/multi-dataset/vits', progress_bar=False, gpu=False)"
+
       # ================= RUN BOT =================
       - name: Run Temple Video Bot
         env:
