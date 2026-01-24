@@ -14,7 +14,7 @@ os.environ["COQUI_TOS_AGREED"] = "1"
 PIXABAY_KEY = os.environ["PIXABAY_API_KEY"]
 
 IMAGE_COUNT = 100
-IMAGE_DURATION = 6
+IMAGE_DURATION = 6   # seconds per image
 
 SCRIPT_FILE = "script.txt"
 VOICE_FILE = "narration.wav"
@@ -24,8 +24,8 @@ BELL_FILE = "audio/temple_bell.mp3"
 
 FINAL_VIDEO = "final.mp4"
 
-# XTTS v2 (free + Hindi)
-TTS_MODEL_NAME = "tts_models/multilingual/multi-dataset/xtts_v2"
+# ✅ BEST PURE HINDI MODEL (NO ENGLISH BLEED)
+TTS_MODEL_NAME = "tts_models/hi/vits"
 # ==========================================
 
 
@@ -36,7 +36,7 @@ def run(cmd):
 
 # ================= AUDIO =================
 def create_audio():
-    print("🎤 Creating CLEAN Hindi narration (no voice cloning)")
+    print("🎤 Creating PERFECT Hindi narration")
 
     if not os.path.exists(SCRIPT_FILE):
         raise RuntimeError("❌ script.txt missing")
@@ -46,6 +46,7 @@ def create_audio():
 
     os.makedirs("audio_chunks", exist_ok=True)
 
+    # ✅ Single-speaker Hindi model (NO speaker arg needed)
     tts = TTS(TTS_MODEL_NAME, gpu=False)
 
     chunk_files = []
@@ -55,14 +56,13 @@ def create_audio():
 
         tts.tts_to_file(
             text=line,
-            file_path=chunk_file,
-            speaker="random",   # ✅ REQUIRED FOR XTTS
-            language="hi"       # ✅ FORCE HINDI
+            file_path=chunk_file
         )
 
         chunk_files.append(chunk_file)
-        print(f"✅ Audio {idx+1}/{len(lines)}")
+        print(f"✅ Audio {idx + 1}/{len(lines)}")
 
+    # Merge chunks
     run(["sox", *chunk_files, VOICE_FILE])
     print(f"✅ Narration created: {VOICE_FILE}")
 
@@ -147,8 +147,8 @@ def upload():
         part="snippet,status",
         body={
             "snippet": {
-                "title": "काशी विश्वनाथ मंदिर का रहस्य | Kashi Vishwanath Temple History",
-                "description": "काशी विश्वनाथ ज्योतिर्लिंग का दिव्य इतिहास।",
+                "title": "काशी विश्वनाथ मंदिर का दिव्य इतिहास | Kashi Vishwanath Jyotirlinga",
+                "description": "ॐ नमः शिवाय। काशी विश्वनाथ ज्योतिर्लिंग की पावन कथा।",
                 "categoryId": "27"
             },
             "status": {"privacyStatus": "public"}
@@ -156,7 +156,7 @@ def upload():
         media_body=MediaFileUpload(FINAL_VIDEO, resumable=False)
     )
 
-    print("✅ Uploaded:", req.execute()["id"])
+    print("✅ Uploaded video ID:", req.execute()["id"])
 
 
 # ================= MAIN =================
