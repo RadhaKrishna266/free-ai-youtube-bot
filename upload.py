@@ -9,6 +9,8 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
 # ================= CONFIG =================
+os.environ["COQUI_TOS_AGREED"] = "1"
+
 PIXABAY_KEY = os.environ["PIXABAY_API_KEY"]
 
 IMAGE_COUNT = 100
@@ -17,12 +19,14 @@ IMAGE_DURATION = 6
 SCRIPT_FILE = "script.txt"
 VOICE_FILE = "narration.wav"
 
+SPEAKER_WAV = "voice_samples/hindi_male.wav"  # 🔴 REQUIRED
+
 TANPURA_FILE = "audio/tanpura.mp3"
 BELL_FILE = "audio/temple_bell.mp3"
 
 FINAL_VIDEO = "final.mp4"
 
-# ✅ ONLY VALID FREE & NATURAL MODEL
+# ✅ Best free natural model
 TTS_MODEL_NAME = "tts_models/multilingual/multi-dataset/xtts_v2"
 # ==========================================
 
@@ -34,23 +38,20 @@ def run(cmd):
 
 # ================= AUDIO =================
 def create_audio():
-    print("🎤 Creating Hindi devotional narration using XTTS v2")
+    print("🎤 Creating Hindi devotional narration (XTTS v2)")
 
     if not os.path.exists(SCRIPT_FILE):
         raise RuntimeError("❌ script.txt missing")
+
+    if not os.path.exists(SPEAKER_WAV):
+        raise RuntimeError("❌ Speaker WAV missing")
 
     with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
         lines = [line.strip() for line in f if line.strip()]
 
     os.makedirs("audio_chunks", exist_ok=True)
 
-    # Initialize XTTS
-    tts = TTS(
-        TTS_MODEL_NAME,
-        progress_bar=True,
-        gpu=False
-    )
-
+    tts = TTS(TTS_MODEL_NAME, gpu=False)
     chunk_files = []
 
     for idx, line in enumerate(lines):
@@ -59,15 +60,16 @@ def create_audio():
         tts.tts_to_file(
             text=line,
             file_path=chunk_file,
-            language="hi"   # 🔴 REQUIRED
+            speaker_wav=SPEAKER_WAV,
+            language="hi"
         )
 
         chunk_files.append(chunk_file)
-        print(f"✅ Audio {idx + 1}/{len(lines)} created")
+        print(f"✅ Audio {idx+1}/{len(lines)}")
 
     # Merge narration
     run(["sox", *chunk_files, VOICE_FILE])
-    print(f"✅ Full narration ready: {VOICE_FILE}")
+    print(f"✅ Narration ready: {VOICE_FILE}")
 
 
 # ================= IMAGES =================
@@ -84,7 +86,7 @@ def download_images():
     hits = requests.get(url).json().get("hits", [])
 
     if len(hits) < IMAGE_COUNT:
-        raise RuntimeError("❌ Not enough images from Pixabay")
+        raise RuntimeError("❌ Not enough images")
 
     for i in range(IMAGE_COUNT):
         img = requests.get(hits[i]["largeImageURL"]).content
@@ -106,9 +108,6 @@ def create_slideshow():
 def create_video():
     print("🎬 Creating devotional video")
 
-    if not os.path.exists(TANPURA_FILE) or not os.path.exists(BELL_FILE):
-        raise RuntimeError("❌ Background audio missing")
-
     run([
         "ffmpeg", "-y",
         "-f", "concat", "-safe", "0",
@@ -119,7 +118,7 @@ def create_video():
         "-filter_complex",
         "[2:a]volume=0.25[a2];"
         "[3:a]volume=0.12[a3];"
-        "[1:a][a2][a3]amix=inputs=3:dropout_transition=3[a]",
+        "[1:a][a2][a3]amix=inputs=3[a]",
         "-map", "0:v",
         "-map", "[a]",
         "-vf",
@@ -157,17 +156,8 @@ def upload():
         body={
             "snippet": {
                 "title": "काशी विश्वनाथ मंदिर का रहस्य | Kashi Vishwanath Temple History",
-                "description": (
-                    "काशी विश्वनाथ ज्योतिर्लिंग का दिव्य इतिहास।\n"
-                    "Shiv Bhakti | Temple Series | Hindu Spirituality"
-                ),
-                "tags": [
-                    "kashi vishwanath",
-                    "shiv bhakti",
-                    "jyotirlinga",
-                    "temple history",
-                    "hindu spirituality"
-                ],
+                "description": "काशी विश्वनाथ ज्योतिर्लिंग का दिव्य इतिहास।",
+                "tags": ["kashi vishwanath", "shiv bhakti", "jyotirlinga"],
                 "categoryId": "27"
             },
             "status": {"privacyStatus": "public"}
