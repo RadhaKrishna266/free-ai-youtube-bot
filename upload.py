@@ -14,7 +14,7 @@ os.environ["COQUI_TOS_AGREED"] = "1"
 PIXABAY_KEY = os.environ["PIXABAY_API_KEY"]
 
 IMAGE_COUNT = 100
-IMAGE_DURATION = 6   # seconds per image
+IMAGE_DURATION = 6  # seconds per image
 
 SCRIPT_FILE = "script.txt"
 VOICE_FILE = "narration.wav"
@@ -24,8 +24,8 @@ BELL_FILE = "audio/temple_bell.mp3"
 
 FINAL_VIDEO = "final.mp4"
 
-# ✅ CORRECT PURE HINDI MODEL (4 PART NAME)
-TTS_MODEL_NAME = "tts_models/hi/vits/hindi_female"
+# ✅ ONLY WORKING & STABLE MULTILINGUAL MODEL
+TTS_MODEL_NAME = "tts_models/multilingual/multi-dataset/your_tts"
 # ==========================================
 
 
@@ -36,7 +36,7 @@ def run(cmd):
 
 # ================= AUDIO =================
 def create_audio():
-    print("🎤 Creating PERFECT Hindi narration")
+    print("🎤 Creating NATURAL Hindi narration")
 
     if not os.path.exists(SCRIPT_FILE):
         raise RuntimeError("❌ script.txt missing")
@@ -46,8 +46,10 @@ def create_audio():
 
     os.makedirs("audio_chunks", exist_ok=True)
 
-    # ✅ Single-speaker Hindi model
-    tts = TTS(TTS_MODEL_NAME, gpu=False)
+    tts = TTS(
+        model_name=TTS_MODEL_NAME,
+        gpu=False
+    )
 
     chunk_files = []
 
@@ -56,7 +58,8 @@ def create_audio():
 
         tts.tts_to_file(
             text=line,
-            file_path=chunk_file
+            file_path=chunk_file,
+            language="hi"   # 🔒 FORCE PURE HINDI
         )
 
         chunk_files.append(chunk_file)
