@@ -11,8 +11,8 @@ from googleapiclient.http import MediaFileUpload
 # ================= CONFIG =================
 PIXABAY_KEY = os.environ["PIXABAY_API_KEY"]
 
-IMAGE_COUNT = 100          # 100 × 6 sec = 10 min
-IMAGE_DURATION = 6         # seconds per image
+IMAGE_COUNT = 100
+IMAGE_DURATION = 6
 
 SCRIPT_FILE = "script.txt"
 VOICE_FILE = "narration.wav"
@@ -27,11 +27,10 @@ TTS_MODEL_NAME = "tts_models/multilingual/multi-dataset/vits"
 # ==========================================
 
 def run(cmd):
-    """Run shell command with print"""
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-# ================= AUDIO (Per-Slide Coqui TTS) =================
+# ================= AUDIO =================
 def create_audio():
     print("🎤 Creating Hindi devotional narration using Coqui TTS")
 
@@ -43,18 +42,16 @@ def create_audio():
 
     os.makedirs("audio_chunks", exist_ok=True)
 
-    # Initialize TTS
     tts = TTS(TTS_MODEL_NAME, progress_bar=True, gpu=False)
     chunk_files = []
 
-    # Generate audio per slide
     for idx, line in enumerate(lines):
         chunk_file = f"audio_chunks/{idx:03}.wav"
         tts.tts_to_file(text=line, file_path=chunk_file)
         chunk_files.append(chunk_file)
         print(f"✅ Created audio for slide {idx+1}/{len(lines)}")
 
-    # Merge all chunks into final narration
+    # Merge all chunks
     run(["sox", *chunk_files, VOICE_FILE])
     print(f"✅ Full narration created at {VOICE_FILE}")
 
@@ -64,10 +61,7 @@ def download_images():
     os.makedirs("images", exist_ok=True)
 
     query = "kashi vishwanath temple shiva varanasi ghat"
-    url = (
-        f"https://pixabay.com/api/?key={PIXABAY_KEY}"
-        f"&q={query}&image_type=photo&per_page=200"
-    )
+    url = f"https://pixabay.com/api/?key={PIXABAY_KEY}&q={query}&image_type=photo&per_page=200"
 
     hits = requests.get(url).json().get("hits", [])
 
@@ -99,23 +93,14 @@ def create_video():
         "ffmpeg", "-y",
         "-f", "concat", "-safe", "0",
         "-i", "slideshow.txt",
-
         "-i", VOICE_FILE,
         "-stream_loop", "-1", "-i", TANPURA_FILE,
         "-stream_loop", "-1", "-i", BELL_FILE,
-
         "-filter_complex",
-        "[2:a]volume=0.25[a2];"
-        "[3:a]volume=0.12[a3];"
-        "[1:a][a2][a3]amix=inputs=3:dropout_transition=3[a]",
-
+        "[2:a]volume=0.25[a2];[3:a]volume=0.12[a3];[1:a][a2][a3]amix=inputs=3:dropout_transition=3[a]",
         "-map", "0:v",
         "-map", "[a]",
-
-        "-vf",
-        "scale=1280:720:force_original_aspect_ratio=decrease,"
-        "pad=1280:720:(ow-iw)/2:(oh-ih)/2",
-
+        "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2",
         "-c:v", "libx264",
         "-pix_fmt", "yuv420p",
         "-c:a", "aac",
@@ -127,9 +112,7 @@ def create_video():
 
 # ================= YOUTUBE =================
 def youtube_service():
-    token = json.loads(
-        base64.b64decode(os.environ["YOUTUBE_TOKEN_BASE64"]).decode()
-    )
+    token = json.loads(base64.b64decode(os.environ["YOUTUBE_TOKEN_BASE64"]).decode())
 
     creds = Credentials.from_authorized_user_info(
         token,
@@ -140,22 +123,15 @@ def youtube_service():
 
 def upload():
     yt = youtube_service()
-
     req = yt.videos().insert(
         part="snippet,status",
         body={
             "snippet": {
                 "title": "काशी विश्वनाथ मंदिर का रहस्य | Kashi Vishwanath Temple History",
-                "description": (
-                    "काशी विश्वनाथ ज्योतिर्लिंग का दिव्य इतिहास।\n"
-                    "Shiv Bhakti | Temple Series | Hindu Spirituality"
-                ),
+                "description": "काशी विश्वनाथ ज्योतिर्लिंग का दिव्य इतिहास।\nShiv Bhakti | Temple Series | Hindu Spirituality",
                 "tags": [
-                    "kashi vishwanath",
-                    "shiv bhakti",
-                    "jyotirlinga",
-                    "temple history",
-                    "hindu spirituality"
+                    "kashi vishwanath", "shiv bhakti", "jyotirlinga",
+                    "temple history", "hindu spirituality"
                 ],
                 "categoryId": "27"
             },
