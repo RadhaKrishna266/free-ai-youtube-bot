@@ -22,17 +22,19 @@ BELL_FILE = "audio/temple_bell.mp3"
 
 FINAL_VIDEO = "final.mp4"
 
-# Coqui TTS multilingual model (supports Hindi)
-TTS_MODEL_NAME = "tts_models/multilingual/multi-dataset/vits"
+# ✅ ONLY VALID FREE & NATURAL MODEL
+TTS_MODEL_NAME = "tts_models/multilingual/multi-dataset/xtts_v2"
 # ==========================================
+
 
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
+
 # ================= AUDIO =================
 def create_audio():
-    print("🎤 Creating Hindi devotional narration using Coqui TTS")
+    print("🎤 Creating Hindi devotional narration using XTTS v2")
 
     if not os.path.exists(SCRIPT_FILE):
         raise RuntimeError("❌ script.txt missing")
@@ -42,18 +44,31 @@ def create_audio():
 
     os.makedirs("audio_chunks", exist_ok=True)
 
-    tts = TTS(TTS_MODEL_NAME, progress_bar=True, gpu=False)
+    # Initialize XTTS
+    tts = TTS(
+        TTS_MODEL_NAME,
+        progress_bar=True,
+        gpu=False
+    )
+
     chunk_files = []
 
     for idx, line in enumerate(lines):
         chunk_file = f"audio_chunks/{idx:03}.wav"
-        tts.tts_to_file(text=line, file_path=chunk_file)
-        chunk_files.append(chunk_file)
-        print(f"✅ Created audio for slide {idx+1}/{len(lines)}")
 
-    # Merge all chunks
+        tts.tts_to_file(
+            text=line,
+            file_path=chunk_file,
+            language="hi"   # 🔴 REQUIRED
+        )
+
+        chunk_files.append(chunk_file)
+        print(f"✅ Audio {idx + 1}/{len(lines)} created")
+
+    # Merge narration
     run(["sox", *chunk_files, VOICE_FILE])
-    print(f"✅ Full narration created at {VOICE_FILE}")
+    print(f"✅ Full narration ready: {VOICE_FILE}")
+
 
 # ================= IMAGES =================
 def download_images():
@@ -61,12 +76,15 @@ def download_images():
     os.makedirs("images", exist_ok=True)
 
     query = "kashi vishwanath temple shiva varanasi ghat"
-    url = f"https://pixabay.com/api/?key={PIXABAY_KEY}&q={query}&image_type=photo&per_page=200"
+    url = (
+        f"https://pixabay.com/api/?key={PIXABAY_KEY}"
+        f"&q={query}&image_type=photo&per_page=200"
+    )
 
     hits = requests.get(url).json().get("hits", [])
 
     if len(hits) < IMAGE_COUNT:
-        raise RuntimeError("❌ Not enough temple images")
+        raise RuntimeError("❌ Not enough images from Pixabay")
 
     for i in range(IMAGE_COUNT):
         img = requests.get(hits[i]["largeImageURL"]).content
@@ -75,6 +93,7 @@ def download_images():
 
     print("✅ Images downloaded")
 
+
 # ================= SLIDESHOW =================
 def create_slideshow():
     with open("slideshow.txt", "w") as f:
@@ -82,12 +101,13 @@ def create_slideshow():
             f.write(f"file 'images/{img}'\n")
             f.write(f"duration {IMAGE_DURATION}\n")
 
+
 # ================= VIDEO =================
 def create_video():
     print("🎬 Creating devotional video")
 
     if not os.path.exists(TANPURA_FILE) or not os.path.exists(BELL_FILE):
-        raise RuntimeError("❌ Tanpura or Bell audio missing")
+        raise RuntimeError("❌ Background audio missing")
 
     run([
         "ffmpeg", "-y",
@@ -97,10 +117,14 @@ def create_video():
         "-stream_loop", "-1", "-i", TANPURA_FILE,
         "-stream_loop", "-1", "-i", BELL_FILE,
         "-filter_complex",
-        "[2:a]volume=0.25[a2];[3:a]volume=0.12[a3];[1:a][a2][a3]amix=inputs=3:dropout_transition=3[a]",
+        "[2:a]volume=0.25[a2];"
+        "[3:a]volume=0.12[a3];"
+        "[1:a][a2][a3]amix=inputs=3:dropout_transition=3[a]",
         "-map", "0:v",
         "-map", "[a]",
-        "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2",
+        "-vf",
+        "scale=1280:720:force_original_aspect_ratio=decrease,"
+        "pad=1280:720:(ow-iw)/2:(oh-ih)/2",
         "-c:v", "libx264",
         "-pix_fmt", "yuv420p",
         "-c:a", "aac",
@@ -110,9 +134,12 @@ def create_video():
 
     print("✅ Video created")
 
+
 # ================= YOUTUBE =================
 def youtube_service():
-    token = json.loads(base64.b64decode(os.environ["YOUTUBE_TOKEN_BASE64"]).decode())
+    token = json.loads(
+        base64.b64decode(os.environ["YOUTUBE_TOKEN_BASE64"]).decode()
+    )
 
     creds = Credentials.from_authorized_user_info(
         token,
@@ -121,17 +148,25 @@ def youtube_service():
 
     return build("youtube", "v3", credentials=creds)
 
+
 def upload():
     yt = youtube_service()
+
     req = yt.videos().insert(
         part="snippet,status",
         body={
             "snippet": {
                 "title": "काशी विश्वनाथ मंदिर का रहस्य | Kashi Vishwanath Temple History",
-                "description": "काशी विश्वनाथ ज्योतिर्लिंग का दिव्य इतिहास।\nShiv Bhakti | Temple Series | Hindu Spirituality",
+                "description": (
+                    "काशी विश्वनाथ ज्योतिर्लिंग का दिव्य इतिहास।\n"
+                    "Shiv Bhakti | Temple Series | Hindu Spirituality"
+                ),
                 "tags": [
-                    "kashi vishwanath", "shiv bhakti", "jyotirlinga",
-                    "temple history", "hindu spirituality"
+                    "kashi vishwanath",
+                    "shiv bhakti",
+                    "jyotirlinga",
+                    "temple history",
+                    "hindu spirituality"
                 ],
                 "categoryId": "27"
             },
@@ -142,6 +177,7 @@ def upload():
 
     print("✅ Uploaded:", req.execute()["id"])
 
+
 # ================= MAIN =================
 def main():
     print("🔥 STARTING GOD ANIMATED VIDEO PIPELINE")
@@ -150,6 +186,7 @@ def main():
     create_audio()
     create_video()
     upload()
+
 
 if __name__ == "__main__":
     main()
