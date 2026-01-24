@@ -40,7 +40,7 @@ jobs:
             requests \
             pillow \
             TTS \
-            huggingface_hub  # required for downloading Coqui TTS model
+            huggingface_hub
 
       # ================= RUN BOT =================
       - name: Run Temple Video Bot
