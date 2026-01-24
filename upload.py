@@ -24,9 +24,9 @@ BELL_FILE = "audio/temple_bell.mp3"
 
 FINAL_VIDEO = "final.mp4"
 
-# ✅ ONLY WORKING & STABLE MULTILINGUAL MODEL
-TTS_MODEL_NAME = "tts_models/multilingual/multi-dataset/your_tts"
-# ==========================================
+# ✅ STABLE + NATURAL HINDI (NO SPEAKER WAV)
+TTS_MODEL_NAME = "tts_models/multilingual/multi-dataset/xtts_v2"
+# =========================================
 
 
 def run(cmd):
@@ -46,10 +46,7 @@ def create_audio():
 
     os.makedirs("audio_chunks", exist_ok=True)
 
-    tts = TTS(
-        model_name=TTS_MODEL_NAME,
-        gpu=False
-    )
+    tts = TTS(TTS_MODEL_NAME, gpu=False)
 
     chunk_files = []
 
@@ -59,14 +56,16 @@ def create_audio():
         tts.tts_to_file(
             text=line,
             file_path=chunk_file,
-            language="hi"   # 🔒 FORCE PURE HINDI
+            language="hi",
+            speaker="random"
         )
 
         chunk_files.append(chunk_file)
         print(f"✅ Audio {idx + 1}/{len(lines)}")
 
+    # Merge all chunks
     run(["sox", *chunk_files, VOICE_FILE])
-    print(f"✅ Narration created: {VOICE_FILE}")
+    print(f"✅ Narration ready: {VOICE_FILE}")
 
 
 # ================= IMAGES =================
@@ -75,12 +74,15 @@ def download_images():
     os.makedirs("images", exist_ok=True)
 
     query = "kashi vishwanath temple shiva varanasi ghat"
-    url = f"https://pixabay.com/api/?key={PIXABAY_KEY}&q={query}&image_type=photo&per_page=200"
+    url = (
+        f"https://pixabay.com/api/?key={PIXABAY_KEY}"
+        f"&q={query}&image_type=photo&per_page=200"
+    )
 
     hits = requests.get(url).json().get("hits", [])
 
     if len(hits) < IMAGE_COUNT:
-        raise RuntimeError("❌ Not enough images")
+        raise RuntimeError("❌ Not enough images from Pixabay")
 
     for i in range(IMAGE_COUNT):
         img = requests.get(hits[i]["largeImageURL"]).content
@@ -125,7 +127,7 @@ def create_video():
         FINAL_VIDEO
     ])
 
-    print("✅ Video created")
+    print("✅ Video created:", FINAL_VIDEO)
 
 
 # ================= YOUTUBE =================
