@@ -24,6 +24,7 @@ FINAL_VIDEO = "final.mp4"
 
 # Coqui TTS model (Hindi natural voice)
 TTS_MODEL_NAME = "tts_models/hi/in/vits"
+
 # ==========================================
 
 def run(cmd):
@@ -43,6 +44,7 @@ def create_audio():
 
     os.makedirs("audio_chunks", exist_ok=True)
 
+    # Initialize Coqui TTS
     tts = TTS(TTS_MODEL_NAME, progress_bar=True, gpu=False)
     chunk_files = []
 
