@@ -22,9 +22,8 @@ BELL_FILE = "audio/temple_bell.mp3"
 
 FINAL_VIDEO = "final.mp4"
 
-# Coqui TTS model (Hindi natural voice)
-TTS_MODEL_NAME = "tts_models/hi/in/vits"
-
+# Coqui TTS multilingual model (supports Hindi)
+TTS_MODEL_NAME = "tts_models/multilingual/multi-dataset/vits"
 # ==========================================
 
 def run(cmd):
@@ -44,18 +43,18 @@ def create_audio():
 
     os.makedirs("audio_chunks", exist_ok=True)
 
-    # Initialize Coqui TTS
+    # Initialize TTS
     tts = TTS(TTS_MODEL_NAME, progress_bar=True, gpu=False)
     chunk_files = []
 
-    # Create one audio chunk per line (slide)
+    # Generate audio per slide
     for idx, line in enumerate(lines):
         chunk_file = f"audio_chunks/{idx:03}.wav"
         tts.tts_to_file(text=line, file_path=chunk_file)
         chunk_files.append(chunk_file)
         print(f"✅ Created audio for slide {idx+1}/{len(lines)}")
 
-    # Merge all chunks into single narration file
+    # Merge all chunks into final narration
     run(["sox", *chunk_files, VOICE_FILE])
     print(f"✅ Full narration created at {VOICE_FILE}")
 
