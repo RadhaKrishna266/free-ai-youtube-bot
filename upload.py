@@ -13,7 +13,7 @@ os.environ["COQUI_TOS_AGREED"] = "1"
 
 PIXABAY_KEY = os.environ["PIXABAY_API_KEY"]
 
-IMAGE_COUNT = 30          # 🔥 reduced = faster
+IMAGE_COUNT = 100
 IMAGE_DURATION = 6
 
 SCRIPT_FILE = "script.txt"
@@ -24,6 +24,7 @@ BELL_FILE = "audio/temple_bell.mp3"
 
 FINAL_VIDEO = "final.mp4"
 
+# XTTS v2 (free + Hindi)
 TTS_MODEL_NAME = "tts_models/multilingual/multi-dataset/xtts_v2"
 # ==========================================
 
@@ -41,19 +42,29 @@ def create_audio():
         raise RuntimeError("❌ script.txt missing")
 
     with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
-        text = " ".join(
-            line.strip() for line in f if line.strip()
-        )
+        lines = [l.strip() for l in f if l.strip()]
+
+    os.makedirs("audio_chunks", exist_ok=True)
 
     tts = TTS(TTS_MODEL_NAME, gpu=False)
 
-    tts.tts_to_file(
-        text=text,
-        file_path=VOICE_FILE,
-        language="hi"
-    )
+    chunk_files = []
 
-    print(f"✅ Hindi narration ready: {VOICE_FILE}")
+    for idx, line in enumerate(lines):
+        chunk_file = f"audio_chunks/{idx:03}.wav"
+
+        tts.tts_to_file(
+            text=line,
+            file_path=chunk_file,
+            speaker="random",   # ✅ REQUIRED FOR XTTS
+            language="hi"       # ✅ FORCE HINDI
+        )
+
+        chunk_files.append(chunk_file)
+        print(f"✅ Audio {idx+1}/{len(lines)}")
+
+    run(["sox", *chunk_files, VOICE_FILE])
+    print(f"✅ Narration created: {VOICE_FILE}")
 
 
 # ================= IMAGES =================
@@ -62,10 +73,7 @@ def download_images():
     os.makedirs("images", exist_ok=True)
 
     query = "kashi vishwanath temple shiva varanasi ghat"
-    url = (
-        f"https://pixabay.com/api/?key={PIXABAY_KEY}"
-        f"&q={query}&image_type=photo&per_page=200"
-    )
+    url = f"https://pixabay.com/api/?key={PIXABAY_KEY}&q={query}&image_type=photo&per_page=200"
 
     hits = requests.get(url).json().get("hits", [])
 
@@ -141,7 +149,6 @@ def upload():
             "snippet": {
                 "title": "काशी विश्वनाथ मंदिर का रहस्य | Kashi Vishwanath Temple History",
                 "description": "काशी विश्वनाथ ज्योतिर्लिंग का दिव्य इतिहास।",
-                "tags": ["kashi vishwanath", "shiv bhakti", "jyotirlinga"],
                 "categoryId": "27"
             },
             "status": {"privacyStatus": "public"}
