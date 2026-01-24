@@ -19,14 +19,15 @@ IMAGE_DURATION = 6
 SCRIPT_FILE = "script.txt"
 VOICE_FILE = "narration.wav"
 
-SPEAKER_WAV = "voice_samples/hindi_male.wav"  # 🔴 REQUIRED
+# Speaker voice (downloaded by GitHub Actions)
+SPEAKER_WAV = "speaker/speaker.wav"
 
 TANPURA_FILE = "audio/tanpura.mp3"
 BELL_FILE = "audio/temple_bell.mp3"
 
 FINAL_VIDEO = "final.mp4"
 
-# ✅ Best free natural model
+# Best free natural multilingual model
 TTS_MODEL_NAME = "tts_models/multilingual/multi-dataset/xtts_v2"
 # ==========================================
 
@@ -36,6 +37,30 @@ def run(cmd):
     subprocess.run(cmd, check=True)
 
 
+# ================= SPEAKER WAV FIX =================
+def validate_speaker_wav(path):
+    if not os.path.exists(path):
+        raise RuntimeError(f"❌ Speaker WAV not found: {path}")
+
+    os.makedirs("speaker", exist_ok=True)
+    fixed_path = "speaker/fixed_speaker.wav"
+
+    # XTTS requires: mono, 22050 Hz
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-i", path,
+            "-ac", "1",
+            "-ar", "22050",
+            "-t", "10",
+            fixed_path
+        ],
+        check=True
+    )
+
+    return fixed_path
+
+
 # ================= AUDIO =================
 def create_audio():
     print("🎤 Creating Hindi devotional narration (XTTS v2)")
@@ -43,8 +68,7 @@ def create_audio():
     if not os.path.exists(SCRIPT_FILE):
         raise RuntimeError("❌ script.txt missing")
 
-    if not os.path.exists(SPEAKER_WAV):
-        raise RuntimeError("❌ Speaker WAV missing")
+    speaker_wav = validate_speaker_wav(SPEAKER_WAV)
 
     with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
         lines = [line.strip() for line in f if line.strip()]
@@ -60,12 +84,12 @@ def create_audio():
         tts.tts_to_file(
             text=line,
             file_path=chunk_file,
-            speaker_wav=SPEAKER_WAV,
+            speaker_wav=speaker_wav,
             language="hi"
         )
 
         chunk_files.append(chunk_file)
-        print(f"✅ Audio {idx+1}/{len(lines)}")
+        print(f"✅ Audio {idx + 1}/{len(lines)}")
 
     # Merge narration
     run(["sox", *chunk_files, VOICE_FILE])
@@ -86,7 +110,7 @@ def download_images():
     hits = requests.get(url).json().get("hits", [])
 
     if len(hits) < IMAGE_COUNT:
-        raise RuntimeError("❌ Not enough images")
+        raise RuntimeError("❌ Not enough images from Pixabay")
 
     for i in range(IMAGE_COUNT):
         img = requests.get(hits[i]["largeImageURL"]).content
@@ -156,8 +180,17 @@ def upload():
         body={
             "snippet": {
                 "title": "काशी विश्वनाथ मंदिर का रहस्य | Kashi Vishwanath Temple History",
-                "description": "काशी विश्वनाथ ज्योतिर्लिंग का दिव्य इतिहास।",
-                "tags": ["kashi vishwanath", "shiv bhakti", "jyotirlinga"],
+                "description": (
+                    "काशी विश्वनाथ ज्योतिर्लिंग का दिव्य इतिहास।\n"
+                    "Shiv Bhakti | Temple Series | Hindu Spirituality"
+                ),
+                "tags": [
+                    "kashi vishwanath",
+                    "shiv bhakti",
+                    "jyotirlinga",
+                    "temple history",
+                    "hindu spirituality"
+                ],
                 "categoryId": "27"
             },
             "status": {"privacyStatus": "public"}
