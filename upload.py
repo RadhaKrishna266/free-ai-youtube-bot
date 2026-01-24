@@ -12,7 +12,7 @@ from googleapiclient.http import MediaFileUpload
 PIXABAY_KEY = os.environ["PIXABAY_API_KEY"]
 
 IMAGE_COUNT = 100          # 100 × 6 sec = 10 min
-IMAGE_DURATION = 6
+IMAGE_DURATION = 6         # seconds per image
 
 SCRIPT_FILE = "script.txt"
 VOICE_FILE = "narration.wav"
@@ -22,15 +22,15 @@ BELL_FILE = "audio/temple_bell.mp3"
 
 FINAL_VIDEO = "final.mp4"
 
-# Coqui TTS model (Hindi, natural voice)
-TTS_MODEL_NAME = "tts_models/hi/in/vits"  # Automatically downloads from HuggingFace
+# Coqui TTS model (Hindi natural voice)
+TTS_MODEL_NAME = "tts_models/hi/in/vits"
 # ==========================================
 
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-# ================= AUDIO (Coqui TTS) =================
+# ================= AUDIO (Per-Slide Coqui TTS) =================
 def create_audio():
     print("🎤 Creating Hindi devotional narration using Coqui TTS")
 
@@ -38,12 +38,22 @@ def create_audio():
         raise RuntimeError("❌ script.txt missing")
 
     with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
-        text = f.read()
+        lines = [line.strip() for line in f if line.strip()]
+
+    os.makedirs("audio_chunks", exist_ok=True)
 
     tts = TTS(TTS_MODEL_NAME, progress_bar=False, gpu=False)
-    tts.tts_to_file(text=text, file_path=VOICE_FILE)
+    chunk_files = []
 
-    print("✅ Hindi narration created (Coqui TTS)")
+    for idx, line in enumerate(lines):
+        chunk_file = f"audio_chunks/{idx:03}.wav"
+        tts.tts_to_file(text=line, file_path=chunk_file)
+        chunk_files.append(chunk_file)
+        print(f"✅ Created audio for slide {idx+1}/{len(lines)}")
+
+    # Merge all chunks into final narration
+    run(["sox", *chunk_files, VOICE_FILE])
+    print(f"✅ Full narration created at {VOICE_FILE}")
 
 # ================= IMAGES =================
 def download_images():
@@ -156,9 +166,9 @@ def upload():
 # ================= MAIN =================
 def main():
     print("🔥 STARTING GOD ANIMATED VIDEO PIPELINE")
-    create_audio()
     download_images()
     create_slideshow()
+    create_audio()
     create_video()
     upload()
 
