@@ -17,14 +17,22 @@ jobs:
           sudo apt install -y \
             ffmpeg \
             imagemagick \
-            piper-tts \
             wget
+
+      - name: Install Piper TTS
+        run: |
+          wget https://github.com/rhasspy/piper/releases/latest/download/piper_linux_x86_64.tar.gz
+          tar -xzf piper_linux_x86_64.tar.gz
+          sudo mv piper /usr/local/bin/
+          chmod +x /usr/local/bin/piper
+          piper --help
 
       - name: Prepare Piper Voice
         run: |
           mkdir -p piper
-          cp /usr/bin/piper piper/piper
+          cp /usr/local/bin/piper piper/piper
           chmod +x piper/piper
+
           wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx \
             -O piper/en_US-lessac-medium.onnx
 
