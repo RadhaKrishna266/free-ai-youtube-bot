@@ -24,8 +24,8 @@ BELL_FILE = "audio/temple_bell.mp3"
 
 FINAL_VIDEO = "final.mp4"
 
-# ✅ BEST PURE HINDI MODEL (NO ENGLISH BLEED)
-TTS_MODEL_NAME = "tts_models/hi/vits"
+# ✅ CORRECT PURE HINDI MODEL (4 PART NAME)
+TTS_MODEL_NAME = "tts_models/hi/vits/hindi_female"
 # ==========================================
 
 
@@ -46,7 +46,7 @@ def create_audio():
 
     os.makedirs("audio_chunks", exist_ok=True)
 
-    # ✅ Single-speaker Hindi model (NO speaker arg needed)
+    # ✅ Single-speaker Hindi model
     tts = TTS(TTS_MODEL_NAME, gpu=False)
 
     chunk_files = []
@@ -62,7 +62,6 @@ def create_audio():
         chunk_files.append(chunk_file)
         print(f"✅ Audio {idx + 1}/{len(lines)}")
 
-    # Merge chunks
     run(["sox", *chunk_files, VOICE_FILE])
     print(f"✅ Narration created: {VOICE_FILE}")
 
