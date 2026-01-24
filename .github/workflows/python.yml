@@ -20,7 +20,10 @@ jobs:
             ffmpeg \
             imagemagick \
             wget \
-            libespeak-ng1
+            espeak-ng
+
+          # verify espeak-ng
+          espeak-ng --version
 
       # ================= PYTHON =================
       - name: Install Python dependencies
