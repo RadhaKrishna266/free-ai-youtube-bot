@@ -19,11 +19,7 @@ jobs:
           sudo apt install -y \
             ffmpeg \
             imagemagick \
-            wget \
-            espeak-ng
-
-          # verify espeak-ng
-          espeak-ng --version
+            wget
 
       # ================= PYTHON =================
       - name: Install Python dependencies
@@ -34,7 +30,8 @@ jobs:
             google-auth-oauthlib \
             google-api-python-client \
             requests \
-            pillow
+            pillow \
+            TTS  # Coqui TTS for natural Hindi voice
 
       # ================= RUN BOT =================
       - name: Run Temple Video Bot
