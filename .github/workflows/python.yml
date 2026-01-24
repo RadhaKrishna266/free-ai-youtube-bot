@@ -39,7 +39,8 @@ jobs:
             google-api-python-client \
             requests \
             pillow \
-            TTS  # Coqui TTS for natural Hindi voice
+            TTS \
+            huggingface_hub  # required for downloading Coqui TTS model
 
       # ================= RUN BOT =================
       - name: Run Temple Video Bot
