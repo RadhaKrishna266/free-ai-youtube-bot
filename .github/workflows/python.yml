@@ -20,16 +20,17 @@ jobs:
             wget
 
       - name: Install Piper TTS
-  run: |
-    wget https://github.com/rhasspy/piper/releases/latest/download/piper_linux_x86_64.tar.gz
-    tar -xzf piper_linux_x86_64.tar.gz
+        run: |
+          wget https://github.com/rhasspy/piper/releases/latest/download/piper_linux_x86_64.tar.gz
+          tar -xzf piper_linux_x86_64.tar.gz
 
-    # Move the actual binary
-    sudo mv piper/piper /usr/local/bin/piper
-    sudo chmod +x /usr/local/bin/piper
+          # Move the actual binary
+          sudo mv piper/piper /usr/local/bin/piper
+          sudo chmod +x /usr/local/bin/piper
 
-    # Verify
-    piper --help
+          # Verify
+          piper --help
+
       - name: Prepare Piper Voice
         run: |
           mkdir -p piper
