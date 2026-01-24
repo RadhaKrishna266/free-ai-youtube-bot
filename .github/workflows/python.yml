@@ -17,7 +17,8 @@ jobs:
           sudo apt install -y \
             ffmpeg \
             imagemagick \
-            wget
+            wget \
+            libespeak-ng1
 
       - name: Install Piper TTS
         run: |
