@@ -38,7 +38,7 @@ jobs:
 
           piper --help
 
-      # ================= HINDI VOICE (WORKING) =================
+      # ================= HINDI VOICE (✅ REAL & WORKING) =================
       - name: Prepare Hindi Piper Voice
         run: |
           set -e
@@ -47,17 +47,15 @@ jobs:
           cp /opt/piper/piper piper/piper
           chmod +x piper/piper
 
-          VOICE_BASE="https://huggingface.co/rhasspy/piper-voices/resolve/main/hi/hi_IN/cmu_indic/medium"
+          VOICE_BASE="https://huggingface.co/rhasspy/piper-voices/resolve/main/hi/hi_IN/cmu_indic/low"
 
-          wget -q --show-progress \
-            "$VOICE_BASE/hi_IN-cmu_indic-medium.onnx" \
-            -O piper/hi_IN-cmu_indic-medium.onnx
+          wget "$VOICE_BASE/hi_IN-cmu_indic-low.onnx" \
+            -O piper/hi_IN-cmu_indic-low.onnx
 
-          wget -q --show-progress \
-            "$VOICE_BASE/hi_IN-cmu_indic-medium.onnx.json" \
-            -O piper/hi_IN-cmu_indic-medium.onnx.json
+          wget "$VOICE_BASE/hi_IN-cmu_indic-low.onnx.json" \
+            -O piper/hi_IN-cmu_indic-low.onnx.json
 
-          echo "✅ Hindi voice downloaded"
+          echo "✅ Hindi LOW voice downloaded"
           ls -lh piper/
 
       # ================= PYTHON =================
