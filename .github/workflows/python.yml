@@ -42,8 +42,10 @@ jobs:
             TTS \
             huggingface_hub
 
-      # ================= PRE-DOWNLOAD TTS MODEL (FIXED) =================
+      # ================= PRE-DOWNLOAD TTS MODEL =================
       - name: Pre-download Coqui XTTS v2 model
+        env:
+          COQUI_TOS_AGREED: "1"
         run: |
           python - << 'EOF'
           from TTS.api import TTS
@@ -55,6 +57,7 @@ jobs:
         env:
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           YOUTUBE_TOKEN_BASE64: ${{ secrets.YOUTUBE_TOKEN_BASE64 }}
+          COQUI_TOS_AGREED: "1"
         run: |
           python upload.py
 
