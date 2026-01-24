@@ -13,95 +13,50 @@ os.environ["COQUI_TOS_AGREED"] = "1"
 
 PIXABAY_KEY = os.environ["PIXABAY_API_KEY"]
 
-IMAGE_COUNT = 100
-IMAGE_DURATION = 6
-
 SCRIPT_FILE = "script.txt"
 VOICE_FILE = "narration.wav"
 
+SPEAKER_WAV = "audio/speaker.wav"
 TANPURA_FILE = "audio/tanpura.mp3"
 BELL_FILE = "audio/temple_bell.mp3"
 
 FINAL_VIDEO = "final.mp4"
 
-# ✅ ONLY STABLE HINDI MODEL (NO SPEAKER REQUIRED)
-TTS_MODEL_NAME = "tts_models/multilingual/multi-dataset/vits"
+TTS_MODEL_NAME = "tts_models/multilingual/multi-dataset/xtts_v2"
 # =========================================
 
 
 def run(cmd):
-    print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
 
 # ================= AUDIO =================
 def create_audio():
-    print("🎤 Creating stable Hindi narration")
+    print("🎤 Creating NATURAL Hindi voice")
 
-    if not os.path.exists(SCRIPT_FILE):
-        raise RuntimeError("❌ script.txt missing")
+    if not os.path.exists(SPEAKER_WAV):
+        raise RuntimeError("❌ audio/speaker.wav is REQUIRED")
 
     with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
-        lines = [l.strip() for l in f if l.strip()]
-
-    os.makedirs("audio_chunks", exist_ok=True)
+        text = f.read().strip()
 
     tts = TTS(TTS_MODEL_NAME, gpu=False)
 
-    chunk_files = []
+    tts.tts_to_file(
+        text=text,
+        file_path=VOICE_FILE,
+        speaker_wav=SPEAKER_WAV,
+        language="hi"
+    )
 
-    for idx, line in enumerate(lines):
-        out_file = f"audio_chunks/{idx:03}.wav"
-
-        tts.tts_to_file(
-            text=line,
-            language="hi",
-            file_path=out_file
-        )
-
-        chunk_files.append(out_file)
-        print(f"✅ Audio {idx + 1}/{len(lines)}")
-
-    run(["sox", *chunk_files, VOICE_FILE])
-    print("✅ Narration created")
-
-
-# ================= IMAGES =================
-def download_images():
-    print("🖼️ Downloading images")
-    os.makedirs("images", exist_ok=True)
-
-    query = "kashi vishwanath temple shiva varanasi ghat"
-    url = f"https://pixabay.com/api/?key={PIXABAY_KEY}&q={query}&image_type=photo&per_page=200"
-
-    hits = requests.get(url).json().get("hits", [])
-    if len(hits) < IMAGE_COUNT:
-        raise RuntimeError("❌ Not enough images")
-
-    for i in range(IMAGE_COUNT):
-        img = requests.get(hits[i]["largeImageURL"]).content
-        with open(f"images/{i:03}.jpg", "wb") as f:
-            f.write(img)
-
-    print("✅ Images downloaded")
-
-
-# ================= SLIDESHOW =================
-def create_slideshow():
-    with open("slideshow.txt", "w") as f:
-        for img in sorted(os.listdir("images")):
-            f.write(f"file 'images/{img}'\n")
-            f.write(f"duration {IMAGE_DURATION}\n")
+    print("✅ Hindi narration created")
 
 
 # ================= VIDEO =================
 def create_video():
-    print("🎬 Creating video")
-
     run([
         "ffmpeg", "-y",
-        "-f", "concat", "-safe", "0",
-        "-i", "slideshow.txt",
+        "-loop", "1", "-i", "images/000.jpg",
         "-i", VOICE_FILE,
         "-stream_loop", "-1", "-i", TANPURA_FILE,
         "-stream_loop", "-1", "-i", BELL_FILE,
@@ -111,60 +66,18 @@ def create_video():
         "[1:a][a2][a3]amix=inputs=3[a]",
         "-map", "0:v",
         "-map", "[a]",
-        "-vf",
-        "scale=1280:720:force_original_aspect_ratio=decrease,"
-        "pad=1280:720:(ow-iw)/2:(oh-ih)/2",
+        "-t", "600",
         "-c:v", "libx264",
         "-pix_fmt", "yuv420p",
         "-c:a", "aac",
-        "-shortest",
         FINAL_VIDEO
     ])
-
-    print("✅ Video created")
-
-
-# ================= YOUTUBE =================
-def youtube_service():
-    token = json.loads(
-        base64.b64decode(os.environ["YOUTUBE_TOKEN_BASE64"]).decode()
-    )
-
-    creds = Credentials.from_authorized_user_info(
-        token,
-        ["https://www.googleapis.com/auth/youtube.upload"]
-    )
-
-    return build("youtube", "v3", credentials=creds)
-
-
-def upload():
-    yt = youtube_service()
-
-    req = yt.videos().insert(
-        part="snippet,status",
-        body={
-            "snippet": {
-                "title": "काशी विश्वनाथ मंदिर का दिव्य इतिहास",
-                "description": "ॐ नमः शिवाय। काशी विश्वनाथ ज्योतिर्लिंग की पावन कथा।",
-                "categoryId": "27"
-            },
-            "status": {"privacyStatus": "public"}
-        },
-        media_body=MediaFileUpload(FINAL_VIDEO, resumable=False)
-    )
-
-    print("✅ Uploaded:", req.execute()["id"])
 
 
 # ================= MAIN =================
 def main():
-    print("🔥 STARTING PIPELINE")
-    download_images()
-    create_slideshow()
     create_audio()
     create_video()
-    upload()
 
 
 if __name__ == "__main__":
