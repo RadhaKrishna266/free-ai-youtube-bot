@@ -14,7 +14,7 @@ os.environ["COQUI_TOS_AGREED"] = "1"
 PIXABAY_KEY = os.environ["PIXABAY_API_KEY"]
 
 IMAGE_COUNT = 100
-IMAGE_DURATION = 6  # seconds per image
+IMAGE_DURATION = 6
 
 SCRIPT_FILE = "script.txt"
 VOICE_FILE = "narration.wav"
@@ -24,8 +24,8 @@ BELL_FILE = "audio/temple_bell.mp3"
 
 FINAL_VIDEO = "final.mp4"
 
-# ✅ STABLE + NATURAL HINDI (NO SPEAKER WAV)
-TTS_MODEL_NAME = "tts_models/multilingual/multi-dataset/xtts_v2"
+# ✅ ONLY STABLE HINDI MODEL (NO SPEAKER REQUIRED)
+TTS_MODEL_NAME = "tts_models/multilingual/multi-dataset/vits"
 # =========================================
 
 
@@ -36,7 +36,7 @@ def run(cmd):
 
 # ================= AUDIO =================
 def create_audio():
-    print("🎤 Creating NATURAL Hindi narration")
+    print("🎤 Creating stable Hindi narration")
 
     if not os.path.exists(SCRIPT_FILE):
         raise RuntimeError("❌ script.txt missing")
@@ -51,38 +51,32 @@ def create_audio():
     chunk_files = []
 
     for idx, line in enumerate(lines):
-        chunk_file = f"audio_chunks/{idx:03}.wav"
+        out_file = f"audio_chunks/{idx:03}.wav"
 
         tts.tts_to_file(
             text=line,
-            file_path=chunk_file,
             language="hi",
-            speaker="random"
+            file_path=out_file
         )
 
-        chunk_files.append(chunk_file)
+        chunk_files.append(out_file)
         print(f"✅ Audio {idx + 1}/{len(lines)}")
 
-    # Merge all chunks
     run(["sox", *chunk_files, VOICE_FILE])
-    print(f"✅ Narration ready: {VOICE_FILE}")
+    print("✅ Narration created")
 
 
 # ================= IMAGES =================
 def download_images():
-    print("🖼️ Downloading temple images")
+    print("🖼️ Downloading images")
     os.makedirs("images", exist_ok=True)
 
     query = "kashi vishwanath temple shiva varanasi ghat"
-    url = (
-        f"https://pixabay.com/api/?key={PIXABAY_KEY}"
-        f"&q={query}&image_type=photo&per_page=200"
-    )
+    url = f"https://pixabay.com/api/?key={PIXABAY_KEY}&q={query}&image_type=photo&per_page=200"
 
     hits = requests.get(url).json().get("hits", [])
-
     if len(hits) < IMAGE_COUNT:
-        raise RuntimeError("❌ Not enough images from Pixabay")
+        raise RuntimeError("❌ Not enough images")
 
     for i in range(IMAGE_COUNT):
         img = requests.get(hits[i]["largeImageURL"]).content
@@ -102,7 +96,7 @@ def create_slideshow():
 
 # ================= VIDEO =================
 def create_video():
-    print("🎬 Creating devotional video")
+    print("🎬 Creating video")
 
     run([
         "ffmpeg", "-y",
@@ -127,7 +121,7 @@ def create_video():
         FINAL_VIDEO
     ])
 
-    print("✅ Video created:", FINAL_VIDEO)
+    print("✅ Video created")
 
 
 # ================= YOUTUBE =================
@@ -151,7 +145,7 @@ def upload():
         part="snippet,status",
         body={
             "snippet": {
-                "title": "काशी विश्वनाथ मंदिर का दिव्य इतिहास | Kashi Vishwanath Jyotirlinga",
+                "title": "काशी विश्वनाथ मंदिर का दिव्य इतिहास",
                 "description": "ॐ नमः शिवाय। काशी विश्वनाथ ज्योतिर्लिंग की पावन कथा।",
                 "categoryId": "27"
             },
@@ -160,12 +154,12 @@ def upload():
         media_body=MediaFileUpload(FINAL_VIDEO, resumable=False)
     )
 
-    print("✅ Uploaded video ID:", req.execute()["id"])
+    print("✅ Uploaded:", req.execute()["id"])
 
 
 # ================= MAIN =================
 def main():
-    print("🔥 STARTING GOD ANIMATED VIDEO PIPELINE")
+    print("🔥 STARTING PIPELINE")
     download_images()
     create_slideshow()
     create_audio()
