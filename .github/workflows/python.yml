@@ -8,11 +8,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ================= CHECKOUT =================
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ================= SYSTEM TOOLS =================
       - name: Install system tools
         run: |
           sudo apt update
@@ -23,13 +21,11 @@ jobs:
             sox \
             libsox-fmt-all
 
-      # ================= SETUP PYTHON 3.11 =================
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # ================= PYTHON DEPENDENCIES (PINNED) =================
       - name: Install Python dependencies
         env:
           COQUI_TOS_AGREED: "1"
@@ -46,7 +42,11 @@ jobs:
             TTS \
             huggingface_hub
 
-      # ================= PRE-DOWNLOAD XTTS v2 =================
+      - name: Download speaker voice
+        run: |
+          mkdir -p speaker
+          wget -O speaker/speaker.wav https://huggingface.co/coqui/XTTS-v2/resolve/main/samples/en_sample.wav
+
       - name: Pre-download Coqui XTTS v2 model
         env:
           COQUI_TOS_AGREED: "1"
@@ -56,7 +56,6 @@ jobs:
           TTS("tts_models/multilingual/multi-dataset/xtts_v2", gpu=False)
           EOF
 
-      # ================= RUN BOT =================
       - name: Run Temple Video Bot
         env:
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
@@ -65,7 +64,6 @@ jobs:
         run: |
           python upload.py
 
-      # ================= ARTIFACT =================
       - name: Upload final video
         uses: actions/upload-artifact@v4
         with:
