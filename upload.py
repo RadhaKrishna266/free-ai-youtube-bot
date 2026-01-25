@@ -1,6 +1,7 @@
 import os
 import subprocess
 from TTS.api import TTS
+from pathlib import Path
 
 os.environ["COQUI_TOS_AGREED"] = "1"
 
@@ -16,8 +17,11 @@ IMAGE_FILE = "images/000.jpg"
 FINAL_VIDEO = "final.mp4"
 
 TTS_MODEL = "tts_models/multilingual/multi-dataset/xtts_v2"
+CHUNK_DIR = "chunks"
+MAX_CHARS = 900   # safe for XTTS
 
 
+# ---------------- UTIL ----------------
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
@@ -33,23 +37,61 @@ def get_duration(path):
     return float(out.strip())
 
 
+def split_text(text, max_chars):
+    chunks = []
+    current = ""
+    for line in text.splitlines():
+        if len(current) + len(line) < max_chars:
+            current += " " + line
+        else:
+            chunks.append(current.strip())
+            current = line
+    if current.strip():
+        chunks.append(current.strip())
+    return chunks
+
+
 # ---------------- AUDIO ----------------
 def create_audio():
-    print("🎤 Creating natural Hindi narration")
+    print("🎤 Creating natural Hindi narration (SAFE MODE)")
+    Path(CHUNK_DIR).mkdir(exist_ok=True)
 
     with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
-        text = " ".join(line.strip() for line in f if line.strip())
+        text = f.read().strip()
+
+    chunks = split_text(text, MAX_CHARS)
+    print(f"🧩 Total chunks: {len(chunks)}")
 
     tts = TTS(TTS_MODEL, gpu=False)
+    wav_files = []
 
-    tts.tts_to_file(
-        text=text,
-        file_path=VOICE_FILE,
-        speaker_wav=SPEAKER_WAV,   # ✅ REQUIRED
-        language="hi"
-    )
+    for i, chunk in enumerate(chunks):
+        out_wav = f"{CHUNK_DIR}/chunk_{i:03d}.wav"
+        print(f"🔊 Generating chunk {i+1}/{len(chunks)}")
 
-    print("✅ Hindi narration created")
+        tts.tts_to_file(
+            text=chunk,
+            file_path=out_wav,
+            speaker_wav=SPEAKER_WAV,
+            language="hi"
+        )
+        wav_files.append(out_wav)
+
+    # concatenate wavs
+    with open("wav_list.txt", "w") as f:
+        for w in wav_files:
+            f.write(f"file '{w}'\n")
+
+    run([
+        "ffmpeg", "-y",
+        "-f", "concat",
+        "-safe", "0",
+        "-i", "wav_list.txt",
+        "-c", "copy",
+        VOICE_FILE
+    ])
+
+    print("✅ Full narration created")
 
 
 # ---------------- MIX AUDIO ----------------
@@ -78,7 +120,7 @@ def mix_audio():
 
 # ---------------- VIDEO ----------------
 def create_video(duration):
-    print("🎬 Creating video (SAFE MODE)")
+    print("🎬 Creating video")
 
     run([
         "ffmpeg", "-y",
