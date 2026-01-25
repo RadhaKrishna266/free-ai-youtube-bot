@@ -3,9 +3,11 @@ import subprocess
 from pathlib import Path
 from TTS.api import TTS
 
+# ---------------- CONFIG ----------------
 os.environ["COQUI_TOS_AGREED"] = "1"
 
 SCRIPT_FILE = "script.txt"
+
 VOICE_FILE = "narration.wav"
 MIXED_AUDIO = "mixed_audio.wav"
 
@@ -17,6 +19,7 @@ IMAGE_FILE = "images/000.jpg"
 FINAL_VIDEO = "final.mp4"
 
 TTS_MODEL = "tts_models/multilingual/multi-dataset/xtts_v2"
+
 CHUNK_DIR = "chunks"
 MAX_CHARS = 200   # 🔒 SAFE FOR XTTS
 
@@ -55,14 +58,16 @@ def split_text_safe(text):
         else:
             chunks.append(current.strip())
             current = s
+
     if current.strip():
         chunks.append(current.strip())
+
     return chunks
 
 
 # ---------------- AUDIO ----------------
 def create_audio():
-    print("🎤 Creating natural Hindi narration (TOKEN SAFE)")
+    print("🎤 Creating natural Hindi narration (XTTS SAFE)")
     Path(CHUNK_DIR).mkdir(exist_ok=True)
 
     with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
@@ -86,7 +91,7 @@ def create_audio():
         )
         wavs.append(out)
 
-    with open("wav_list.txt", "w") as f:
+    with open("wav_list.txt", "w", encoding="utf-8") as f:
         for w in wavs:
             f.write(f"file '{w}'\n")
 
@@ -105,7 +110,7 @@ def create_audio():
 # ---------------- MIX AUDIO ----------------
 def mix_audio():
     duration = get_duration(VOICE_FILE)
-    print(f"⏱ Duration: {duration:.2f}s")
+    print(f"⏱ Narration duration: {duration:.2f}s")
 
     run([
         "ffmpeg", "-y",
@@ -120,27 +125,42 @@ def mix_audio():
         MIXED_AUDIO
     ])
 
+    print("✅ Background audio mixed")
     return duration
 
 
 # ---------------- VIDEO ----------------
 def create_video(duration):
+    print("🎬 Creating final video (CI-STABLE MODE)")
+
     run([
         "ffmpeg", "-y",
+
         "-loop", "1",
         "-i", IMAGE_FILE,
         "-i", MIXED_AUDIO,
+
+        "-map", "0:v:0",
+        "-map", "1:a:0",
+
         "-t", str(duration),
+
         "-vf", "scale=1280:720,format=yuv420p",
         "-r", "25",
+
         "-c:v", "libx264",
         "-preset", "ultrafast",
         "-tune", "stillimage",
+
         "-c:a", "aac",
+        "-ar", "44100",
+        "-ac", "2",
+
+        "-shortest",
         FINAL_VIDEO
     ])
 
-    print("✅ Final video created")
+    print("✅ Final video created successfully")
 
 
 # ---------------- MAIN ----------------
