@@ -9,7 +9,6 @@ SCRIPT_FILE = "script.txt"
 VOICE_FILE = "narration.wav"
 MIXED_AUDIO = "mixed_audio.wav"
 
-SPEAKER_WAV = "audio/speaker.wav"
 TANPURA_FILE = "audio/tanpura.mp3"
 BELL_FILE = "audio/temple_bell.mp3"
 
@@ -24,7 +23,7 @@ def run(cmd):
     subprocess.run(cmd, check=True)
 
 
-def get_audio_duration(path):
+def get_duration(path):
     out = subprocess.check_output([
         "ffprobe", "-v", "error",
         "-show_entries", "format=duration",
@@ -44,7 +43,6 @@ def create_audio():
     tts.tts_to_file(
         text=text,
         file_path=VOICE_FILE,
-        speaker_wav=SPEAKER_WAV,
         language="hi"
     )
 
@@ -54,7 +52,7 @@ def create_audio():
 def mix_audio():
     print("🎧 Mixing background audio safely")
 
-    duration = get_audio_duration(VOICE_FILE)
+    duration = get_duration(VOICE_FILE)
     print(f"⏱ Narration duration: {duration:.2f}s")
 
     run([
@@ -71,23 +69,25 @@ def mix_audio():
     ])
 
     print("✅ Audio mix completed")
+    return duration
 
 
 # ---------------- VIDEO ----------------
-def create_video():
-    print("🎬 Creating video (FAST & SAFE)")
+def create_video(duration):
+    print("🎬 Creating video (GUARANTEED EXIT)")
 
     run([
         "ffmpeg", "-y",
-        "-loop", "1", "-i", IMAGE_FILE,
+        "-loop", "1",
+        "-i", IMAGE_FILE,
         "-i", MIXED_AUDIO,
+        "-t", str(duration),
         "-vf", "scale=1280:720,format=yuv420p",
         "-r", "25",
         "-c:v", "libx264",
         "-preset", "veryfast",
         "-tune", "stillimage",
         "-c:a", "aac",
-        "-shortest",
         FINAL_VIDEO
     ])
 
@@ -97,8 +97,8 @@ def create_video():
 # ---------------- MAIN ----------------
 def main():
     create_audio()
-    mix_audio()
-    create_video()
+    duration = mix_audio()
+    create_video(duration)
 
 
 if __name__ == "__main__":
