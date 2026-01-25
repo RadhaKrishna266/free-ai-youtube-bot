@@ -15,7 +15,6 @@ BELL_FILE = "audio/temple_bell.mp3"
 IMAGE_FILE = "images/000.jpg"
 FINAL_VIDEO = "final.mp4"
 
-# XTTS v2 – BEST NATURAL HINDI
 TTS_MODEL_NAME = "tts_models/multilingual/multi-dataset/xtts_v2"
 # =========================================
 
@@ -30,10 +29,7 @@ def create_audio():
     print("🎤 Creating NATURAL Hindi narration")
 
     if not os.path.exists(SPEAKER_WAV):
-        raise RuntimeError("❌ audio/speaker.wav is REQUIRED")
-
-    if not os.path.exists(SCRIPT_FILE):
-        raise RuntimeError("❌ script.txt missing")
+        raise RuntimeError("❌ audio/speaker.wav missing")
 
     with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
         text = f.read().strip()
@@ -43,8 +39,8 @@ def create_audio():
     tts.tts_to_file(
         text=text,
         file_path=VOICE_FILE,
-        speaker_wav=SPEAKER_WAV,  # ✅ REQUIRED
-        language="hi"             # ✅ FORCE HINDI
+        speaker_wav=SPEAKER_WAV,
+        language="hi"
     )
 
     print("✅ Hindi narration created")
@@ -57,32 +53,33 @@ def create_video():
     run([
         "ffmpeg", "-y",
 
-        # Image (auto-extended)
-        "-i", IMAGE_FILE,
+        # Loop image forever
+        "-loop", "1", "-i", IMAGE_FILE,
 
-        # Main narration
+        # Narration (controls duration)
         "-i", VOICE_FILE,
 
-        # Background loops
-        "-stream_loop", "-1", "-i", TANPURA_FILE,
-        "-stream_loop", "-1", "-i", BELL_FILE,
+        # Background audio (NORMAL input)
+        "-i", TANPURA_FILE,
+        "-i", BELL_FILE,
 
-        # Audio mix
+        # Filters
         "-filter_complex",
-        "[2:a]volume=0.25[a2];"
-        "[3:a]volume=0.12[a3];"
-        "[1:a][a2][a3]amix=inputs=3:dropout_transition=3[a]",
+        "[2:a]aloop=loop=-1:size=2e+09,volume=0.25[a2];"
+        "[3:a]aloop=loop=-1:size=2e+09,volume=0.12[a3];"
+        "[1:a][a2][a3]amix=inputs=3:dropout_transition=2[a]",
 
         # Mapping
         "-map", "0:v",
         "-map", "[a]",
 
-        # Video settings
+        # Video
         "-vf", "scale=1280:720,format=yuv420p",
+        "-r", "25",
         "-c:v", "libx264",
         "-c:a", "aac",
 
-        # 🔑 END WITH NARRATION
+        # END WHEN NARRATION ENDS
         "-shortest",
 
         FINAL_VIDEO
