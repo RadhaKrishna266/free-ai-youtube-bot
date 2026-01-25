@@ -1,8 +1,8 @@
 import os
 import subprocess
-import json
 from TTS.api import TTS
 
+# ---------------- CONFIG ----------------
 os.environ["COQUI_TOS_AGREED"] = "1"
 
 SCRIPT_FILE = "script.txt"
@@ -16,6 +16,7 @@ IMAGE_FILE = "images/000.jpg"
 FINAL_VIDEO = "final.mp4"
 
 TTS_MODEL = "tts_models/multilingual/multi-dataset/xtts_v2"
+# ---------------------------------------
 
 
 def run(cmd):
@@ -27,10 +28,14 @@ def run(cmd):
 def create_audio():
     print("🎤 Creating natural Hindi narration")
 
+    if not os.path.exists(SPEAKER_WAV):
+        raise RuntimeError("❌ audio/speaker.wav is REQUIRED")
+
     with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
         text = f.read().strip()
 
     tts = TTS(TTS_MODEL, gpu=False)
+
     tts.tts_to_file(
         text=text,
         file_path=VOICE_FILE,
@@ -41,44 +46,45 @@ def create_audio():
     print("✅ Hindi narration created")
 
 
-def get_audio_duration(path):
-    cmd = [
-        "ffprobe", "-v", "error",
-        "-show_entries", "format=duration",
-        "-of", "json", path
-    ]
-    out = subprocess.check_output(cmd)
-    return float(json.loads(out)["format"]["duration"])
-
-
 # ---------------- VIDEO ----------------
 def create_video():
     print("🎬 Creating video")
 
-    duration = get_audio_duration(VOICE_FILE)
-    print(f"⏱ Narration duration: {duration:.2f}s")
-
     run([
         "ffmpeg", "-y",
 
+        # Static image
         "-loop", "1", "-i", IMAGE_FILE,
+
+        # Main narration
         "-i", VOICE_FILE,
+
+        # Background sounds (NO looping / NO trimming)
         "-i", TANPURA_FILE,
         "-i", BELL_FILE,
 
+        # Mix audio safely
         "-filter_complex",
-        f"[2:a]volume=0.25,atrim=0:{duration}[a2];"
-        f"[3:a]volume=0.12,atrim=0:{duration}[a3];"
-        "[1:a][a2][a3]amix=inputs=3[a]",
+        "[2:a]volume=0.25[a2];"
+        "[3:a]volume=0.12[a3];"
+        "[1:a][a2][a3]amix=inputs=3:dropout_transition=2[a]",
 
+        # Map video + mixed audio
         "-map", "0:v",
         "-map", "[a]",
 
-        "-t", str(duration),
+        # Video settings
         "-vf", "scale=1280:720,format=yuv420p",
         "-r", "25",
         "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-tune", "stillimage",
+
+        # Audio
         "-c:a", "aac",
+
+        # CRITICAL: stop when narration ends
+        "-shortest",
 
         FINAL_VIDEO
     ])
