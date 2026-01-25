@@ -1,17 +1,9 @@
 import os
-import json
-import base64
 import subprocess
-import requests
 from TTS.api import TTS
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
 
 # ================= CONFIG =================
 os.environ["COQUI_TOS_AGREED"] = "1"
-
-PIXABAY_KEY = os.environ["PIXABAY_API_KEY"]
 
 SCRIPT_FILE = "script.txt"
 VOICE_FILE = "narration.wav"
@@ -20,22 +12,28 @@ SPEAKER_WAV = "audio/speaker.wav"
 TANPURA_FILE = "audio/tanpura.mp3"
 BELL_FILE = "audio/temple_bell.mp3"
 
+IMAGE_FILE = "images/000.jpg"
 FINAL_VIDEO = "final.mp4"
 
+# XTTS v2 – BEST NATURAL HINDI
 TTS_MODEL_NAME = "tts_models/multilingual/multi-dataset/xtts_v2"
 # =========================================
 
 
 def run(cmd):
+    print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
 
 # ================= AUDIO =================
 def create_audio():
-    print("🎤 Creating NATURAL Hindi voice")
+    print("🎤 Creating NATURAL Hindi narration")
 
     if not os.path.exists(SPEAKER_WAV):
         raise RuntimeError("❌ audio/speaker.wav is REQUIRED")
+
+    if not os.path.exists(SCRIPT_FILE):
+        raise RuntimeError("❌ script.txt missing")
 
     with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
         text = f.read().strip()
@@ -45,8 +43,8 @@ def create_audio():
     tts.tts_to_file(
         text=text,
         file_path=VOICE_FILE,
-        speaker_wav=SPEAKER_WAV,
-        language="hi"
+        speaker_wav=SPEAKER_WAV,  # ✅ REQUIRED
+        language="hi"             # ✅ FORCE HINDI
     )
 
     print("✅ Hindi narration created")
@@ -54,24 +52,43 @@ def create_audio():
 
 # ================= VIDEO =================
 def create_video():
+    print("🎬 Creating video")
+
     run([
         "ffmpeg", "-y",
-        "-loop", "1", "-i", "images/000.jpg",
+
+        # Image (auto-extended)
+        "-i", IMAGE_FILE,
+
+        # Main narration
         "-i", VOICE_FILE,
+
+        # Background loops
         "-stream_loop", "-1", "-i", TANPURA_FILE,
         "-stream_loop", "-1", "-i", BELL_FILE,
+
+        # Audio mix
         "-filter_complex",
         "[2:a]volume=0.25[a2];"
         "[3:a]volume=0.12[a3];"
-        "[1:a][a2][a3]amix=inputs=3[a]",
+        "[1:a][a2][a3]amix=inputs=3:dropout_transition=3[a]",
+
+        # Mapping
         "-map", "0:v",
         "-map", "[a]",
-        "-t", "600",
+
+        # Video settings
+        "-vf", "scale=1280:720,format=yuv420p",
         "-c:v", "libx264",
-        "-pix_fmt", "yuv420p",
         "-c:a", "aac",
+
+        # 🔑 END WITH NARRATION
+        "-shortest",
+
         FINAL_VIDEO
     ])
+
+    print("✅ Video created successfully")
 
 
 # ================= MAIN =================
