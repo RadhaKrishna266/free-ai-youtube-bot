@@ -27,9 +27,10 @@ def get_duration(path):
     out = subprocess.check_output([
         "ffprobe", "-v", "error",
         "-show_entries", "format=duration",
-        "-of", "json", path
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        path
     ])
-    return float(json.loads(out)["format"]["duration"])
+    return float(out.strip())
 
 
 # ---------------- AUDIO ----------------
@@ -50,7 +51,7 @@ def create_audio():
 
 
 def mix_audio():
-    print("🎧 Mixing background audio safely")
+    print("🎧 Mixing background audio")
 
     duration = get_duration(VOICE_FILE)
     print(f"⏱ Narration duration: {duration:.2f}s")
@@ -61,9 +62,9 @@ def mix_audio():
         "-stream_loop", "-1", "-i", TANPURA_FILE,
         "-stream_loop", "-1", "-i", BELL_FILE,
         "-filter_complex",
-        f"[1:a]volume=0.25,atrim=0:{duration}[a1];"
-        f"[2:a]volume=0.12,atrim=0:{duration}[a2];"
-        "[0:a][a1][a2]amix=inputs=3",
+        f"[1:a]volume=0.25,atrim=0:{duration}[bg1];"
+        f"[2:a]volume=0.12,atrim=0:{duration}[bg2];"
+        "[0:a][bg1][bg2]amix=inputs=3:dropout_transition=0",
         "-t", str(duration),
         MIXED_AUDIO
     ])
@@ -73,21 +74,23 @@ def mix_audio():
 
 
 # ---------------- VIDEO ----------------
-def create_video(duration):
-    print("🎬 Creating video (GUARANTEED EXIT)")
+def create_video():
+    print("🎬 Creating video (SAFE MODE)")
 
     run([
         "ffmpeg", "-y",
         "-loop", "1",
         "-i", IMAGE_FILE,
         "-i", MIXED_AUDIO,
-        "-t", str(duration),
+        "-map", "0:v:0",
+        "-map", "1:a:0",
         "-vf", "scale=1280:720,format=yuv420p",
         "-r", "25",
         "-c:v", "libx264",
-        "-preset", "veryfast",
+        "-preset", "ultrafast",
         "-tune", "stillimage",
         "-c:a", "aac",
+        "-shortest",
         FINAL_VIDEO
     ])
 
@@ -97,8 +100,8 @@ def create_video(duration):
 # ---------------- MAIN ----------------
 def main():
     create_audio()
-    duration = mix_audio()
-    create_video(duration)
+    mix_audio()
+    create_video()
 
 
 if __name__ == "__main__":
