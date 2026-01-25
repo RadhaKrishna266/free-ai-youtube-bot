@@ -1,6 +1,5 @@
 import os
 import subprocess
-import json
 from TTS.api import TTS
 
 os.environ["COQUI_TOS_AGREED"] = "1"
@@ -9,6 +8,7 @@ SCRIPT_FILE = "script.txt"
 VOICE_FILE = "narration.wav"
 MIXED_AUDIO = "mixed_audio.wav"
 
+SPEAKER_WAV = "audio/speaker.wav"
 TANPURA_FILE = "audio/tanpura.mp3"
 BELL_FILE = "audio/temple_bell.mp3"
 
@@ -38,18 +38,21 @@ def create_audio():
     print("🎤 Creating natural Hindi narration")
 
     with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
-        text = f.read().strip()
+        text = " ".join(line.strip() for line in f if line.strip())
 
     tts = TTS(TTS_MODEL, gpu=False)
+
     tts.tts_to_file(
         text=text,
         file_path=VOICE_FILE,
+        speaker_wav=SPEAKER_WAV,   # ✅ REQUIRED
         language="hi"
     )
 
     print("✅ Hindi narration created")
 
 
+# ---------------- MIX AUDIO ----------------
 def mix_audio():
     print("🎧 Mixing background audio")
 
@@ -64,7 +67,7 @@ def mix_audio():
         "-filter_complex",
         f"[1:a]volume=0.25,atrim=0:{duration}[bg1];"
         f"[2:a]volume=0.12,atrim=0:{duration}[bg2];"
-        "[0:a][bg1][bg2]amix=inputs=3:dropout_transition=0",
+        "[0:a][bg1][bg2]amix=inputs=3",
         "-t", str(duration),
         MIXED_AUDIO
     ])
@@ -74,7 +77,7 @@ def mix_audio():
 
 
 # ---------------- VIDEO ----------------
-def create_video():
+def create_video(duration):
     print("🎬 Creating video (SAFE MODE)")
 
     run([
@@ -82,15 +85,13 @@ def create_video():
         "-loop", "1",
         "-i", IMAGE_FILE,
         "-i", MIXED_AUDIO,
-        "-map", "0:v:0",
-        "-map", "1:a:0",
+        "-t", str(duration),
         "-vf", "scale=1280:720,format=yuv420p",
         "-r", "25",
         "-c:v", "libx264",
         "-preset", "ultrafast",
         "-tune", "stillimage",
         "-c:a", "aac",
-        "-shortest",
         FINAL_VIDEO
     ])
 
@@ -100,8 +101,8 @@ def create_video():
 # ---------------- MAIN ----------------
 def main():
     create_audio()
-    mix_audio()
-    create_video()
+    duration = mix_audio()
+    create_video(duration)
 
 
 if __name__ == "__main__":
