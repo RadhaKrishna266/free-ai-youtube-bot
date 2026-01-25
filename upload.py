@@ -1,13 +1,17 @@
 import os
 import subprocess
+import json
+import requests
 from pathlib import Path
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+from google.oauth2.credentials import Credentials
 from TTS.api import TTS
 
-# ---------------- CONFIG ----------------
+# ---------------- ENV ----------------
 os.environ["COQUI_TOS_AGREED"] = "1"
 
 SCRIPT_FILE = "script.txt"
-
 VOICE_FILE = "narration.wav"
 MIXED_AUDIO = "mixed_audio.wav"
 
@@ -19,16 +23,13 @@ IMAGE_FILE = "images/000.jpg"
 FINAL_VIDEO = "final.mp4"
 
 TTS_MODEL = "tts_models/multilingual/multi-dataset/xtts_v2"
-
 CHUNK_DIR = "chunks"
-MAX_CHARS = 200   # 🔒 SAFE FOR XTTS
-
+MAX_CHARS = 200
 
 # ---------------- UTIL ----------------
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
-
 
 def get_duration(path):
     out = subprocess.check_output([
@@ -39,78 +40,80 @@ def get_duration(path):
     ])
     return float(out.strip())
 
+# ---------------- IMAGE ----------------
+def get_image():
+    os.makedirs("images", exist_ok=True)
+    if os.path.exists(IMAGE_FILE):
+        return
 
+    print("🖼 Creating image automatically")
+
+    r = requests.get(
+        "https://pixabay.com/api/",
+        params={
+            "key": os.environ["PIXABAY_API_KEY"],
+            "q": "Kashi Vishwanath temple",
+            "image_type": "photo",
+            "orientation": "horizontal",
+            "per_page": 3
+        }
+    ).json()
+
+    img_url = r["hits"][0]["largeImageURL"]
+    img = requests.get(img_url).content
+
+    with open(IMAGE_FILE, "wb") as f:
+        f.write(img)
+
+# ---------------- TEXT SPLIT ----------------
 def split_text_safe(text):
-    sentences = (
-        text.replace("।", "।\n")
-            .replace("?", "?\n")
-            .replace("!", "!\n")
-            .splitlines()
-    )
+    parts = text.replace("।", "।\n").splitlines()
+    chunks, buf = [], ""
 
-    chunks, current = [], ""
-    for s in sentences:
-        s = s.strip()
-        if not s:
-            continue
-        if len(current) + len(s) <= MAX_CHARS:
-            current += " " + s
+    for p in parts:
+        if len(buf) + len(p) <= MAX_CHARS:
+            buf += " " + p
         else:
-            chunks.append(current.strip())
-            current = s
-
-    if current.strip():
-        chunks.append(current.strip())
-
+            chunks.append(buf.strip())
+            buf = p
+    if buf:
+        chunks.append(buf.strip())
     return chunks
-
 
 # ---------------- AUDIO ----------------
 def create_audio():
-    print("🎤 Creating natural Hindi narration (XTTS SAFE)")
+    print("🎤 Creating Hindi narration")
+
     Path(CHUNK_DIR).mkdir(exist_ok=True)
 
-    with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
-        text = f.read().strip()
-
+    text = Path(SCRIPT_FILE).read_text(encoding="utf-8")
     chunks = split_text_safe(text)
-    print(f"🧩 Total chunks: {len(chunks)}")
 
     tts = TTS(TTS_MODEL, gpu=False)
     wavs = []
 
-    for i, chunk in enumerate(chunks):
-        out = f"{CHUNK_DIR}/chunk_{i:03d}.wav"
-        print(f"🔊 Chunk {i+1}/{len(chunks)}")
-
+    for i, c in enumerate(chunks):
+        out = f"{CHUNK_DIR}/c{i}.wav"
         tts.tts_to_file(
-            text=chunk,
-            file_path=out,
+            text=c,
             speaker_wav=SPEAKER_WAV,
-            language="hi"
+            language="hi",
+            file_path=out
         )
         wavs.append(out)
 
-    with open("wav_list.txt", "w", encoding="utf-8") as f:
+    with open("wav_list.txt", "w") as f:
         for w in wavs:
             f.write(f"file '{w}'\n")
 
     run([
-        "ffmpeg", "-y",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", "wav_list.txt",
-        "-c", "copy",
-        VOICE_FILE
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+        "-i", "wav_list.txt", "-c", "copy", VOICE_FILE
     ])
 
-    print("✅ Full narration ready")
-
-
-# ---------------- MIX AUDIO ----------------
+# ---------------- MIX ----------------
 def mix_audio():
-    duration = get_duration(VOICE_FILE)
-    print(f"⏱ Narration duration: {duration:.2f}s")
+    d = get_duration(VOICE_FILE)
 
     run([
         "ffmpeg", "-y",
@@ -118,57 +121,62 @@ def mix_audio():
         "-stream_loop", "-1", "-i", TANPURA_FILE,
         "-stream_loop", "-1", "-i", BELL_FILE,
         "-filter_complex",
-        f"[1:a]volume=0.25,atrim=0:{duration}[bg1];"
-        f"[2:a]volume=0.12,atrim=0:{duration}[bg2];"
-        "[0:a][bg1][bg2]amix=inputs=3",
-        "-t", str(duration),
+        f"[1:a]volume=0.25,atrim=0:{d}[a1];"
+        f"[2:a]volume=0.12,atrim=0:{d}[a2];"
+        "[0:a][a1][a2]amix=inputs=3",
+        "-t", str(d),
         MIXED_AUDIO
-    ])
-
-    print("✅ Background audio mixed")
-    return duration
-
+    )
+    return d
 
 # ---------------- VIDEO ----------------
-def create_video(duration):
-    print("🎬 Creating final video (CI-STABLE MODE)")
-
+def create_video(d):
     run([
         "ffmpeg", "-y",
-
         "-loop", "1",
         "-i", IMAGE_FILE,
         "-i", MIXED_AUDIO,
-
-        "-map", "0:v:0",
-        "-map", "1:a:0",
-
-        "-t", str(duration),
-
+        "-t", str(d),
         "-vf", "scale=1280:720,format=yuv420p",
         "-r", "25",
-
         "-c:v", "libx264",
         "-preset", "ultrafast",
-        "-tune", "stillimage",
-
         "-c:a", "aac",
-        "-ar", "44100",
-        "-ac", "2",
-
-        "-shortest",
         FINAL_VIDEO
     ])
 
-    print("✅ Final video created successfully")
+# ---------------- YOUTUBE ----------------
+def upload_youtube():
+    creds = Credentials.from_authorized_user_info(
+        json.loads(os.environ["YOUTUBE_TOKEN_JSON"]),
+        ["https://www.googleapis.com/auth/youtube.upload"]
+    )
 
+    yt = build("youtube", "v3", credentials=creds)
+
+    req = yt.videos().insert(
+        part="snippet,status",
+        body={
+            "snippet": {
+                "title": "काशी विश्वनाथ – शिव की नगरी",
+                "description": "ॐ नमः शिवाय",
+                "categoryId": "22"
+            },
+            "status": {"privacyStatus": "public"}
+        },
+        media_body=MediaFileUpload(FINAL_VIDEO)
+    )
+
+    req.execute()
+    print("✅ Uploaded to YouTube")
 
 # ---------------- MAIN ----------------
 def main():
+    get_image()
     create_audio()
-    duration = mix_audio()
-    create_video(duration)
-
+    d = mix_audio()
+    create_video(d)
+    upload_youtube()
 
 if __name__ == "__main__":
     main()
