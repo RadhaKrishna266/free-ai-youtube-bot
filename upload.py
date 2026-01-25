@@ -1,15 +1,16 @@
 import os
-import subprocess
 import json
 import base64
+import subprocess
 import requests
 from pathlib import Path
+
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
 from TTS.api import TTS
 
-# ================== CONFIG ==================
+# ================= CONFIG =================
 os.environ["COQUI_TOS_AGREED"] = "1"
 
 SCRIPT_FILE = "script.txt"
@@ -27,12 +28,12 @@ CHUNK_DIR = "chunks"
 MODEL = "tts_models/multilingual/multi-dataset/xtts_v2"
 MAX_CHARS = 200
 
-# ================== UTILS ==================
+# ================= UTILS =================
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-def duration(path):
+def get_duration(path):
     out = subprocess.check_output([
         "ffprobe", "-v", "error",
         "-show_entries", "format=duration",
@@ -41,13 +42,14 @@ def duration(path):
     ])
     return float(out.strip())
 
-# ================== IMAGE ==================
+# ================= IMAGE =================
 def create_image():
     os.makedirs("images", exist_ok=True)
     if os.path.exists(IMAGE_FILE):
         return
 
-    print("🖼 Downloading image")
+    print("🖼 Downloading image from Pixabay")
+
     r = requests.get(
         "https://pixabay.com/api/",
         params={
@@ -58,49 +60,56 @@ def create_image():
         }
     ).json()
 
-    img = requests.get(r["hits"][0]["largeImageURL"]).content
+    img_url = r["hits"][0]["largeImageURL"]
+    img = requests.get(img_url).content
+
     with open(IMAGE_FILE, "wb") as f:
         f.write(img)
 
-# ================== TEXT ==================
+# ================= TEXT =================
 def split_text(text):
     text = text.replace("।", "।\n")
     parts = text.splitlines()
 
-    chunks, buf = [], ""
+    chunks = []
+    buf = ""
+
     for p in parts:
         if len(buf) + len(p) <= MAX_CHARS:
             buf += " " + p
         else:
             chunks.append(buf.strip())
             buf = p
-    if buf:
+
+    if buf.strip():
         chunks.append(buf.strip())
+
     return chunks
 
-# ================== AUDIO ==================
+# ================= AUDIO =================
 def create_audio():
-    print("🎤 Creating Hindi narration")
+    print("🎤 Generating Hindi narration")
+
     Path(CHUNK_DIR).mkdir(exist_ok=True)
 
     text = Path(SCRIPT_FILE).read_text(encoding="utf-8")
     chunks = split_text(text)
 
     tts = TTS(MODEL, gpu=False)
-    wavs = []
+    wav_files = []
 
-    for i, c in enumerate(chunks):
+    for i, chunk in enumerate(chunks):
         out = f"{CHUNK_DIR}/part_{i}.wav"
         tts.tts_to_file(
-            text=c,
+            text=chunk,
             speaker_wav=SPEAKER_WAV,
             language="hi",
             file_path=out
         )
-        wavs.append(out)
+        wav_files.append(out)
 
-    with open("wav_list.txt", "w") as f:
-        for w in wavs:
+    with open("wav_list.txt", "w", encoding="utf-8") as f:
+        for w in wav_files:
             f.write(f"file '{w}'\n")
 
     run([
@@ -111,9 +120,9 @@ def create_audio():
         VOICE_FILE
     ])
 
-# ================== MIX ==================
+# ================= MIX =================
 def mix_audio():
-    d = duration(VOICE_FILE)
+    duration = get_duration(VOICE_FILE)
 
     run([
         "ffmpeg", "-y",
@@ -121,22 +130,23 @@ def mix_audio():
         "-stream_loop", "-1", "-i", TANPURA,
         "-stream_loop", "-1", "-i", BELL,
         "-filter_complex",
-        f"[1:a]volume=0.25,atrim=0:{d}[bg1];"
-        f"[2:a]volume=0.12,atrim=0:{d}[bg2];"
+        f"[1:a]volume=0.25,atrim=0:{duration}[bg1];"
+        f"[2:a]volume=0.12,atrim=0:{duration}[bg2];"
         "[0:a][bg1][bg2]amix=inputs=3",
-        "-t", str(d),
+        "-t", str(duration),
         MIXED_AUDIO
     ])
-    return d
 
-# ================== VIDEO ==================
-def create_video(d):
+    return duration
+
+# ================= VIDEO =================
+def create_video(duration):
     run([
         "ffmpeg", "-y",
         "-loop", "1",
         "-i", IMAGE_FILE,
         "-i", MIXED_AUDIO,
-        "-t", str(d),
+        "-t", str(duration),
         "-vf", "scale=1280:720,format=yuv420p",
         "-r", "25",
         "-c:v", "libx264",
@@ -145,33 +155,44 @@ def create_video(d):
         FINAL_VIDEO
     ])
 
-# ================== YOUTUBE ==================
+# ================= YOUTUBE =================
 def upload_youtube():
-    token = base64.b64decode(os.environ["YOUTUBE_TOKEN_BASE64"]).decode()
-    creds = Credentials.from_authorized_user_info(
-        json.loads(token),
-        ["https://www.googleapis.com/auth/youtube.upload"]
+    print("📤 Uploading to YouTube using BASE64 token")
+
+    token_info = json.loads(
+        base64.b64decode(os.environ["YOUTUBE_TOKEN_BASE64"]).decode("utf-8")
     )
 
-    yt = build("youtube", "v3", credentials=creds)
+    creds = Credentials.from_authorized_user_info(
+        token_info,
+        scopes=["https://www.googleapis.com/auth/youtube.upload"]
+    )
 
-    request = yt.videos().insert(
+    youtube = build("youtube", "v3", credentials=creds)
+
+    request = youtube.videos().insert(
         part="snippet,status",
         body={
             "snippet": {
                 "title": "काशी विश्वनाथ – शिव की नगरी",
-                "description": "ॐ नमः शिवाय",
+                "description": "ॐ नमः शिवाय\nNatural Hindi AI narration",
                 "categoryId": "22"
             },
-            "status": {"privacyStatus": "public"}
+            "status": {
+                "privacyStatus": "public"
+            }
         },
-        media_body=MediaFileUpload(FINAL_VIDEO)
+        media_body=MediaFileUpload(
+            FINAL_VIDEO,
+            mimetype="video/mp4",
+            resumable=True
+        )
     )
 
-    request.execute()
-    print("✅ Uploaded to YouTube")
+    response = request.execute()
+    print("✅ Uploaded successfully. Video ID:", response["id"])
 
-# ================== MAIN ==================
+# ================= MAIN =================
 def main():
     create_image()
     create_audio()
