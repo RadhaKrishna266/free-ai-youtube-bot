@@ -8,6 +8,7 @@ from pathlib import Path
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
 from TTS.api import TTS
 
 # ================= CONFIG =================
@@ -27,6 +28,8 @@ CHUNK_DIR = "chunks"
 
 MODEL = "tts_models/multilingual/multi-dataset/xtts_v2"
 MAX_CHARS = 200
+
+YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube.upload"
 
 # ================= UTILS =================
 def run(cmd):
@@ -157,16 +160,25 @@ def create_video(duration):
 
 # ================= YOUTUBE =================
 def upload_youtube():
-    print("📤 Uploading to YouTube using BASE64 token")
+    print("📤 Uploading to YouTube")
 
+    # Decode token from env
     token_info = json.loads(
         base64.b64decode(os.environ["YOUTUBE_TOKEN_BASE64"]).decode("utf-8")
     )
 
-    creds = Credentials.from_authorized_user_info(
-        token_info,
-        scopes=["https://www.googleapis.com/auth/youtube.upload"]
+    creds = Credentials(
+        token=token_info.get("token"),
+        refresh_token=token_info.get("refresh_token"),
+        token_uri=token_info.get("token_uri"),
+        client_id=token_info.get("client_id"),
+        client_secret=token_info.get("client_secret"),
+        scopes=[YOUTUBE_SCOPE]
     )
+
+    # 🔥 Ensure refresh works
+    if creds.expired and creds.refresh_token:
+        creds.refresh(Request())
 
     youtube = build("youtube", "v3", credentials=creds)
 
@@ -196,8 +208,8 @@ def upload_youtube():
 def main():
     create_image()
     create_audio()
-    d = mix_audio()
-    create_video(d)
+    duration = mix_audio()
+    create_video(duration)
     upload_youtube()
 
 if __name__ == "__main__":
