@@ -4,6 +4,7 @@ import base64
 import subprocess
 import requests
 from pathlib import Path
+
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
@@ -45,19 +46,17 @@ def duration(path):
 # ================= IMAGES =================
 def create_images():
     os.makedirs(IMAGE_DIR, exist_ok=True)
-
-    if len(os.listdir(IMAGE_DIR)) >= 5:
+    if len(list(Path(IMAGE_DIR).glob("*.jpg"))) >= 5:
         return
 
     print("🖼 Downloading divine images")
-
     r = requests.get(
         "https://pixabay.com/api/",
         params={
             "key": os.environ["PIXABAY_API_KEY"],
-            "q": "Vishnu Krishna divine painting",
+            "q": "Vishnu Narayan temple painting",
             "orientation": "horizontal",
-            "per_page": 5
+            "per_page": 10
         }
     ).json()
 
@@ -78,14 +77,13 @@ def split_text(text):
         else:
             chunks.append(buf.strip())
             buf = p
-    if buf.strip():
+    if buf:
         chunks.append(buf.strip())
     return chunks
 
 # ================= AUDIO =================
 def create_audio():
     print("🎙 Creating calm divine narration")
-
     Path(CHUNK_DIR).mkdir(exist_ok=True)
 
     text = Path(SCRIPT_FILE).read_text(encoding="utf-8")
@@ -99,11 +97,12 @@ def create_audio():
         tts.tts_to_file(
             text=c,
             language="hi",
+            speaker="random",   # ✅ REQUIRED FIX
             file_path=out
         )
         wavs.append(out)
 
-    with open("wav_list.txt", "w", encoding="utf-8") as f:
+    with open("wav_list.txt", "w") as f:
         for w in wavs:
             f.write(f"file '{w}'\n")
 
@@ -118,7 +117,6 @@ def create_audio():
 # ================= MIX =================
 def mix_audio():
     d = duration(VOICE_FILE)
-
     run([
         "ffmpeg", "-y",
         "-i", VOICE_FILE,
@@ -136,7 +134,7 @@ def mix_audio():
 # ================= VIDEO =================
 def create_video(d):
     images = sorted(Path(IMAGE_DIR).glob("*.jpg"))
-    with open("img_list.txt", "w") as f:
+    with open("images.txt", "w") as f:
         for img in images:
             f.write(f"file '{img}'\n")
             f.write(f"duration {d/len(images)}\n")
@@ -144,12 +142,13 @@ def create_video(d):
     run([
         "ffmpeg", "-y",
         "-f", "concat", "-safe", "0",
-        "-i", "img_list.txt",
+        "-i", "images.txt",
         "-i", MIXED_AUDIO,
         "-vf", "scale=1280:720,format=yuv420p",
         "-c:v", "libx264",
-        "-preset", "slow",
+        "-preset", "ultrafast",
         "-c:a", "aac",
+        "-shortest",
         FINAL_VIDEO
     ])
 
@@ -175,26 +174,25 @@ def upload_youtube():
 
     yt = build("youtube", "v3", credentials=creds)
 
-    yt.videos().insert(
+    req = yt.videos().insert(
         part="snippet,status",
         body={
             "snippet": {
-                "title": "विष्णु पुराण | अध्याय 1 | सनातन ग्राम धारा",
+                "title": "विष्णु पुराण अध्याय 1 | सनातन ज्ञान",
                 "description": (
-                    "आज से हम विष्णु पुराण का दिव्य पाठ प्रारंभ कर रहे हैं।\n\n"
-                    "📿 प्रतिदिन एक अध्याय\n"
-                    "🙏 कृपया चैनल को Subscribe करें\n"
-                    "🔔 हर अध्याय के लिए Bell दबाएँ\n\n"
-                    "सनातन ग्राम धारा"
+                    "विष्णु पुराण का दिव्य अध्याय।\n\n"
+                    "🙏 प्रतिदिन नया अध्याय\n"
+                    "👍 Like | 🔔 Subscribe | 📿 Share\n"
                 ),
                 "categoryId": "22"
             },
             "status": {"privacyStatus": "public"}
         },
         media_body=MediaFileUpload(FINAL_VIDEO, resumable=True)
-    ).execute()
+    )
 
-    print("✅ Uploaded successfully")
+    res = req.execute()
+    print("✅ Uploaded:", res["id"])
 
 # ================= MAIN =================
 def main():
