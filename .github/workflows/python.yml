@@ -19,9 +19,7 @@ jobs:
           sudo apt install -y \
             ffmpeg \
             imagemagick \
-            wget \
-            sox \
-            libsox-fmt-all
+            wget
 
       # ================= PYTHON =================
       - name: Set up Python 3.11
@@ -37,40 +35,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install \
             torch==2.1.0 \
-            transformers==4.36.2 \
-            google-auth \
-            google-auth-oauthlib \
-            google-api-python-client \
             requests \
             pillow \
             moviepy \
             imageio \
             imageio-ffmpeg \
-            TTS \
-            huggingface_hub
-
-      # ================= SPEAKER VOICE (CALM DIVINE) =================
-      - name: Download & prepare speaker voice
-        run: |
-          mkdir -p speaker
-          wget -O speaker/raw.wav https://huggingface.co/coqui/XTTS-v2/resolve/main/samples/en_sample.wav
-          ffmpeg -y -i speaker/raw.wav -ac 1 -ar 22050 -t 10 speaker/speaker.wav
-
-      # ================= PRE-DOWNLOAD XTTS MODEL =================
-      - name: Pre-download Coqui XTTS v2
-        env:
-          COQUI_TOS_AGREED: "1"
-        run: |
-          python - << 'EOF'
-          from TTS.api import TTS
-          TTS("tts_models/multilingual/multi-dataset/xtts_v2", gpu=False)
-          EOF
+            TTS
 
       # ================= RUN BOT =================
-      - name: Run Temple Video Bot
+      - name: Run Sanatan Gyan Dhara Bot
         env:
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
-          YOUTUBE_TOKEN_BASE64: ${{ secrets.YOUTUBE_TOKEN_BASE64 }}
           COQUI_TOS_AGREED: "1"
         run: |
           python upload.py
@@ -79,5 +54,5 @@ jobs:
       - name: Upload final video
         uses: actions/upload-artifact@v4
         with:
-          name: final-temple-video
+          name: sanatan-gyan-dhara-video
           path: final.mp4
