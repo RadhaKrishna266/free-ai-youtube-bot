@@ -43,10 +43,13 @@ jobs:
             google-api-python-client \
             requests \
             pillow \
+            moviepy \
+            imageio \
+            imageio-ffmpeg \
             TTS \
             huggingface_hub
 
-      # ================= SPEAKER VOICE (XTTS REQUIRED) =================
+      # ================= SPEAKER VOICE (CALM DIVINE) =================
       - name: Download & prepare speaker voice
         run: |
           mkdir -p speaker
