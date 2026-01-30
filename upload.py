@@ -1,18 +1,18 @@
 import os
 import requests
+from pathlib import Path
 from TTS.api import TTS
 from moviepy.editor import ImageSequenceClip, AudioFileClip
 
-# ---------------- CONFIG ---------------- #
+# ================= CONFIG =================
 
 SCRIPT_FILE = "script.txt"
-AUDIO_FILE = "voice.wav"
-VIDEO_FILE = "video.mp4"
+VOICE_FILE = "voice.wav"
+FINAL_VIDEO = "final.mp4"
 IMAGE_DIR = "images"
 MAX_IMAGES = 60
 
-# ---------------------------------------- #
-
+# ================= IMAGES =================
 
 def download_images():
     print("🖼 Downloading divine images")
@@ -22,7 +22,7 @@ def download_images():
         "https://pixabay.com/api/",
         params={
             "key": os.environ["PIXABAY_API_KEY"],
-            "q": "Lord Vishnu Hindu divine art painting",
+            "q": "Lord Vishnu divine spiritual art",
             "orientation": "horizontal",
             "image_type": "photo",
             "safesearch": "true",
@@ -31,40 +31,38 @@ def download_images():
     ).json()
 
     hits = r.get("hits", [])
-    if len(hits) < 10:
-        raise RuntimeError("❌ Too few images returned from Pixabay")
+    if not hits:
+        raise RuntimeError("No images returned from Pixabay")
 
     usable = min(len(hits), MAX_IMAGES)
 
     for i in range(usable):
-        img_url = hits[i]["largeImageURL"]
-        img_data = requests.get(img_url).content
+        img = requests.get(hits[i]["largeImageURL"]).content
         with open(f"{IMAGE_DIR}/{i:03}.jpg", "wb") as f:
-            f.write(img_data)
+            f.write(img)
 
     print(f"✅ Downloaded {usable} images")
 
+# ================= AUDIO =================
 
 def create_audio():
     print("🎙 Creating calm divine narration")
 
-    with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
-        text = f.read()
+    text = Path(SCRIPT_FILE).read_text(encoding="utf-8")
 
-    # SINGLE-SPEAKER HINDI MODEL (NO speaker needed)
     tts = TTS(
         model_name="tts_models/hi/tacotron2-DDC",
-        progress_bar=False,
         gpu=False
     )
 
     tts.tts_to_file(
         text=text,
-        file_path=AUDIO_FILE
+        file_path=VOICE_FILE
     )
 
-    print("✅ Divine voice generated")
+    print("✅ Voice generated")
 
+# ================= VIDEO =================
 
 def create_video():
     print("🎞 Creating video")
@@ -73,26 +71,28 @@ def create_video():
         [os.path.join(IMAGE_DIR, f) for f in os.listdir(IMAGE_DIR)]
     )
 
-    audio = AudioFileClip(AUDIO_FILE)
+    audio = AudioFileClip(VOICE_FILE)
 
-    clip = ImageSequenceClip(images, fps=len(images) / audio.duration)
-    clip = clip.set_audio(audio)
+    clip = ImageSequenceClip(
+        images,
+        fps=len(images) / audio.duration
+    ).set_audio(audio)
 
     clip.write_videofile(
-        VIDEO_FILE,
+        FINAL_VIDEO,
         codec="libx264",
         audio_codec="aac",
         fps=24
     )
 
-    print("✅ Video created successfully")
+    print("✅ Final video ready")
 
+# ================= MAIN =================
 
 def main():
     download_images()
     create_audio()
     create_video()
-
 
 if __name__ == "__main__":
     main()
