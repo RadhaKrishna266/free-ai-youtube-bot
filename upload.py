@@ -17,7 +17,7 @@ VOICE_FILE = "narration.wav"
 FINAL_VIDEO = "final.mp4"
 
 IMAGE_DIR = "images"
-IMAGE_COUNT = 6
+IMAGE_COUNT = 60
 
 # CALM SINGLE-SPEAKER HINDI MODEL
 MODEL = "tts_models/hi/mai/tacotron2-DDC"
