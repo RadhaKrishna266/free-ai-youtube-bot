@@ -11,15 +11,14 @@ from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 
 # ================= CONFIG =================
-SCRIPT_FILE = "script.txt"   # Episode 1 script (blocks separated by double newlines)
-IMAGE_DIR = "images"         # Will store downloaded Pixabay images
+SCRIPT_FILE = "script.txt"   # Hindi script blocks separated by double newlines
+IMAGE_DIR = "images"         # Stores downloaded Pixabay images
 TANPURA = "audio_fixed/tanpura_fixed.mp3"
 FINAL_AUDIO = "final_audio.wav"
 FINAL_VIDEO = "final_video.mp4"
 YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube.upload"
 
-PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY")  # Set your Pixabay API key
-
+PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY")
 os.makedirs("audio_blocks", exist_ok=True)
 os.makedirs("video_blocks", exist_ok=True)
 os.makedirs(IMAGE_DIR, exist_ok=True)
@@ -58,9 +57,8 @@ def download_images(blocks):
 
 # ================= VOICE =================
 def generate_audio_blocks(blocks):
-    """Generate Hindi narration for each block using single-speaker TTS"""
-    print("🎙 Generating narration in blocks...")
-    # ✅ Working 4-part Hindi model for older TTS versions
+    """Generate Hindi narration using latest vits_hindi TTS"""
+    print("🎙 Generating Hindi narration...")
     tts = TTS(model_name="tts_models/hi/vits/vits_hindi", gpu=False)
 
     block_files = []
@@ -69,25 +67,17 @@ def generate_audio_blocks(blocks):
             continue
         audio_file = f"audio_blocks/{i:03d}.wav"
         print(f"Generating block {i+1}/{len(blocks)}...")
-        tts.tts_to_file(
-            text=block.strip(),
-            file_path=audio_file,
-            speed=1.0
-        )
+        tts.tts_to_file(text=block.strip(), file_path=audio_file, speed=1.0)
         block_files.append(audio_file)
 
-    # Concatenate all blocks into final narration
+    # Concatenate all blocks
     with open("audio_list.txt", "w") as f:
         for bf in block_files:
             f.write(f"file '{bf}'\n")
 
-    run([
-        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-        "-i", "audio_list.txt",
-        "-c", "copy", "narration_raw.wav"
-    ])
+    run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", "audio_list.txt", "-c", "copy", "narration_raw.wav"])
 
-    # Mix with tanpura if available
+    # Mix with tanpura
     if os.path.exists(TANPURA):
         run([
             "ffmpeg", "-y",
@@ -103,7 +93,6 @@ def generate_audio_blocks(blocks):
 
 # ================= VIDEO =================
 def create_video(blocks):
-    """Create video using one image per block"""
     print("🎞 Creating video block-by-block...")
     input_files = []
 
@@ -116,15 +105,13 @@ def create_video(blocks):
             print(f"⚠ Image missing for block {i}, using last image")
             img_file = f"{IMAGE_DIR}/{i-1:03d}.jpg" if i>0 else f"{IMAGE_DIR}/000.jpg"
 
-        # Get audio duration
         result = subprocess.run(
-            ["ffprobe", "-i", audio_file, "-show_entries", "format=duration",
-             "-v", "quiet", "-of", "csv=p=0"], capture_output=True, text=True
+            ["ffprobe", "-i", audio_file, "-show_entries", "format=duration", "-v", "quiet", "-of", "csv=p=0"],
+            capture_output=True, text=True
         )
         duration = float(result.stdout.strip())
-
-        # Create video segment
         segment_file = f"video_blocks/{i:03d}.mp4"
+
         run([
             "ffmpeg", "-y",
             "-loop", "1",
@@ -139,25 +126,16 @@ def create_video(blocks):
         ])
         input_files.append(segment_file)
 
-    # Concatenate video segments
     with open("video_list.txt", "w") as f:
         for vf in input_files:
             f.write(f"file '{vf}'\n")
 
-    run([
-        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-        "-i", "video_list.txt",
-        "-c", "copy",
-        FINAL_VIDEO
-    ])
+    run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", "video_list.txt", "-c", "copy", FINAL_VIDEO])
 
 # ================= YOUTUBE =================
 def upload_youtube():
-    """Upload video to YouTube"""
     print("📤 Uploading to YouTube...")
-    token_info = json.loads(
-        base64.b64decode(os.environ["YOUTUBE_TOKEN_BASE64"]).decode()
-    )
+    token_info = json.loads(base64.b64decode(os.environ["YOUTUBE_TOKEN_BASE64"]).decode())
 
     creds = Credentials(
         token=token_info["token"],
