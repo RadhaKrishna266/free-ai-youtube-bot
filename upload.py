@@ -1,155 +1,115 @@
 import os
-import subprocess
-import asyncio
+import time
 import requests
 from pathlib import Path
-from PIL import Image
-import edge_tts
-import time
-import urllib.parse
+from gtts import gTTS
+from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips
 
 # ================= CONFIG =================
-SCRIPT_FILE = "script.txt"
-IMAGE_DIR = "images"
-AUDIO_DIR = "audio_blocks"
-VIDEO_DIR = "video_blocks"
-FINAL_VIDEO = "final_video.mp4"
 
-os.makedirs(IMAGE_DIR, exist_ok=True)
-os.makedirs(AUDIO_DIR, exist_ok=True)
-os.makedirs(VIDEO_DIR, exist_ok=True)
+HF_API_KEY = os.getenv("HF_API_KEY")
+HF_MODEL = "stabilityai/stable-diffusion-2-1"
+HF_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
 
-# ================= UTILS =================
-def run(cmd):
-    print("▶", " ".join(cmd))
-    subprocess.run(cmd, check=True)
+HEADERS = {
+    "Authorization": f"Bearer {HF_API_KEY}"
+}
 
-# ================= AI IMAGE GENERATION =================
+BASE_DIR = Path(".")
+IMG_DIR = BASE_DIR / "images"
+AUDIO_DIR = BASE_DIR / "audio"
+VIDEO_DIR = BASE_DIR / "video"
+
+IMG_DIR.mkdir(exist_ok=True)
+AUDIO_DIR.mkdir(exist_ok=True)
+VIDEO_DIR.mkdir(exist_ok=True)
+
+FINAL_VIDEO = VIDEO_DIR / "vishnu_purana_episode_1.mp4"
+
+# ================= SCRIPT =================
+
+SCRIPT_TEXT = """
+ॐ नमो नारायणाय।
+
+विष्णु पुराण अठारह महापुराणों में से एक अत्यंत पवित्र ग्रंथ है।
+इसमें सृष्टि की उत्पत्ति, धर्म, भक्ति और मोक्ष का दिव्य वर्णन मिलता है।
+
+भगवान विष्णु को सम्पूर्ण सृष्टि का मूल कारण बताया गया है।
+वे ही सृष्टि के कर्ता, पालनकर्ता और संहार के अधिष्ठाता हैं।
+
+इस पवित्र श्रृंखला में हम प्रतिदिन
+विष्णु पुराण के एक अध्याय का भावपूर्ण वर्णन करेंगे।
+
+ॐ नमो नारायणाय।
+"""
+
+PROMPTS = [
+    "Lord Vishnu resting on Ananta Shesha, Vaikuntha, divine Hindu devotional art, ultra detailed",
+    "Vaikuntha loka golden palace, cosmic clouds, Vishnu Purana illustration",
+    "Lord Vishnu with Shankha Chakra Gada Padma, blue complexion, calm face, Hindu art",
+    "Cosmic Vishnu creating universe, spiritual glow, Indian mythology painting",
+    "Vishnu Purana ancient manuscript style illustration, sacred Hindu artwork"
+]
+
+# ================= FUNCTIONS =================
+
 def generate_ai_image(prompt, out_path):
-    encoded = urllib.parse.quote(prompt)
-    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1280&height=720&seed={int(time.time())}"
-
-    for attempt in range(3):  # max 3 tries
-        try:
-            r = requests.get(url, timeout=20)
-            r.raise_for_status()
+    payload = {
+        "inputs": prompt,
+        "options": {"wait_for_model": True}
+    }
+    try:
+        r = requests.post(HF_URL, headers=HEADERS, json=payload, timeout=15)
+        if r.status_code == 200:
             with open(out_path, "wb") as f:
                 f.write(r.content)
-            return
-        except Exception as e:
-            print(f"⚠ Image retry {attempt+1}/3 failed:", e)
-            time.sleep(2)
+            print(f"✅ Image created: {out_path.name}")
+        else:
+            print(f"⚠ Image failed: {r.text}")
+    except Exception as e:
+        print(f"⚠ Image skipped: {e}")
 
-    raise RuntimeError("❌ AI image generation failed completely")
-
-def generate_images(blocks):
-    print("🖼 Generating AI Vishnu Purana images...")
-
-    prompts = []
-
-    # First image: Vishnu Purana book (MANDATORY)
-    prompts.append(
-        "ancient Vishnu Purana manuscript book on lotus altar, divine golden light, temple background, ultra detailed, devotional art"
-    )
-
-    avatars = [
-        "Matsya avatar of Vishnu",
-        "Kurma avatar of Vishnu",
-        "Varaha avatar of Vishnu",
-        "Narasimha avatar of Vishnu",
-        "Vamana avatar of Vishnu",
-        "Parashurama avatar of Vishnu",
-        "Rama avatar of Vishnu",
-        "Krishna avatar of Vishnu",
-        "Buddha avatar of Vishnu",
-        "Kalki avatar of Vishnu"
-    ]
-
-    for i in range(1, len(blocks)):
-        avatar = avatars[i % len(avatars)]
-        prompts.append(
-            f"{avatar}, Vaikuntha background, celestial clouds, divine aura, Hindu mythology illustration, ultra realistic, sacred art"
-        )
-
-    for i, prompt in enumerate(prompts):
-        out = f"{IMAGE_DIR}/{i:03d}.jpg"
+def generate_images():
+    print("🖼 Generating AI images...")
+    for i, prompt in enumerate(PROMPTS, 1):
+        out = IMG_DIR / f"scene_{i}.png"
         generate_ai_image(prompt, out)
+        time.sleep(1)
 
-# ================= HINDI NEURAL VOICE =================
-async def generate_single_audio(text, index):
-    out = f"{AUDIO_DIR}/{index:03d}.wav"
-    tts = edge_tts.Communicate(
-        text=text,
-        voice="hi-IN-MadhurNeural",
-        rate="+0%",
-        pitch="+0Hz"
-    )
-    await tts.save(out)
+def generate_audio():
+    print("🎙 Generating audio...")
+    tts = gTTS(text=SCRIPT_TEXT, lang="hi")
+    audio_path = AUDIO_DIR / "narration.mp3"
+    tts.save(audio_path)
+    return audio_path
 
-def generate_audio(blocks):
-    print("🎙 Generating Hindi neural voice...")
-    async def runner():
-        for i, text in enumerate(blocks):
-            if text.strip():
-                await generate_single_audio(text, i)
-    asyncio.run(runner())
-
-# ================= VIDEO =================
-def create_video(blocks):
-    print("🎞 Creating video...")
+def generate_video(audio_path):
+    print("🎬 Creating video...")
     clips = []
+    audio = AudioFileClip(str(audio_path))
+    duration_per_image = audio.duration / len(list(IMG_DIR.glob("*.png")))
 
-    for i in range(len(blocks)):
-        clip = f"{VIDEO_DIR}/{i:03d}.mp4"
-        run([
-            "ffmpeg", "-y",
-            "-loop", "1",
-            "-i", f"{IMAGE_DIR}/{i:03d}.jpg",
-            "-i", f"{AUDIO_DIR}/{i:03d}.wav",
-            "-vf", "scale=1280:720,format=yuv420p",
-            "-c:v", "libx264",
-            "-c:a", "aac",
-            "-shortest",
-            clip
-        ])
+    for img in sorted(IMG_DIR.glob("*.png")):
+        clip = ImageClip(str(img)).set_duration(duration_per_image)
         clips.append(clip)
 
-    with open("list.txt", "w") as f:
-        for c in clips:
-            f.write(f"file '{c}'\n")
+    video = concatenate_videoclips(clips, method="compose")
+    video = video.set_audio(audio)
 
-    run([
-        "ffmpeg", "-y",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", "list.txt",
-        "-c", "copy",
-        FINAL_VIDEO
-    ])
+    video.write_videofile(
+        str(FINAL_VIDEO),
+        fps=24,
+        codec="libx264",
+        audio_codec="aac"
+    )
 
 # ================= MAIN =================
+
 def main():
-    base_blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
-
-    intro = (
-        "नमस्कार। आप सभी का स्वागत है Sanatan Gyan Dhara चैनल पर। "
-        "आज हम आरंभ कर रहे हैं श्री विष्णु पुराण की दिव्य श्रृंखला का प्रथम एपिसोड।"
-    )
-
-    outro = (
-        "यदि यह ज्ञान आपको प्रिय लगा हो, "
-        "तो कृपया लाइक करें, शेयर करें और Sanatan Gyan Dhara को सब्सक्राइब करें। "
-        "अब प्रतिदिन विष्णु पुराण का एक नया एपिसोड प्रकाशित किया जाएगा। "
-        "ॐ नमो नारायणाय।"
-    )
-
-    blocks = [intro] + base_blocks + [outro]
-
-    generate_images(blocks)
-    generate_audio(blocks)
-    create_video(blocks)
-
-    print("✅ FINAL VIDEO READY:", FINAL_VIDEO)
+    generate_images()
+    audio = generate_audio()
+    generate_video(audio)
+    print(f"✅ VIDEO READY: {FINAL_VIDEO}")
 
 if __name__ == "__main__":
     main()
