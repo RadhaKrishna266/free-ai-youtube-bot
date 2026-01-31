@@ -16,7 +16,7 @@ jobs:
       - name: Install system tools
         run: |
           sudo apt update
-          sudo apt install -y ffmpeg imagemagick
+          sudo apt install -y ffmpeg imagemagick wget
 
       # ================= PYTHON =================
       - name: Set up Python 3.11
@@ -28,7 +28,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests pillow moviepy gtts imageio imageio-ffmpeg
+          pip install requests pillow moviepy imageio imageio-ffmpeg edge-tts
 
       # ================= RUN BOT =================
       - name: Run Sanatan Gyan Dhara Bot
@@ -42,7 +42,7 @@ jobs:
         run: |
           echo "📂 Workspace files:"
           ls -R
-          if [ ! -f video/vishnu_purana_episode_1.mp4 ]; then
+          if [ ! -f final_video.mp4 ]; then
             echo "❌ Video NOT FOUND"
             exit 1
           fi
@@ -53,4 +53,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: sanatan-gyan-dhara-episode-1
-          path: video/vishnu_purana_episode_1.mp4
+          path: final_video.mp4
