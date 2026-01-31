@@ -1,44 +1,54 @@
 import os
 import requests
 from PIL import Image
-from moviepy.editor import (
+
+from moviepy import (
     ImageSequenceClip,
     AudioFileClip,
     CompositeAudioClip
 )
+
 from TTS.api import TTS
 
 PIXABAY_KEY = os.getenv("PIXABAY_API_KEY")
 
 SCRIPT_FILE = "script.txt"
-AUDIO_FILE = "voice.wav"
+VOICE_FILE = "voice.wav"
 FINAL_AUDIO = "final_audio.wav"
 FINAL_VIDEO = "final.mp4"
 IMAGE_DIR = "images"
-TANPURA = "tanpura.mp3"
+TANPURA_FILE = "tanpura.mp3"
 
 IMAGES_COUNT = 60
-IMAGE_DURATION = 10  # seconds per image (60 × 10 = 10 minutes)
+IMAGE_DURATION = 10  # seconds → 60 images = 10 minutes
 
 
 def download_images():
     os.makedirs(IMAGE_DIR, exist_ok=True)
 
-    query = "Vishnu Narayan divine art painting"
-    url = f"https://pixabay.com/api/?key={PIXABAY_KEY}&q={query}&image_type=illustration&per_page=200"
+    query = "Vishnu Narayan divine painting art"
+    url = (
+        "https://pixabay.com/api/"
+        f"?key={PIXABAY_KEY}"
+        f"&q={query}"
+        "&image_type=illustration"
+        "&per_page=200"
+    )
 
-    r = requests.get(url).json()
-    hits = r.get("hits", [])
+    data = requests.get(url).json()
+    hits = data.get("hits", [])
 
-    if len(hits) == 0:
-        raise Exception("No images received from Pixabay")
+    if not hits:
+        raise RuntimeError("❌ No images received from Pixabay")
 
-    for i in range(min(IMAGES_COUNT, len(hits))):
+    count = min(IMAGES_COUNT, len(hits))
+
+    for i in range(count):
         img_url = hits[i]["largeImageURL"]
-        img_data = requests.get(img_url).content
+        img_bytes = requests.get(img_url).content
 
         with open(f"{IMAGE_DIR}/{i:03}.jpg", "wb") as f:
-            f.write(img_data)
+            f.write(img_bytes)
 
 
 def create_voice():
@@ -52,13 +62,13 @@ def create_voice():
 
     tts.tts_to_file(
         text=text,
-        file_path=AUDIO_FILE
+        file_path=VOICE_FILE
     )
 
 
 def mix_tanpura():
-    voice = AudioFileClip(AUDIO_FILE)
-    tanpura = AudioFileClip(TANPURA).volumex(0.15)
+    voice = AudioFileClip(VOICE_FILE)
+    tanpura = AudioFileClip(TANPURA_FILE).volumex(0.12)
 
     tanpura = tanpura.audio_loop(duration=voice.duration)
 
@@ -67,10 +77,11 @@ def mix_tanpura():
 
 
 def create_video():
-    images = [
-        os.path.join(IMAGE_DIR, img)
-        for img in sorted(os.listdir(IMAGE_DIR))
-    ]
+    images = sorted(
+        os.path.join(IMAGE_DIR, f)
+        for f in os.listdir(IMAGE_DIR)
+        if f.endswith(".jpg")
+    )
 
     clip = ImageSequenceClip(
         images,
@@ -78,7 +89,7 @@ def create_video():
     )
 
     audio = AudioFileClip(FINAL_AUDIO)
-    clip = clip.set_audio(audio)
+    clip = clip.with_audio(audio)
 
     clip.write_videofile(
         FINAL_VIDEO,
@@ -89,19 +100,19 @@ def create_video():
 
 
 def main():
-    print("🖼 Downloading images")
+    print("🖼 Downloading divine images")
     download_images()
 
-    print("🎙 Creating divine Hindi narration")
+    print("🎙 Creating Hindi divine narration")
     create_voice()
 
-    print("🎵 Adding tanpura background")
+    print("🎵 Mixing tanpura background")
     mix_tanpura()
 
-    print("🎬 Creating final video")
+    print("🎬 Rendering final video")
     create_video()
 
-    print("✅ FINAL VIDEO READY:", FINAL_VIDEO)
+    print("✅ VIDEO READY:", FINAL_VIDEO)
 
 
 if __name__ == "__main__":
