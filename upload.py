@@ -23,8 +23,8 @@ def run(cmd):
     subprocess.run(cmd, check=True)
 
 # ---------------- PLACEHOLDER IMAGE ----------------
-def create_placeholder(path, text):
-    img = Image.new("RGB", (1280, 720), (20, 12, 6))
+def placeholder(path, text):
+    img = Image.new("RGB", (1280, 720), (18, 12, 6))
     d = ImageDraw.Draw(img)
     try:
         font = ImageFont.truetype("DejaVuSans.ttf", 42)
@@ -33,10 +33,9 @@ def create_placeholder(path, text):
     d.text((60, 330), text[:120], fill=(255, 200, 80), font=font)
     img.save(path)
 
-# ---------------- IMAGES (PIXABAY) ----------------
+# ---------------- IMAGES ----------------
 def download_images(blocks):
-    print("🖼 Downloading images from Pixabay...")
-
+    print("🖼 Downloading devotional images...")
     r = requests.get(
         "https://pixabay.com/api/",
         params={
@@ -45,7 +44,7 @@ def download_images(blocks):
             "image_type": "photo",
             "orientation": "horizontal",
             "safesearch": "true",
-            "per_page": 50,
+            "per_page": 50
         },
         timeout=30
     ).json()
@@ -53,24 +52,20 @@ def download_images(blocks):
     hits = r.get("hits", [])
 
     for i, text in enumerate(blocks):
-        img_path = f"{IMAGE_DIR}/{i:03d}.jpg"
-
+        path = f"{IMAGE_DIR}/{i:03d}.jpg"
         if hits:
             try:
-                url = hits[i % len(hits)]["largeImageURL"]
-                img = requests.get(url, timeout=30).content
-                with open(img_path, "wb") as f:
+                img = requests.get(hits[i % len(hits)]["largeImageURL"], timeout=30).content
+                with open(path, "wb") as f:
                     f.write(img)
             except Exception:
-                print(f"⚠ Image failed for block {i}, using placeholder")
-                create_placeholder(img_path, text)
+                placeholder(path, text)
         else:
-            print(f"⚠ No images found, using placeholder for block {i}")
-            create_placeholder(img_path, text)
+            placeholder(path, text)
 
-# ---------------- AUDIO (HINDI – NEURAL) ----------------
+# ---------------- AUDIO (REAL HINDI NEURAL) ----------------
 def generate_audio(blocks):
-    print("🎙 Generating NATURAL Hindi voice (Azure Neural)...")
+    print("🎙 Generating REAL Hindi Neural voice...")
 
     for i, text in enumerate(blocks):
         if not text.strip():
@@ -79,7 +74,7 @@ def generate_audio(blocks):
         out = f"{AUDIO_DIR}/{i:03d}.wav"
 
         run([
-            "python", "-m", "edge_tts",
+            "edge-tts",
             "--voice", "hi-IN-MadhurNeural",
             "--rate", "+0%",
             "--pitch", "+0Hz",
@@ -89,7 +84,7 @@ def generate_audio(blocks):
 
 # ---------------- VIDEO ----------------
 def create_video(blocks):
-    print("🎞 Creating video blocks...")
+    print("🎞 Creating video...")
     clips = []
 
     for i in range(len(blocks)):
@@ -124,11 +119,9 @@ def create_video(blocks):
 # ---------------- MAIN ----------------
 def main():
     blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
-
     download_images(blocks)
     generate_audio(blocks)
     create_video(blocks)
-
     print("✅ FINAL VIDEO READY:", FINAL_VIDEO)
 
 if __name__ == "__main__":
