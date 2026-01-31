@@ -27,14 +27,13 @@ jobs:
         with:
           python-version: "3.11"
 
-      # ================= PYTHON DEPENDENCIES (FIXED) =================
+      # ================= PYTHON DEPENDENCIES =================
       - name: Install Python dependencies
         env:
           COQUI_TOS_AGREED: "1"
         run: |
           python -m pip install --upgrade pip
           pip install \
-            torch==2.0.1 \
             transformers==4.33.3 \
             requests \
             pillow \
