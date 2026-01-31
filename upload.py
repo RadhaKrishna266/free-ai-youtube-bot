@@ -10,8 +10,8 @@ from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 
 # ================= CONFIG =================
-SCRIPT_FILE = "script.txt"   # Phoneme-safe Episode 1 script
-IMAGE_DIR = "images"
+SCRIPT_FILE = "script.txt"   # Your Episode 1 script (blocks separated by double newlines)
+IMAGE_DIR = "images"         # 000.jpg, 001.jpg, etc.
 TANPURA = "audio_fixed/tanpura_fixed.mp3"
 FINAL_AUDIO = "final_audio.wav"
 FINAL_VIDEO = "final_video.mp4"
@@ -27,9 +27,9 @@ def run(cmd):
 
 # ================= VOICE =================
 def generate_audio_blocks():
-    """Generate audio for each block in script.txt"""
+    """Generate Hindi narration for each block using single-speaker TTS"""
     print("🎙 Generating narration in blocks...")
-    tts = TTS(model_name="tts_models/multilingual/multi-dataset/xtts_v2", gpu=False)
+    tts = TTS(model_name="tts_models/multilingual/multi-dataset/fastspeech2", gpu=False)
 
     text_blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
     block_files = []
@@ -41,8 +41,6 @@ def generate_audio_blocks():
         print(f"Generating block {i+1}/{len(text_blocks)}...")
         tts.tts_to_file(
             text=block.strip(),
-            speaker="alloy",       # ✅ Correct default speaker for xtts_v2
-            speaker_wav=None,      # No cloning
             language="hi",
             file_path=audio_file,
             speed=1.0
@@ -77,7 +75,6 @@ def create_video():
     text_blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
     input_files = []
 
-    # Calculate duration per block
     for i, block in enumerate(text_blocks):
         if not block.strip():
             continue
