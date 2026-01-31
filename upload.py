@@ -1,62 +1,75 @@
 import os
+import json
+import base64
+import subprocess
 import requests
-from PIL import Image
+from pathlib import Path
 
-from moviepy import (
-    ImageSequenceClip,
-    AudioFileClip,
-    CompositeAudioClip
-)
-
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
 from TTS.api import TTS
 
-PIXABAY_KEY = os.getenv("PIXABAY_API_KEY")
-
+# ================= CONFIG =================
 SCRIPT_FILE = "script.txt"
 VOICE_FILE = "voice.wav"
 FINAL_AUDIO = "final_audio.wav"
 FINAL_VIDEO = "final.mp4"
+
 IMAGE_DIR = "images"
-TANPURA_FILE = "tanpura.mp3"
+TANPURA = "audio/tanpura.mp3"
 
-IMAGES_COUNT = 60
-IMAGE_DURATION = 10  # seconds → 60 images = 10 minutes
+YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube.upload"
 
+os.makedirs(IMAGE_DIR, exist_ok=True)
 
-def download_images():
-    os.makedirs(IMAGE_DIR, exist_ok=True)
+# ================= UTILS =================
+def run(cmd):
+    print("▶", " ".join(cmd))
+    subprocess.run(cmd, check=True)
 
-    query = "Vishnu Narayan divine painting art"
-    url = (
-        "https://pixabay.com/api/"
-        f"?key={PIXABAY_KEY}"
-        f"&q={query}"
-        "&image_type=illustration"
-        "&per_page=200"
-    )
+def get_duration(path):
+    out = subprocess.check_output([
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        path
+    ])
+    return float(out.strip())
 
-    data = requests.get(url).json()
-    hits = data.get("hits", [])
+# ================= IMAGES =================
+def download_images(count=20):
+    print("🖼 Downloading divine images")
 
+    r = requests.get(
+        "https://pixabay.com/api/",
+        params={
+            "key": os.environ["PIXABAY_API_KEY"],
+            "q": "Vishnu purana illustration divine",
+            "image_type": "photo",
+            "orientation": "horizontal",
+            "per_page": count
+        }
+    ).json()
+
+    hits = r.get("hits", [])
     if not hits:
-        raise RuntimeError("❌ No images received from Pixabay")
+        raise RuntimeError("No images returned from Pixabay")
 
-    count = min(IMAGES_COUNT, len(hits))
+    for i, hit in enumerate(hits):
+        img = requests.get(hit["largeImageURL"]).content
+        with open(f"{IMAGE_DIR}/{i:03d}.jpg", "wb") as f:
+            f.write(img)
 
-    for i in range(count):
-        img_url = hits[i]["largeImageURL"]
-        img_bytes = requests.get(img_url).content
-
-        with open(f"{IMAGE_DIR}/{i:03}.jpg", "wb") as f:
-            f.write(img_bytes)
-
-
+# ================= VOICE =================
 def create_voice():
-    with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
-        text = f.read()
+    print("🎙 Creating calm Hindi divine narration")
+
+    text = Path(SCRIPT_FILE).read_text(encoding="utf-8")
 
     tts = TTS(
-        model_name="tts_models/hi/vits",
+        model_name="tts_models/hi/mai/tacotron2-DDC",
         gpu=False
     )
 
@@ -65,55 +78,100 @@ def create_voice():
         file_path=VOICE_FILE
     )
 
+# ================= AUDIO MIX =================
+def mix_audio():
+    print("🎶 Mixing tanpura softly")
 
-def mix_tanpura():
-    voice = AudioFileClip(VOICE_FILE)
-    tanpura = AudioFileClip(TANPURA_FILE).volumex(0.12)
+    duration = get_duration(VOICE_FILE)
 
-    tanpura = tanpura.audio_loop(duration=voice.duration)
+    run([
+        "ffmpeg", "-y",
+        "-i", VOICE_FILE,
+        "-stream_loop", "-1", "-i", TANPURA,
+        "-filter_complex",
+        f"[1:a]volume=0.15,atrim=0:{duration}[bg];"
+        "[0:a][bg]amix=inputs=2",
+        "-t", str(duration),
+        FINAL_AUDIO
+    ])
 
-    final_audio = CompositeAudioClip([tanpura, voice])
-    final_audio.write_audiofile(FINAL_AUDIO)
+    return duration
 
+# ================= VIDEO =================
+def create_video(duration):
+    print("🎞 Creating video")
 
-def create_video():
-    images = sorted(
-        os.path.join(IMAGE_DIR, f)
-        for f in os.listdir(IMAGE_DIR)
-        if f.endswith(".jpg")
+    run([
+        "ffmpeg", "-y",
+        "-framerate", "1/6",
+        "-pattern_type", "glob",
+        "-i", f"{IMAGE_DIR}/*.jpg",
+        "-i", FINAL_AUDIO,
+        "-t", str(duration),
+        "-vf", "scale=1280:720,format=yuv420p",
+        "-c:v", "libx264",
+        "-preset", "slow",
+        "-c:a", "aac",
+        FINAL_VIDEO
+    ])
+
+# ================= YOUTUBE =================
+def upload_youtube():
+    print("📤 Uploading to YouTube")
+
+    token_info = json.loads(
+        base64.b64decode(os.environ["YOUTUBE_TOKEN_BASE64"]).decode("utf-8")
     )
 
-    clip = ImageSequenceClip(
-        images,
-        durations=[IMAGE_DURATION] * len(images)
+    creds = Credentials(
+        token=token_info["token"],
+        refresh_token=token_info.get("refresh_token"),
+        token_uri=token_info["token_uri"],
+        client_id=token_info["client_id"],
+        client_secret=token_info["client_secret"],
+        scopes=[YOUTUBE_SCOPE]
     )
 
-    audio = AudioFileClip(FINAL_AUDIO)
-    clip = clip.with_audio(audio)
+    if creds.expired and creds.refresh_token:
+        creds.refresh(Request())
 
-    clip.write_videofile(
-        FINAL_VIDEO,
-        fps=24,
-        codec="libx264",
-        audio_codec="aac"
+    youtube = build("youtube", "v3", credentials=creds)
+
+    request = youtube.videos().insert(
+        part="snippet,status",
+        body={
+            "snippet": {
+                "title": "विष्णु पुराण | अध्याय 1 | Sanatan Gyaan Dhara",
+                "description": (
+                    "॥ श्री विष्णु पुराण ॥\n\n"
+                    "Sanatan Gyaan Dhara में आपका स्वागत है।\n"
+                    "हम प्रतिदिन विष्णु पुराण के अध्याय प्रस्तुत करेंगे।\n\n"
+                    "🙏 कृपया चैनल को सब्सक्राइब करें\n"
+                    "🔔 वीडियो को लाइक और शेयर करें\n"
+                ),
+                "categoryId": "22"
+            },
+            "status": {
+                "privacyStatus": "public"
+            }
+        },
+        media_body=MediaFileUpload(
+            FINAL_VIDEO,
+            mimetype="video/mp4",
+            resumable=True
+        )
     )
 
+    response = request.execute()
+    print("✅ Uploaded. Video ID:", response["id"])
 
+# ================= MAIN =================
 def main():
-    print("🖼 Downloading divine images")
     download_images()
-
-    print("🎙 Creating Hindi divine narration")
     create_voice()
-
-    print("🎵 Mixing tanpura background")
-    mix_tanpura()
-
-    print("🎬 Rendering final video")
-    create_video()
-
-    print("✅ VIDEO READY:", FINAL_VIDEO)
-
+    duration = mix_audio()
+    create_video(duration)
+    upload_youtube()
 
 if __name__ == "__main__":
     main()
