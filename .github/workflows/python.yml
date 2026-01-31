@@ -47,11 +47,12 @@ jobs:
             TTS==0.22.0
 
       # ================= AUDIO CONVERSION =================
-      - name: Normalize speaker.wav and tanpura.mp3
+      - name: Normalize all audio
         run: |
           mkdir -p audio_fixed
-          ffmpeg -y -i speaker.wav -ac 1 -ar 22050 audio_fixed/speaker_fixed.wav
+          ffmpeg -y -i audio/speaker.wav -ac 1 -ar 22050 audio_fixed/speaker_fixed.wav
           ffmpeg -y -i audio/tanpura.mp3 -ac 1 -ar 22050 audio_fixed/tanpura_fixed.mp3
+          ffmpeg -y -i audio/temple_bell.mp3 -ac 1 -ar 22050 audio_fixed/temple_bell_fixed.mp3
 
       # ================= PRE-DOWNLOAD XTTS MODEL =================
       - name: Pre-download XTTS model
