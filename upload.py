@@ -12,10 +12,10 @@ from google.auth.transport.requests import Request
 from TTS.api import TTS
 
 # ================= CONFIG =================
-SCRIPT_FILE = "script.txt"
-VOICE_FILE = "voice.wav"
+SCRIPT_FILE = "script.txt"       # Your text script
+VOICE_SAMPLE = "speaker.wav"     # Short sample of your voice
 FINAL_AUDIO = "final_audio.wav"
-FINAL_VIDEO = "final.mp4"
+FINAL_VIDEO = "final_video.mp4"
 
 IMAGE_DIR = "images"
 TANPURA = "audio/tanpura.mp3"
@@ -64,33 +64,33 @@ def download_images(count=20):
 
 # ================= VOICE =================
 def create_voice():
-    print("🎙 Creating calm Hindi divine narration")
+    print("🎙 Generating narration in your voice (XTTS-v2)")
 
     text = Path(SCRIPT_FILE).read_text(encoding="utf-8")
 
     tts = TTS(
-        model_name="tts_models/hi/mai/tacotron2-DDC",
+        model_name="tts_models/multilingual/multi-dataset/xtts_v2",  # XTTS-v2 supports cloning
         gpu=False
     )
 
     tts.tts_to_file(
         text=text,
-        file_path=VOICE_FILE
+        speaker_wav=VOICE_SAMPLE,
+        file_path=FINAL_AUDIO
     )
 
 # ================= AUDIO MIX =================
-def mix_audio():
+def mix_tanpura():
     print("🎶 Mixing tanpura softly")
 
-    duration = get_duration(VOICE_FILE)
+    duration = get_duration(FINAL_AUDIO)
 
     run([
         "ffmpeg", "-y",
-        "-i", VOICE_FILE,
+        "-i", FINAL_AUDIO,
         "-stream_loop", "-1", "-i", TANPURA,
         "-filter_complex",
-        f"[1:a]volume=0.15,atrim=0:{duration}[bg];"
-        "[0:a][bg]amix=inputs=2",
+        f"[1:a]volume=0.15,atrim=0:{duration}[bg];[0:a][bg]amix=inputs=2",
         "-t", str(duration),
         FINAL_AUDIO
     ])
@@ -169,7 +169,7 @@ def upload_youtube():
 def main():
     download_images()
     create_voice()
-    duration = mix_audio()
+    duration = mix_tanpura()
     create_video(duration)
     upload_youtube()
 
