@@ -18,6 +18,7 @@ FINAL_VIDEO = "final_video.mp4"
 YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube.upload"
 
 os.makedirs("audio_blocks", exist_ok=True)
+os.makedirs("video_blocks", exist_ok=True)
 
 # ================= UTILS =================
 def run(cmd):
@@ -40,8 +41,8 @@ def generate_audio_blocks():
         print(f"Generating block {i+1}/{len(text_blocks)}...")
         tts.tts_to_file(
             text=block.strip(),
-            speaker="v2_en",
-            speaker_wav=None,
+            speaker="alloy",       # ✅ Correct default speaker for xtts_v2
+            speaker_wav=None,      # No cloning
             language="hi",
             file_path=audio_file,
             speed=1.0
@@ -95,7 +96,6 @@ def create_video():
 
         # Create video segment
         segment_file = f"video_blocks/{i:03d}.mp4"
-        os.makedirs("video_blocks", exist_ok=True)
         run([
             "ffmpeg", "-y",
             "-loop", "1",
