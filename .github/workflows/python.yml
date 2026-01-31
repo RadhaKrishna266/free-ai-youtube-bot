@@ -16,34 +16,22 @@ jobs:
       - name: Install system tools
         run: |
           sudo apt update
-          sudo apt install -y ffmpeg imagemagick wget git python3-venv
+          sudo apt install -y ffmpeg imagemagick python3-venv git wget
 
-      # ================= PYTHON =================
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      # ================= PYTHON DEPENDENCIES =================
-      - name: Install Python dependencies
+      # ================= SETUP VIRTUAL ENV =================
+      - name: Set up Python venv
         run: |
+          python3 -m venv venv
+          source venv/bin/activate
           python -m pip install --upgrade pip
-          pip install \
-            requests \
-            pillow \
-            moviepy \
-            edge-tts \
-            torch \
-            diffusers \
-            transformers \
-            accelerate \
-            safetensors
+          pip install requests pillow moviepy edge-tts torch diffusers transformers accelerate safetensors
 
       # ================= RUN BOT =================
       - name: Run Sanatan Gyan Dhara Bot
         env:
           HF_API_KEY: ${{ secrets.HF_API_KEY }}
         run: |
+          source venv/bin/activate
           python upload.py
 
       # ================= VERIFY OUTPUT =================
