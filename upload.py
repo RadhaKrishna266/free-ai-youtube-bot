@@ -1,11 +1,12 @@
 import os
-import subprocess
+import asyncio
 import requests
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
-from edge_tts import Communicate  # <- Use Python module directly
+from PIL import Image, ImageDraw
+import subprocess
+from edge_tts import Communicate
 
-# ---------------- CONFIG ----------------
+# ================= PATHS =================
 SCRIPT_FILE = "script.txt"
 IMAGE_DIR = "images"
 AUDIO_DIR = "audio_blocks"
@@ -18,76 +19,66 @@ os.makedirs(IMAGE_DIR, exist_ok=True)
 os.makedirs(AUDIO_DIR, exist_ok=True)
 os.makedirs(VIDEO_DIR, exist_ok=True)
 
-# ---------------- UTILS ----------------
+# ================= UTILS =================
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-# ---------------- PLACEHOLDER IMAGE ----------------
+# ================= PLACEHOLDER IMAGE =================
 def placeholder(path, text):
-    img = Image.new("RGB", (1280, 720), (18, 12, 6))
+    img = Image.new("RGB", (1280, 720), (15, 10, 5))
     d = ImageDraw.Draw(img)
-    try:
-        font = ImageFont.truetype("DejaVuSans.ttf", 42)
-    except:
-        font = ImageFont.load_default()
-    d.text((60, 330), text[:120], fill=(255, 200, 80), font=font)
+    d.text((40, 340), text[:80], fill=(255, 200, 0))
     img.save(path)
 
-# ---------------- IMAGES ----------------
+# ================= DOWNLOAD IMAGES =================
 def download_images(blocks):
     print("🖼 Downloading devotional images...")
     r = requests.get(
         "https://pixabay.com/api/",
         params={
             "key": PIXABAY_API_KEY,
-            "q": "Lord Vishnu Krishna Hindu devotional art",
+            "q": "Lord Vishnu Krishna Hindu devotional art painting",
             "image_type": "photo",
             "orientation": "horizontal",
             "safesearch": "true",
             "per_page": 50
-        },
-        timeout=30
+        }
     ).json()
 
     hits = r.get("hits", [])
-
     for i, text in enumerate(blocks):
         path = f"{IMAGE_DIR}/{i:03d}.jpg"
-        if hits:
-            try:
-                img = requests.get(hits[i % len(hits)]["largeImageURL"], timeout=30).content
+        try:
+            if hits:
+                img = requests.get(hits[i % len(hits)]["largeImageURL"]).content
                 with open(path, "wb") as f:
                     f.write(img)
-            except Exception:
+            else:
                 placeholder(path, text)
-        else:
+        except:
             placeholder(path, text)
 
-# ---------------- AUDIO (REAL HINDI NEURAL) ----------------
-async def generate_single_audio(text, out_path):
+# ================= EDGE TTS (Hindi Neural Voice) =================
+async def generate_single_audio(text, i):
+    out_file = f"{AUDIO_DIR}/{i:03d}.wav"
     communicate = Communicate(text, voice="hi-IN-MadhurNeural")
-    await communicate.save(out_path)
+    await communicate.save(out_file)
 
 def generate_audio(blocks):
-    import asyncio
     print("🎙 Generating REAL Hindi Neural voice...")
-    tasks = []
-    for i, text in enumerate(blocks):
-        if not text.strip():
-            continue
-        out = f"{AUDIO_DIR}/{i:03d}.wav"
-        tasks.append(generate_single_audio(text, out))
-    asyncio.run(asyncio.wait(tasks))
+    os.makedirs(AUDIO_DIR, exist_ok=True)
+    tasks = [asyncio.create_task(generate_single_audio(text, i))
+             for i, text in enumerate(blocks) if text.strip()]
+    asyncio.run(asyncio.gather(*tasks))
 
-# ---------------- VIDEO ----------------
+# ================= CREATE VIDEO =================
 def create_video(blocks):
     print("🎞 Creating video...")
     clips = []
 
     for i in range(len(blocks)):
         clip = f"{VIDEO_DIR}/{i:03d}.mp4"
-
         run([
             "ffmpeg", "-y",
             "-loop", "1",
@@ -101,6 +92,7 @@ def create_video(blocks):
         ])
         clips.append(clip)
 
+    # Concatenate all clips
     with open("list.txt", "w") as f:
         for c in clips:
             f.write(f"file '{c}'\n")
@@ -114,7 +106,7 @@ def create_video(blocks):
         FINAL_VIDEO
     ])
 
-# ---------------- MAIN ----------------
+# ================= MAIN =================
 def main():
     blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
     download_images(blocks)
