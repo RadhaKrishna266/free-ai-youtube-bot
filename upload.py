@@ -10,8 +10,7 @@ AUDIO_DIR = "audio_blocks"
 VIDEO_DIR = "video_blocks"
 FINAL_VIDEO = "final_video.mp4"
 
-VOICE = "audio/my_voice.wav"   # <-- YOUR RECORDED HINDI VOICE
-PIXABAY_API_KEY = os.environ["PIXABAY_API_KEY"]
+PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY")
 
 os.makedirs(IMAGE_DIR, exist_ok=True)
 os.makedirs(AUDIO_DIR, exist_ok=True)
@@ -24,19 +23,19 @@ def run(cmd):
 
 # ---------------- PLACEHOLDER IMAGE ----------------
 def placeholder(path, text):
-    img = Image.new("RGB", (1280, 720), (20, 10, 10))
+    img = Image.new("RGB", (1280, 720), (15, 10, 5))
     d = ImageDraw.Draw(img)
-    d.text((50, 330), text[:80], fill=(255, 215, 0))
+    d.text((40, 340), text[:80], fill=(255, 200, 0))
     img.save(path)
 
 # ---------------- IMAGES ----------------
 def download_images(blocks):
-    print("🖼 Downloading images from Pixabay...")
+    print("🖼 Downloading devotional images...")
     r = requests.get(
         "https://pixabay.com/api/",
         params={
             "key": PIXABAY_API_KEY,
-            "q": "Lord Vishnu Krishna Hindu devotional art",
+            "q": "Lord Vishnu Krishna Hindu devotional art painting",
             "image_type": "photo",
             "orientation": "horizontal",
             "safesearch": "true",
@@ -54,17 +53,21 @@ def download_images(blocks):
         else:
             placeholder(path, text)
 
-# ---------------- AUDIO (REUSE YOUR VOICE) ----------------
+# ---------------- HINDI AUDIO (espeak-ng) ----------------
 def generate_audio(blocks):
-    print("🎙 Using YOUR Hindi voice (no TTS)...")
+    print("🎙 Generating REAL Hindi voice (espeak-ng)...")
 
-    for i in range(len(blocks)):
+    for i, text in enumerate(blocks):
+        if not text.strip():
+            continue
+
+        out = f"{AUDIO_DIR}/{i:03d}.wav"
         run([
-            "ffmpeg", "-y",
-            "-i", VOICE,
-            "-ac", "1",
-            "-ar", "22050",
-            f"{AUDIO_DIR}/{i:03d}.wav"
+            "espeak-ng",
+            "-v", "hi",
+            "-s", "135",
+            "-w", out,
+            text
         ])
 
 # ---------------- VIDEO ----------------
@@ -93,7 +96,8 @@ def create_video(blocks):
 
     run([
         "ffmpeg", "-y",
-        "-f", "concat", "-safe", "0",
+        "-f", "concat",
+        "-safe", "0",
         "-i", "list.txt",
         "-c", "copy",
         FINAL_VIDEO
