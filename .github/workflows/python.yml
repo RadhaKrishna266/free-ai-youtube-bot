@@ -1,11 +1,10 @@
-
-name: AI Temple Video Bot
+name: Sanatan Gyan Dhara Video Bot
 
 on:
   workflow_dispatch:
 
 jobs:
-  run:
+  build:
     runs-on: ubuntu-latest
 
     steps:
@@ -17,34 +16,45 @@ jobs:
       - name: Install system tools
         run: |
           sudo apt update
-          sudo apt install -y ffmpeg imagemagick wget python3-venv
+          sudo apt install -y ffmpeg imagemagick wget
 
-      # ================= CREATE VENV =================
-      - name: Create virtual environment
+      # ================= PYTHON =================
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # ================= PYTHON DEPENDENCIES =================
+      - name: Install Python dependencies
         run: |
-          python3 -m venv venv
-          source venv/bin/activate
-          pip install --upgrade pip
-          pip install requests pillow moviepy imageio imageio-ffmpeg edge-tts
+          python -m pip install --upgrade pip
+          pip install requests pillow edge-tts
+
+      # ================= VERIFY EDGE-TTS =================
+      - name: Verify Edge TTS
+        run: |
+          python - << 'EOF'
+          import edge_tts
+          print("✅ Edge TTS OK")
+          EOF
 
       # ================= RUN BOT =================
       - name: Run Sanatan Gyan Dhara Bot
         env:
           HF_API_KEY: ${{ secrets.HF_API_KEY }}
         run: |
-          source venv/bin/activate
           python upload.py
 
       # ================= VERIFY OUTPUT =================
       - name: Verify final video exists
         run: |
           echo "📂 Workspace files:"
-          ls -R
+          ls -lh
           if [ ! -f final_video.mp4 ]; then
-            echo "❌ Video NOT FOUND"
+            echo "❌ final_video.mp4 NOT FOUND"
             exit 1
           fi
-          echo "✅ Video FOUND"
+          echo "✅ final_video.mp4 FOUND"
 
       # ================= ARTIFACT =================
       - name: Upload final video
