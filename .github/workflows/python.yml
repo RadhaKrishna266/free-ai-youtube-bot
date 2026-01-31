@@ -16,7 +16,11 @@ jobs:
       - name: Install system tools
         run: |
           sudo apt update
-          sudo apt install -y ffmpeg imagemagick wget
+          sudo apt install -y \
+            ffmpeg \
+            imagemagick \
+            wget \
+            espeak
 
       # ================= PYTHON =================
       - name: Set up Python 3.11
@@ -36,8 +40,7 @@ jobs:
             imageio-ffmpeg \
             google-api-python-client \
             google-auth \
-            google-auth-oauthlib \
-            edge-tts
+            google-auth-oauthlib
 
       # ================= RUN BOT =================
       - name: Run Sanatan Gyan Dhara Bot
