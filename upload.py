@@ -12,13 +12,15 @@ from google.auth.transport.requests import Request
 from TTS.api import TTS
 
 # ================= CONFIG =================
-SCRIPT_FILE = "script.txt"       # Your text script
+SCRIPT_FILE = "script.txt"       # Your narration script
 VOICE_SAMPLE = "speaker.wav"     # Short sample of your voice
 FINAL_AUDIO = "final_audio.wav"
 FINAL_VIDEO = "final_video.mp4"
 
 IMAGE_DIR = "images"
 TANPURA = "audio/tanpura.mp3"
+
+TARGET_DURATION = 600  # 10 minutes = 600 seconds
 
 YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube.upload"
 
@@ -69,7 +71,7 @@ def create_voice():
     text = Path(SCRIPT_FILE).read_text(encoding="utf-8")
 
     tts = TTS(
-        model_name="tts_models/multilingual/multi-dataset/xtts_v2",  # XTTS-v2 supports cloning
+        model_name="tts_models/multilingual/multi-dataset/xtts_v2",  # supports cloning
         gpu=False
     )
 
@@ -80,30 +82,38 @@ def create_voice():
     )
 
 # ================= AUDIO MIX =================
-def mix_tanpura():
+def mix_tanpura(target_duration=TARGET_DURATION):
     print("🎶 Mixing tanpura softly")
 
-    duration = get_duration(FINAL_AUDIO)
+    narration_duration = get_duration(FINAL_AUDIO)
+    final_duration = max(narration_duration, target_duration)
 
     run([
         "ffmpeg", "-y",
         "-i", FINAL_AUDIO,
         "-stream_loop", "-1", "-i", TANPURA,
         "-filter_complex",
-        f"[1:a]volume=0.15,atrim=0:{duration}[bg];[0:a][bg]amix=inputs=2",
-        "-t", str(duration),
+        f"[1:a]volume=0.15,atrim=0:{final_duration}[bg];[0:a][bg]amix=inputs=2",
+        "-t", str(final_duration),
         FINAL_AUDIO
     ])
 
-    return duration
+    return final_duration
 
 # ================= VIDEO =================
 def create_video(duration):
     print("🎞 Creating video")
 
+    image_files = os.listdir(IMAGE_DIR)
+    if not image_files:
+        raise RuntimeError("No images found in IMAGE_DIR")
+
+    # Spread images evenly over duration
+    framerate = len(image_files) / duration  # images per second
+
     run([
         "ffmpeg", "-y",
-        "-framerate", "1/6",
+        "-framerate", str(framerate),
         "-pattern_type", "glob",
         "-i", f"{IMAGE_DIR}/*.jpg",
         "-i", FINAL_AUDIO,
