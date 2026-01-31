@@ -3,7 +3,7 @@ import subprocess
 import requests
 import asyncio
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
+from hashlib import md5
 import edge_tts
 
 SCRIPT_FILE = "script.txt"
@@ -12,95 +12,110 @@ AUDIO_DIR = "audio_blocks"
 VIDEO_DIR = "video_blocks"
 FINAL_VIDEO = "final_video.mp4"
 
-PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY")
-
 os.makedirs(IMAGE_DIR, exist_ok=True)
 os.makedirs(AUDIO_DIR, exist_ok=True)
 os.makedirs(VIDEO_DIR, exist_ok=True)
+
+USED_IMAGES = set()
 
 # ---------------- UTILS ----------------
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-# ---------------- PLACEHOLDER ----------------
-def placeholder(path, text):
-    img = Image.new("RGB", (1280, 720), (10, 5, 0))
-    d = ImageDraw.Draw(img)
-    d.text((60, 330), "ॐ नमो नारायणाय", fill=(255, 215, 0))
-    img.save(path)
+# ---------------- WIKIMEDIA SEARCH ----------------
+def wikimedia_search(query, limit=30):
+    url = "https://commons.wikimedia.org/w/api.php"
+    params = {
+        "action": "query",
+        "format": "json",
+        "generator": "search",
+        "gsrsearch": query,
+        "gsrlimit": limit,
+        "prop": "imageinfo",
+        "iiprop": "url"
+    }
+    r = requests.get(url, params=params).json()
+    pages = r.get("query", {}).get("pages", {})
+    images = []
+    for p in pages.values():
+        info = p.get("imageinfo")
+        if info:
+            images.append(info[0]["url"])
+    return images
 
-# ---------------- DOWNLOAD VISHNU IMAGES ----------------
+# ---------------- DOWNLOAD IMAGES ----------------
 def download_images(blocks):
-    print("🖼 Downloading PURE Lord Vishnu / Vishnu Purana images...")
+    print("🖼 Downloading AUTHENTIC Vishnu Purana images (NO repeats)...")
+
+    # FIRST IMAGE — VISHNU PURANA BOOK
+    book_imgs = wikimedia_search("Vishnu Purana manuscript illustration", 10)
+    if not book_imgs:
+        raise RuntimeError("No Vishnu Purana manuscript found")
+
+    first_img = book_imgs[0]
+    save_image(first_img, 0)
 
     queries = [
-        "Lord Vishnu painting",
-        "Vishnu Purana illustration",
+        "Vishnu Vaikuntha painting",
+        "Dashavatara Vishnu painting",
         "Vishnu cosmic form painting",
-        "Vishnu Dashavatara painting",
-        "Vishnu Hindu mythology art"
+        "Vishnu temple mural",
+        "Narayana Hindu painting"
     ]
 
-    all_hits = []
-
+    image_pool = []
     for q in queries:
-        r = requests.get(
-            "https://pixabay.com/api/",
-            params={
-                "key": PIXABAY_API_KEY,
-                "q": q,
-                "image_type": "photo",
-                "orientation": "horizontal",
-                "safesearch": "true",
-                "per_page": 20
-            }
-        ).json()
+        image_pool.extend(wikimedia_search(q, 40))
 
-        for h in r.get("hits", []):
-            tags = h.get("tags", "").lower()
-            if any(k in tags for k in ["vishnu", "narayana", "dashavatara", "hindu god"]):
-                all_hits.append(h)
+    if len(image_pool) < len(blocks):
+        raise RuntimeError("Not enough Vishnu images")
 
-    if not all_hits:
-        raise RuntimeError("❌ No Vishnu images found from Pixabay")
+    idx = 1
+    for url in image_pool:
+        if idx >= len(blocks):
+            break
+        if save_image(url, idx):
+            idx += 1
 
-    print(f"✅ {len(all_hits)} Vishnu images collected")
+    if idx < len(blocks):
+        raise RuntimeError("Ran out of unique Vishnu images")
 
-    for i, text in enumerate(blocks):
-        path = f"{IMAGE_DIR}/{i:03d}.jpg"
-        hit = all_hits[i % len(all_hits)]
-        img = requests.get(hit["largeImageURL"]).content
-        with open(path, "wb") as f:
-            f.write(img)
+def save_image(url, index):
+    h = md5(url.encode()).hexdigest()
+    if h in USED_IMAGES:
+        return False
+    img = requests.get(url).content
+    path = f"{IMAGE_DIR}/{index:03d}.jpg"
+    with open(path, "wb") as f:
+        f.write(img)
+    USED_IMAGES.add(h)
+    return True
 
-# ---------------- HINDI NEURAL VOICE ----------------
-async def generate_single_audio(text, index):
+# ---------------- AUDIO (EDGE-TTS) ----------------
+async def speak(text, index):
     out = f"{AUDIO_DIR}/{index:03d}.wav"
-    communicate = edge_tts.Communicate(
+    tts = edge_tts.Communicate(
         text=text,
         voice="hi-IN-MadhurNeural",
         rate="+0%",
         pitch="+0Hz"
     )
-    await communicate.save(out)
+    await tts.save(out)
 
 def generate_audio(blocks):
-    print("🎙 Generating HIGH-QUALITY Hindi Neural voice (Vishnu style)...")
-
+    print("🎙 Generating devotional Hindi voice...")
     async def runner():
-        for i, text in enumerate(blocks):
-            if text.strip():
-                await generate_single_audio(text, i)
-
+        for i, t in enumerate(blocks):
+            if t.strip():
+                await speak(t, i)
     asyncio.run(runner())
 
 # ---------------- VIDEO ----------------
 def create_video(blocks):
-    print("🎞 Creating final video...")
+    print("🎞 Rendering final Vishnu Purana episode...")
 
     clips = []
-
     for i in range(len(blocks)):
         clip = f"{VIDEO_DIR}/{i:03d}.mp4"
         run([
@@ -135,7 +150,7 @@ def main():
     download_images(blocks)
     generate_audio(blocks)
     create_video(blocks)
-    print("✅ FINAL VISHNU VIDEO READY:", FINAL_VIDEO)
+    print("✅ FIRST EPISODE READY:", FINAL_VIDEO)
 
 if __name__ == "__main__":
     main()
