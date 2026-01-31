@@ -1,10 +1,10 @@
-name: Sanatan Gyan Dhara Video Bot
+name: AI Temple Video Bot
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
+  run:
     runs-on: ubuntu-latest
 
     steps:
@@ -13,10 +13,10 @@ jobs:
         uses: actions/checkout@v4
 
       # ================= SYSTEM TOOLS =================
-      - name: Install system tools
+      - name: Install tools
         run: |
           sudo apt update
-          sudo apt install -y ffmpeg imagemagick wget
+          sudo apt install -y ffmpeg imagemagick
 
       # ================= PYTHON =================
       - name: Set up Python 3.11
@@ -25,18 +25,10 @@ jobs:
           python-version: "3.11"
 
       # ================= PYTHON DEPENDENCIES =================
-      - name: Install Python dependencies
+      - name: Install Python packages
         run: |
           python -m pip install --upgrade pip
-          pip install requests pillow edge-tts
-
-      # ================= VERIFY EDGE-TTS =================
-      - name: Verify Edge TTS
-        run: |
-          python - << 'EOF'
-          import edge_tts
-          print("✅ Edge TTS OK")
-          EOF
+          pip install requests pillow imageio imageio-ffmpeg edge-tts
 
       # ================= RUN BOT =================
       - name: Run Sanatan Gyan Dhara Bot
@@ -45,18 +37,18 @@ jobs:
         run: |
           python upload.py
 
-      # ================= VERIFY OUTPUT =================
+      # ================= VERIFY VIDEO =================
       - name: Verify final video exists
         run: |
           echo "📂 Workspace files:"
-          ls -lh
+          ls -R
           if [ ! -f final_video.mp4 ]; then
-            echo "❌ final_video.mp4 NOT FOUND"
+            echo "❌ Video NOT FOUND"
             exit 1
           fi
-          echo "✅ final_video.mp4 FOUND"
+          echo "✅ Video FOUND"
 
-      # ================= ARTIFACT =================
+      # ================= UPLOAD ARTIFACT =================
       - name: Upload final video
         uses: actions/upload-artifact@v4
         with:
