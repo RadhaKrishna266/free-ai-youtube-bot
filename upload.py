@@ -12,7 +12,7 @@ from TTS.api import TTS
 
 # ================= CONFIG =================
 SCRIPT_FILE = "script.txt"
-VOICE_FILE = "audio_fixed/speaker_fixed.wav"
+VOICE_FILE = "audio_fixed/speaker_fixed.wav"   # final narration file
 FINAL_AUDIO = "final_audio.wav"
 FINAL_VIDEO = "final_video.mp4"
 
@@ -71,16 +71,18 @@ def create_voice():
         gpu=False
     )
 
+    # Use your recorded speaker file
     tts.tts_to_file(
         text=text,
         file_path=VOICE_FILE,
-        language="hi"  # important for multi-lingual XTTS
+        language="hi",
+        speaker_wav="audio_fixed/speaker_fixed.wav"
     )
 
 # ================= AUDIO MIX =================
 def mix_tanpura():
     print("🎶 Mixing tanpura softly")
-    duration = TARGET_DURATION  # use 10 minutes
+    duration = TARGET_DURATION  # 10 minutes
 
     temp_audio = "final_audio_temp.wav"
     run([
