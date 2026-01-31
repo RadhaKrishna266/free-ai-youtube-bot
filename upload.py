@@ -60,8 +60,8 @@ def download_images(blocks):
 def generate_audio_blocks(blocks):
     """Generate Hindi narration for each block using single-speaker TTS"""
     print("🎙 Generating narration in blocks...")
-    # ✅ Working Hindi TTS model
-    tts = TTS(model_name="tts_models/hi/vits", gpu=False)
+    # ✅ Working 4-part Hindi model for older TTS versions
+    tts = TTS(model_name="tts_models/hi/vits/vits_hindi", gpu=False)
 
     block_files = []
     for i, block in enumerate(blocks):
