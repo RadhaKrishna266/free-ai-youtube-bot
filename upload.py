@@ -12,7 +12,9 @@ from TTS.api import TTS
 
 # ================= CONFIG =================
 SCRIPT_FILE = "script.txt"
-VOICE_FILE = "audio_fixed/speaker_fixed.wav"   # final narration file
+
+SPEAKER_WAV = "audio_fixed/speaker_fixed.wav"   # reference ONLY
+NARRATION_WAV = "narration.wav"
 FINAL_AUDIO = "final_audio.wav"
 FINAL_VIDEO = "final_video.mp4"
 
@@ -29,23 +31,15 @@ def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-def get_duration(path):
-    out = subprocess.check_output([
-        "ffprobe", "-v", "error",
-        "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1",
-        path
-    ])
-    return float(out.strip())
-
 # ================= IMAGES =================
 def download_images(count=20):
     print("🖼 Downloading divine images")
+
     r = requests.get(
         "https://pixabay.com/api/",
         params={
             "key": os.environ["PIXABAY_API_KEY"],
-            "q": "Vishnu purana illustration divine",
+            "q": "Vishnu purana divine illustration",
             "image_type": "photo",
             "orientation": "horizontal",
             "per_page": count
@@ -54,7 +48,7 @@ def download_images(count=20):
 
     hits = r.get("hits", [])
     if not hits:
-        raise RuntimeError("No images returned from Pixabay")
+        raise RuntimeError("No images returned")
 
     for i, hit in enumerate(hits):
         img = requests.get(hit["largeImageURL"]).content
@@ -63,7 +57,8 @@ def download_images(count=20):
 
 # ================= VOICE =================
 def create_voice():
-    print("🎙 Generating narration in your voice (XTTS-v2)")
+    print("🎙 Generating divine narration")
+
     text = Path(SCRIPT_FILE).read_text(encoding="utf-8")
 
     tts = TTS(
@@ -71,37 +66,47 @@ def create_voice():
         gpu=False
     )
 
-    # Use your recorded speaker file
     tts.tts_to_file(
         text=text,
-        file_path=VOICE_FILE,
+        speaker_wav=SPEAKER_WAV,
         language="hi",
-        speaker_wav="audio_fixed/speaker_fixed.wav"
+        file_path="narration_raw.wav",
+        speed=1.08  # ✅ clear, not slow
     )
+
+    # Normalize + resample
+    run([
+        "ffmpeg", "-y",
+        "-i", "narration_raw.wav",
+        "-ac", "1",
+        "-ar", "24000",
+        NARRATION_WAV
+    ])
 
 # ================= AUDIO MIX =================
 def mix_tanpura():
     print("🎶 Mixing tanpura softly")
-    duration = TARGET_DURATION  # 10 minutes
 
     temp_audio = "final_audio_temp.wav"
+
     run([
         "ffmpeg", "-y",
-        "-i", VOICE_FILE,
-        "-stream_loop", "-1", "-i", TANPURA,
+        "-i", NARRATION_WAV,
+        "-stream_loop", "-1",
+        "-i", TANPURA,
         "-filter_complex",
-        f"[1:a]volume=0.15,atrim=0:{duration}[bg];[0:a][bg]amix=inputs=2",
-        "-t", str(duration),
+        "[1:a]volume=0.12,atrim=0:600[bg];[0:a][bg]amix=inputs=2",
+        "-t", str(TARGET_DURATION),
         temp_audio
     ])
 
-    # Replace final audio
     os.replace(temp_audio, FINAL_AUDIO)
-    return duration
+    return TARGET_DURATION
 
 # ================= VIDEO =================
 def create_video(duration):
     print("🎞 Creating video")
+
     run([
         "ffmpeg", "-y",
         "-framerate", "1/6",
@@ -119,8 +124,9 @@ def create_video(duration):
 # ================= YOUTUBE =================
 def upload_youtube():
     print("📤 Uploading to YouTube")
+
     token_info = json.loads(
-        base64.b64decode(os.environ["YOUTUBE_TOKEN_BASE64"]).decode("utf-8")
+        base64.b64decode(os.environ["YOUTUBE_TOKEN_BASE64"]).decode()
     )
 
     creds = Credentials(
@@ -145,15 +151,13 @@ def upload_youtube():
                 "description": (
                     "॥ श्री विष्णु पुराण ॥\n\n"
                     "Sanatan Gyaan Dhara में आपका स्वागत है।\n"
-                    "हम प्रतिदिन विष्णु पुराण के अध्याय प्रस्तुत करेंगे।\n\n"
-                    "🙏 कृपया चैनल को सब्सक्राइब करें\n"
-                    "🔔 वीडियो को लाइक और शेयर करें\n"
+                    "यह एक दिव्य कथा श्रृंखला है।\n\n"
+                    "🙏 चैनल को Subscribe करें\n"
+                    "🔔 Like और Share करें\n"
                 ),
                 "categoryId": "22"
             },
-            "status": {
-                "privacyStatus": "public"
-            }
+            "status": {"privacyStatus": "public"}
         },
         media_body=MediaFileUpload(
             FINAL_VIDEO,
