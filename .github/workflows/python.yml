@@ -8,47 +8,58 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ---------------- CHECKOUT ----------------
+      # ================= CHECKOUT =================
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ---------------- SYSTEM TOOLS ----------------
+      # ================= SYSTEM TOOLS =================
       - name: Install system tools
         run: |
           sudo apt update
-          sudo apt install -y ffmpeg imagemagick wget
+          sudo apt install -y ffmpeg imagemagick wget git python3-venv
 
-      # ---------------- PYTHON ----------------
+      # ================= PYTHON =================
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # ---------------- PYTHON DEPENDENCIES ----------------
+      # ================= PYTHON DEPENDENCIES =================
       - name: Install Python dependencies
         run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install moviepy pillow gtts requests huggingface_hub imageio imageio-ffmpeg
+          python -m pip install --upgrade pip
+          pip install \
+            requests \
+            pillow \
+            moviepy \
+            edge-tts \
+            torch \
+            diffusers \
+            transformers \
+            accelerate \
+            safetensors
 
-      # ---------------- RUN BOT ----------------
+      # ================= RUN BOT =================
       - name: Run Sanatan Gyan Dhara Bot
         env:
           HF_API_KEY: ${{ secrets.HF_API_KEY }}
         run: |
-          python3 upload.py
+          python upload.py
 
-      # ---------------- VERIFY OUTPUT ----------------
+      # ================= VERIFY OUTPUT =================
       - name: Verify final video exists
         run: |
-          if [ ! -f video/vishnu_purana_episode_1.mp4 ]; then
-            echo "❌ Video NOT FOUND"
+          echo "📂 Workspace files:"
+          ls -lh
+          if [ ! -f final_video.mp4 ]; then
+            echo "❌ final_video.mp4 NOT FOUND"
             exit 1
           fi
-          echo "✅ Video FOUND"
+          echo "✅ final_video.mp4 FOUND"
 
-      # ---------------- UPLOAD ARTIFACT ----------------
+      # ================= ARTIFACT =================
       - name: Upload final video
         uses: actions/upload-artifact@v4
         with:
           name: sanatan-gyan-dhara-episode-1
-          path: video/vishnu_purana_episode_1.mp4
+          path: final_video.mp4
