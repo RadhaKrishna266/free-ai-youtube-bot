@@ -1,47 +1,37 @@
 import os
-import sys
 import subprocess
 import requests
 from pathlib import Path
 from PIL import Image, ImageDraw
 
-# ================= AUTO-INSTALL TTS =================
-try:
-    from TTS.api import TTS
-except ModuleNotFoundError:
-    print("📦 TTS not found, installing...")
-    subprocess.run([sys.executable, "-m", "pip", "install", "TTS==0.22.0"], check=True)
-    from TTS.api import TTS
-
-# ================= CONFIG =================
 SCRIPT_FILE = "script.txt"
 IMAGE_DIR = "images"
 AUDIO_DIR = "audio_blocks"
 VIDEO_DIR = "video_blocks"
 FINAL_VIDEO = "final_video.mp4"
 
-PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY")
+VOICE = "audio/my_voice.wav"   # <-- YOUR RECORDED HINDI VOICE
+PIXABAY_API_KEY = os.environ["PIXABAY_API_KEY"]
 
 os.makedirs(IMAGE_DIR, exist_ok=True)
 os.makedirs(AUDIO_DIR, exist_ok=True)
 os.makedirs(VIDEO_DIR, exist_ok=True)
 
-# ================= UTILS =================
+# ---------------- UTILS ----------------
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-# ================= PLACEHOLDER IMAGE =================
+# ---------------- PLACEHOLDER IMAGE ----------------
 def placeholder(path, text):
-    img = Image.new("RGB", (1280, 720), (15, 15, 15))
+    img = Image.new("RGB", (1280, 720), (20, 10, 10))
     d = ImageDraw.Draw(img)
-    d.text((60, 330), text[:70], fill=(255, 200, 0))
+    d.text((50, 330), text[:80], fill=(255, 215, 0))
     img.save(path)
 
-# ================= IMAGES =================
+# ---------------- IMAGES ----------------
 def download_images(blocks):
     print("🖼 Downloading images from Pixabay...")
-
     r = requests.get(
         "https://pixabay.com/api/",
         params={
@@ -59,32 +49,25 @@ def download_images(blocks):
     for i, text in enumerate(blocks):
         path = f"{IMAGE_DIR}/{i:03d}.jpg"
         if hits:
-            img_url = hits[i % len(hits)]["largeImageURL"]
-            img = requests.get(img_url).content
+            img = requests.get(hits[i % len(hits)]["largeImageURL"]).content
             open(path, "wb").write(img)
         else:
-            print(f"⚠ Placeholder used for block {i}")
             placeholder(path, text)
 
-# ================= AUDIO (HINDI XTTS) =================
+# ---------------- AUDIO (REUSE YOUR VOICE) ----------------
 def generate_audio(blocks):
-    print("🎙 Generating pure Hindi narration...")
+    print("🎙 Using YOUR Hindi voice (no TTS)...")
 
-    tts = TTS(
-        model_name="tts_models/multilingual/multi-dataset/xtts_v2",
-        gpu=False
-    )
+    for i in range(len(blocks)):
+        run([
+            "ffmpeg", "-y",
+            "-i", VOICE,
+            "-ac", "1",
+            "-ar", "22050",
+            f"{AUDIO_DIR}/{i:03d}.wav"
+        ])
 
-    for i, text in enumerate(blocks):
-        if not text.strip():
-            continue
-        tts.tts_to_file(
-            text=text,
-            language="hi",
-            file_path=f"{AUDIO_DIR}/{i:03d}.wav"
-        )
-
-# ================= VIDEO =================
+# ---------------- VIDEO ----------------
 def create_video(blocks):
     print("🎞 Creating video...")
     clips = []
@@ -116,7 +99,7 @@ def create_video(blocks):
         FINAL_VIDEO
     ])
 
-# ================= MAIN =================
+# ---------------- MAIN ----------------
 def main():
     blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
     download_images(blocks)
