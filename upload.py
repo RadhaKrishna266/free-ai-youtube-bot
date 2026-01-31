@@ -1,12 +1,8 @@
 import os
-import requests
-import asyncio
 import subprocess
+import requests
 from pathlib import Path
-from PIL import Image, ImageDraw
-from edge_tts import Communicate
 
-# ---------------- DIRECTORIES ----------------
 SCRIPT_FILE = "script.txt"
 IMAGE_DIR = "images"
 AUDIO_DIR = "audio_blocks"
@@ -24,13 +20,6 @@ def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-def placeholder(path, text):
-    """Create placeholder image if Pixabay returns nothing"""
-    img = Image.new("RGB", (1280, 720), (15, 10, 5))
-    d = ImageDraw.Draw(img)
-    d.text((40, 340), text[:80], fill=(255, 200, 0))
-    img.save(path)
-
 # ---------------- IMAGES ----------------
 def download_images(blocks):
     print("🖼 Downloading devotional images...")
@@ -38,47 +27,52 @@ def download_images(blocks):
         "https://pixabay.com/api/",
         params={
             "key": PIXABAY_API_KEY,
-            "q": "Lord Vishnu Krishna Hindu devotional art painting",
+            "q": "Hindu temple Krishna Vishnu devotional",
             "image_type": "photo",
             "orientation": "horizontal",
             "safesearch": "true",
-            "per_page": 50
-        }
+            "per_page": 50,
+        },
+        timeout=30,
     ).json()
 
     hits = r.get("hits", [])
+    if not hits:
+        raise RuntimeError("Pixabay returned no images")
 
-    for i, text in enumerate(blocks):
-        path = f"{IMAGE_DIR}/{i:03d}.jpg"
-        if hits:
-            img_data = requests.get(hits[i % len(hits)]["largeImageURL"]).content
-            with open(path, "wb") as f:
-                f.write(img_data)
-        else:
-            placeholder(path, text)
+    for i in range(len(blocks)):
+        img_url = hits[i % len(hits)]["largeImageURL"]
+        img = requests.get(img_url, timeout=30).content
+        with open(f"{IMAGE_DIR}/{i:03d}.jpg", "wb") as f:
+            f.write(img)
 
-# ---------------- HINDI AUDIO (Edge TTS) ----------------
-async def generate_single_audio(text, i):
-    out_path = f"{AUDIO_DIR}/{i:03d}.wav"
-    communicate = Communicate(text, voice="hi-IN-MadhurNeural")
-    await communicate.save(out_path)
-
+# ---------------- AUDIO (EDGE-TTS HINDI) ----------------
 def generate_audio(blocks):
-    print("🎙 Generating REAL Hindi Neural voice...")
+    print("🎙 Generating NATURAL Hindi Neural voice...")
+    for i, text in enumerate(blocks):
+        text = text.strip()
+        if not text:
+            continue
 
-    async def runner():
-        tasks = [generate_single_audio(text, i) for i, text in enumerate(blocks) if text.strip()]
-        await asyncio.gather(*tasks)
-
-    asyncio.run(runner())
+        out = f"{AUDIO_DIR}/{i:03d}.wav"
+        run([
+            "python",
+            "-m",
+            "edge_tts",
+            "--voice", "hi-IN-MadhurNeural",
+            "--rate", "+0%",
+            "--pitch", "+0Hz",
+            "--text", text,
+            "--write-media", out
+        ])
 
 # ---------------- VIDEO ----------------
 def create_video(blocks):
-    print("🎞 Creating video...")
+    print("🎞 Creating video clips...")
     clips = []
 
     for i in range(len(blocks)):
-        clip_path = f"{VIDEO_DIR}/{i:03d}.mp4"
+        clip = f"{VIDEO_DIR}/{i:03d}.mp4"
         run([
             "ffmpeg", "-y",
             "-loop", "1",
@@ -88,15 +82,15 @@ def create_video(blocks):
             "-c:v", "libx264",
             "-c:a", "aac",
             "-shortest",
-            clip_path
+            clip
         ])
-        clips.append(clip_path)
+        clips.append(clip)
 
-    # Concatenate all clips
     with open("list.txt", "w") as f:
         for c in clips:
             f.write(f"file '{c}'\n")
 
+    print("🎬 Merging final video...")
     run([
         "ffmpeg", "-y",
         "-f", "concat",
@@ -109,10 +103,15 @@ def create_video(blocks):
 # ---------------- MAIN ----------------
 def main():
     blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
+
     download_images(blocks)
     generate_audio(blocks)
     create_video(blocks)
-    print("✅ FINAL VIDEO READY:", FINAL_VIDEO)
+
+    if os.path.exists(FINAL_VIDEO):
+        print("✅ FINAL VIDEO READY:", os.path.abspath(FINAL_VIDEO))
+    else:
+        raise RuntimeError("❌ final_video.mp4 was NOT created")
 
 if __name__ == "__main__":
     main()
