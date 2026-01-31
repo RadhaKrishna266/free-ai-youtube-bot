@@ -11,7 +11,7 @@ from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 
 # ================= CONFIG =================
-SCRIPT_FILE = "script.txt"   # Your Episode 1 script (blocks separated by double newlines)
+SCRIPT_FILE = "script.txt"   # Episode 1 script (blocks separated by double newlines)
 IMAGE_DIR = "images"         # Will store downloaded Pixabay images
 TANPURA = "audio_fixed/tanpura_fixed.mp3"
 FINAL_AUDIO = "final_audio.wav"
@@ -33,9 +33,8 @@ def run(cmd):
 def download_images(blocks):
     print("🖼 Downloading images from Pixabay...")
     for i, block in enumerate(blocks):
-        # Take first 5 words from block as keyword
         words = block.strip().split()[:5]
-        keyword = " ".join(words) if words else "Vishnu Krishna devotional"
+        keyword = "Vishnu Krishna devotional" if not words else " ".join(words)
         response = requests.get(
             "https://pixabay.com/api/",
             params={
@@ -55,13 +54,15 @@ def download_images(blocks):
                 f.write(img_data)
         else:
             print(f"⚠ No image found for block {i}, using placeholder")
+            # Create blank placeholder
             open(f"{IMAGE_DIR}/{i:03d}.jpg", "wb").close()
 
 # ================= VOICE =================
 def generate_audio_blocks(blocks):
     """Generate Hindi narration for each block using single-speaker TTS"""
     print("🎙 Generating narration in blocks...")
-    tts = TTS(model_name="tts_models/hi/vits", gpu=False)
+    # ✅ Correct TTS model
+    tts = TTS(model_name="tts_models/multilingual/multi-dataset/tts_m-multi-hi", gpu=False)
 
     block_files = []
     for i, block in enumerate(blocks):
