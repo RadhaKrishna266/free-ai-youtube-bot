@@ -78,7 +78,8 @@ def create_voice():
     tts.tts_to_file(
         text=text,
         speaker_wav=VOICE_SAMPLE,
-        file_path=FINAL_AUDIO
+        file_path=FINAL_AUDIO,
+        language="hi"  # Multi-lingual model requires language
     )
 
 # ================= AUDIO MIX =================
@@ -108,8 +109,7 @@ def create_video(duration):
     if not image_files:
         raise RuntimeError("No images found in IMAGE_DIR")
 
-    # Spread images evenly over duration
-    framerate = len(image_files) / duration  # images per second
+    framerate = len(image_files) / duration  # Spread images evenly over video
 
     run([
         "ffmpeg", "-y",
