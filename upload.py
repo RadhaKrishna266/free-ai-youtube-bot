@@ -11,9 +11,9 @@ from google.auth.transport.requests import Request
 from TTS.api import TTS
 
 # ================= CONFIG =================
-SCRIPT_FILE = "script.txt"
+SCRIPT_FILE = "script.txt"  # your Episode 1 script
 
-SPEAKER_WAV = "audio_fixed/speaker_fixed.wav"   # reference ONLY
+SPEAKER_WAV = "audio_fixed/speaker_fixed.wav"  # optional reference
 NARRATION_WAV = "narration.wav"
 FINAL_AUDIO = "final_audio.wav"
 FINAL_VIDEO = "final_video.mp4"
@@ -39,7 +39,7 @@ def download_images(count=20):
         "https://pixabay.com/api/",
         params={
             "key": os.environ["PIXABAY_API_KEY"],
-            "q": "Vishnu purana divine illustration",
+            "q": "lord Vishnu illustration",
             "image_type": "photo",
             "orientation": "horizontal",
             "per_page": count
@@ -48,7 +48,7 @@ def download_images(count=20):
 
     hits = r.get("hits", [])
     if not hits:
-        raise RuntimeError("No images returned")
+        raise RuntimeError("No images returned from Pixabay API.")
 
     for i, hit in enumerate(hits):
         img = requests.get(hit["largeImageURL"]).content
@@ -57,29 +57,28 @@ def download_images(count=20):
 
 # ================= VOICE =================
 def create_voice():
-    print("🎙 Generating divine narration")
+    print("🎙 Generating narration in Hindi")
 
     text = Path(SCRIPT_FILE).read_text(encoding="utf-8")
 
-    tts = TTS(
-        model_name="tts_models/multilingual/multi-dataset/xtts_v2",
-        gpu=False
-    )
+    # Use high-quality multilingual TTS
+    tts = TTS(model_name="tts_models/multilingual/multi-dataset/xtts_v2", gpu=False)
 
     tts.tts_to_file(
         text=text,
-        speaker_wav=SPEAKER_WAV,
+        speaker_wav=SPEAKER_WAV if os.path.exists(SPEAKER_WAV) else None,
         language="hi",
         file_path="narration_raw.wav",
-        speed=1.08  # ✅ clear, not slow
+        speed=1.0
     )
 
-    # Normalize + resample
+    # Normalize + mono + resample
     run([
         "ffmpeg", "-y",
         "-i", "narration_raw.wav",
         "-ac", "1",
         "-ar", "24000",
+        "-filter:a", "volume=1.0",
         NARRATION_WAV
     ])
 
@@ -95,7 +94,7 @@ def mix_tanpura():
         "-stream_loop", "-1",
         "-i", TANPURA,
         "-filter_complex",
-        "[1:a]volume=0.12,atrim=0:600[bg];[0:a][bg]amix=inputs=2",
+        "[1:a]volume=0.12,atrim=0:{}[bg];[0:a][bg]amix=inputs=2:dropout_transition=0".format(TARGET_DURATION),
         "-t", str(TARGET_DURATION),
         temp_audio
     ])
@@ -105,8 +104,9 @@ def mix_tanpura():
 
 # ================= VIDEO =================
 def create_video(duration):
-    print("🎞 Creating video")
+    print("🎞 Creating video with images")
 
+    # Framerate: 1 image per 6 seconds → 10 minutes = 100 images for smoothness
     run([
         "ffmpeg", "-y",
         "-framerate", "1/6",
@@ -118,6 +118,7 @@ def create_video(duration):
         "-c:v", "libx264",
         "-preset", "slow",
         "-c:a", "aac",
+        "-b:a", "192k",
         FINAL_VIDEO
     ])
 
@@ -159,11 +160,7 @@ def upload_youtube():
             },
             "status": {"privacyStatus": "public"}
         },
-        media_body=MediaFileUpload(
-            FINAL_VIDEO,
-            mimetype="video/mp4",
-            resumable=True
-        )
+        media_body=MediaFileUpload(FINAL_VIDEO, mimetype="video/mp4", resumable=True)
     )
 
     response = request.execute()
@@ -171,7 +168,7 @@ def upload_youtube():
 
 # ================= MAIN =================
 def main():
-    download_images()
+    download_images(count=50)  # more images for smooth 10min video
     create_voice()
     duration = mix_tanpura()
     create_video(duration)
