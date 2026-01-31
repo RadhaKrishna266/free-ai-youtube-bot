@@ -1,7 +1,10 @@
 import os
 import subprocess
 import requests
+import asyncio
 from pathlib import Path
+from PIL import Image, ImageDraw, ImageFont
+import edge_tts
 
 SCRIPT_FILE = "script.txt"
 IMAGE_DIR = "images"
@@ -20,55 +23,82 @@ def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-# ---------------- IMAGES ----------------
+# ---------------- PLACEHOLDER ----------------
+def placeholder(path, text):
+    img = Image.new("RGB", (1280, 720), (10, 5, 0))
+    d = ImageDraw.Draw(img)
+    d.text((60, 330), "ॐ नमो नारायणाय", fill=(255, 215, 0))
+    img.save(path)
+
+# ---------------- DOWNLOAD VISHNU IMAGES ----------------
 def download_images(blocks):
-    print("🖼 Downloading devotional images...")
-    r = requests.get(
-        "https://pixabay.com/api/",
-        params={
-            "key": PIXABAY_API_KEY,
-            "q": "Hindu temple Krishna Vishnu devotional",
-            "image_type": "photo",
-            "orientation": "horizontal",
-            "safesearch": "true",
-            "per_page": 50,
-        },
-        timeout=30,
-    ).json()
+    print("🖼 Downloading PURE Lord Vishnu / Vishnu Purana images...")
 
-    hits = r.get("hits", [])
-    if not hits:
-        raise RuntimeError("Pixabay returned no images")
+    queries = [
+        "Lord Vishnu painting",
+        "Vishnu Purana illustration",
+        "Vishnu cosmic form painting",
+        "Vishnu Dashavatara painting",
+        "Vishnu Hindu mythology art"
+    ]
 
-    for i in range(len(blocks)):
-        img_url = hits[i % len(hits)]["largeImageURL"]
-        img = requests.get(img_url, timeout=30).content
-        with open(f"{IMAGE_DIR}/{i:03d}.jpg", "wb") as f:
+    all_hits = []
+
+    for q in queries:
+        r = requests.get(
+            "https://pixabay.com/api/",
+            params={
+                "key": PIXABAY_API_KEY,
+                "q": q,
+                "image_type": "photo",
+                "orientation": "horizontal",
+                "safesearch": "true",
+                "per_page": 20
+            }
+        ).json()
+
+        for h in r.get("hits", []):
+            tags = h.get("tags", "").lower()
+            if any(k in tags for k in ["vishnu", "narayana", "dashavatara", "hindu god"]):
+                all_hits.append(h)
+
+    if not all_hits:
+        raise RuntimeError("❌ No Vishnu images found from Pixabay")
+
+    print(f"✅ {len(all_hits)} Vishnu images collected")
+
+    for i, text in enumerate(blocks):
+        path = f"{IMAGE_DIR}/{i:03d}.jpg"
+        hit = all_hits[i % len(all_hits)]
+        img = requests.get(hit["largeImageURL"]).content
+        with open(path, "wb") as f:
             f.write(img)
 
-# ---------------- AUDIO (EDGE-TTS HINDI) ----------------
-def generate_audio(blocks):
-    print("🎙 Generating NATURAL Hindi Neural voice...")
-    for i, text in enumerate(blocks):
-        text = text.strip()
-        if not text:
-            continue
+# ---------------- HINDI NEURAL VOICE ----------------
+async def generate_single_audio(text, index):
+    out = f"{AUDIO_DIR}/{index:03d}.wav"
+    communicate = edge_tts.Communicate(
+        text=text,
+        voice="hi-IN-MadhurNeural",
+        rate="+0%",
+        pitch="+0Hz"
+    )
+    await communicate.save(out)
 
-        out = f"{AUDIO_DIR}/{i:03d}.wav"
-        run([
-            "python",
-            "-m",
-            "edge_tts",
-            "--voice", "hi-IN-MadhurNeural",
-            "--rate", "+0%",
-            "--pitch", "+0Hz",
-            "--text", text,
-            "--write-media", out
-        ])
+def generate_audio(blocks):
+    print("🎙 Generating HIGH-QUALITY Hindi Neural voice (Vishnu style)...")
+
+    async def runner():
+        for i, text in enumerate(blocks):
+            if text.strip():
+                await generate_single_audio(text, i)
+
+    asyncio.run(runner())
 
 # ---------------- VIDEO ----------------
 def create_video(blocks):
-    print("🎞 Creating video clips...")
+    print("🎞 Creating final video...")
+
     clips = []
 
     for i in range(len(blocks)):
@@ -90,7 +120,6 @@ def create_video(blocks):
         for c in clips:
             f.write(f"file '{c}'\n")
 
-    print("🎬 Merging final video...")
     run([
         "ffmpeg", "-y",
         "-f", "concat",
@@ -103,15 +132,10 @@ def create_video(blocks):
 # ---------------- MAIN ----------------
 def main():
     blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
-
     download_images(blocks)
     generate_audio(blocks)
     create_video(blocks)
-
-    if os.path.exists(FINAL_VIDEO):
-        print("✅ FINAL VIDEO READY:", os.path.abspath(FINAL_VIDEO))
-    else:
-        raise RuntimeError("❌ final_video.mp4 was NOT created")
+    print("✅ FINAL VISHNU VIDEO READY:", FINAL_VIDEO)
 
 if __name__ == "__main__":
     main()
