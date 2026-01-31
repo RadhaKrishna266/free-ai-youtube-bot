@@ -5,11 +5,13 @@ import subprocess
 import requests
 from pathlib import Path
 
+import torch
+import TTS
+
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
-from TTS.api import TTS
 
 # ================= CONFIG =================
 SCRIPT_FILE = "script.txt"       # Your narration script
@@ -68,9 +70,12 @@ def download_images(count=20):
 def create_voice():
     print("🎙 Generating narration in your voice (XTTS-v2)")
 
+    # Fix for PyTorch 2.6+ unpickling issue
+    torch.serialization.add_safe_globals([TTS.tts.configs.xtts_config.XttsConfig])
+
     text = Path(SCRIPT_FILE).read_text(encoding="utf-8")
 
-    tts = TTS(
+    tts = TTS.TTS(
         model_name="tts_models/multilingual/multi-dataset/xtts_v2",  # supports cloning
         gpu=False
     )
