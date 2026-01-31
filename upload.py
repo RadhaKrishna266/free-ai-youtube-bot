@@ -3,6 +3,7 @@ import subprocess
 import requests
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
+from edge_tts import Communicate  # <- Use Python module directly
 
 # ---------------- CONFIG ----------------
 SCRIPT_FILE = "script.txt"
@@ -64,23 +65,20 @@ def download_images(blocks):
             placeholder(path, text)
 
 # ---------------- AUDIO (REAL HINDI NEURAL) ----------------
-def generate_audio(blocks):
-    print("🎙 Generating REAL Hindi Neural voice...")
+async def generate_single_audio(text, out_path):
+    communicate = Communicate(text, voice="hi-IN-MadhurNeural")
+    await communicate.save(out_path)
 
+def generate_audio(blocks):
+    import asyncio
+    print("🎙 Generating REAL Hindi Neural voice...")
+    tasks = []
     for i, text in enumerate(blocks):
         if not text.strip():
             continue
-
         out = f"{AUDIO_DIR}/{i:03d}.wav"
-
-        run([
-            "edge-tts",
-            "--voice", "hi-IN-MadhurNeural",
-            "--rate", "+0%",
-            "--pitch", "+0Hz",
-            "--text", text,
-            "--write-media", out
-        ])
+        tasks.append(generate_single_audio(text, out))
+    asyncio.run(asyncio.wait(tasks))
 
 # ---------------- VIDEO ----------------
 def create_video(blocks):
