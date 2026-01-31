@@ -46,6 +46,13 @@ jobs:
             google-auth-oauthlib \
             TTS==0.22.0
 
+      # ================= AUDIO CONVERSION =================
+      - name: Normalize speaker.wav and tanpura.mp3
+        run: |
+          mkdir -p audio_fixed
+          ffmpeg -y -i speaker.wav -ac 1 -ar 22050 audio_fixed/speaker_fixed.wav
+          ffmpeg -y -i audio/tanpura.mp3 -ac 1 -ar 22050 audio_fixed/tanpura_fixed.mp3
+
       # ================= PRE-DOWNLOAD XTTS MODEL =================
       - name: Pre-download XTTS model
         env:
