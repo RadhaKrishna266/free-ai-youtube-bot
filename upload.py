@@ -1,10 +1,11 @@
 import os
-import subprocess
 import asyncio
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
-import edge_tts
 from moviepy.editor import AudioFileClip, ImageClip, CompositeAudioClip, concatenate_videoclips
+import edge_tts
+import requests
+import time
 
 # ---------------- CONFIG ----------------
 SCRIPT_FILE = "script.txt"
@@ -12,16 +13,11 @@ IMAGE_DIR = "images"
 AUDIO_DIR = "audio_blocks"
 VIDEO_DIR = "video_blocks"
 FINAL_VIDEO = "final_video.mp4"
-TANPURA_FILE = "tanpura.mp3"  # Place your tanpura.mp3 in repo
-MAX_IMAGE_BLOCKS = 50  # max AI images
+TANPURA_FILE = "tanpura.mp3"  # You can include your tanpura background file here
+
 os.makedirs(IMAGE_DIR, exist_ok=True)
 os.makedirs(AUDIO_DIR, exist_ok=True)
 os.makedirs(VIDEO_DIR, exist_ok=True)
-
-# ---------------- UTILS ----------------
-def run(cmd):
-    print("▶", " ".join(cmd))
-    subprocess.run(cmd, check=True)
 
 # ---------------- PLACEHOLDER IMAGE ----------------
 def placeholder(path, text="ॐ नमो नारायणाय"):
@@ -36,30 +32,39 @@ def placeholder(path, text="ॐ नमो नारायणाय"):
     img.save(path)
 
 # ---------------- AI IMAGE GENERATION ----------------
-def generate_ai_image(prompt, out_path):
+def generate_ai_image(prompt, out_path, retries=3):
     """
-    Generate AI image using stable diffusion or any external AI API.
-    Here, it is a placeholder function. Replace with your actual AI API call.
+    Uses Pollinations AI API to generate image.
     """
-    print(f"🖼 Generating AI image for: {prompt}")
-    # For testing without AI API, use placeholder
-    placeholder(out_path, text=prompt.split(",")[0][:30])
+    url = f"https://image.pollinations.ai/prompt/{requests.utils.quote(prompt)}"
+    for attempt in range(1, retries + 1):
+        try:
+            r = requests.get(url, timeout=25)
+            if r.status_code == 200 and r.content:
+                with open(out_path, "wb") as f:
+                    f.write(r.content)
+                print(f"✅ Image saved: {out_path}")
+                return
+        except Exception as e:
+            print(f"⚠ Image retry {attempt}/{retries} failed:", e)
+            time.sleep(3)
+    print("❌ Failed to generate AI image, using placeholder.")
+    placeholder(out_path)
 
+# ---------------- GENERATE IMAGES ----------------
 def generate_images(blocks):
-    print("🖼 Generating AI Vishnu / Vaikunth images...")
+    print("🖼 Generating AI Vishnu Purana images...")
     for i, text in enumerate(blocks):
-        path = f"{IMAGE_DIR}/{i:03d}.jpg"
-        prompt = f"Lord Vishnu, Vaikunth, divine illustration, Hindu mythology, vibrant, detailed, cinematic"
-        generate_ai_image(prompt, path)
+        prompt = f"Divine Lord Vishnu illustration, Vaikunth, Vishnu Purana style, highly detailed, vibrant, digital art"
+        out_path = f"{IMAGE_DIR}/{i:03d}.jpg"
+        generate_ai_image(prompt, out_path)
 
 # ---------------- HINDI NEURAL VOICE ----------------
 async def generate_single_audio(text, index):
     out = f"{AUDIO_DIR}/{index:03d}.wav"
     communicate = edge_tts.Communicate(
         text=text,
-        voice="hi-IN-MadhurNeural",
-        rate="+0%",
-        pitch="+0Hz"
+        voice="hi-IN-MadhurNeural"
     )
     await communicate.save(out)
 
@@ -71,40 +76,42 @@ def generate_audio(blocks):
                 await generate_single_audio(text, i)
     asyncio.run(runner())
 
-# ---------------- CREATE VIDEO CLIPS ----------------
+# ---------------- VIDEO CREATION ----------------
 def create_video(blocks):
-    print("🎞 Creating video with tanpura...")
+    print("🎞 Creating video...")
     clips = []
-    tanpura_clip = None
-    if os.path.exists(TANPURA_FILE):
-        tanpura_clip = AudioFileClip(TANPURA_FILE)
 
     for i in range(len(blocks)):
         img_path = f"{IMAGE_DIR}/{i:03d}.jpg"
         audio_path = f"{AUDIO_DIR}/{i:03d}.wav"
+
+        img_clip = ImageClip(img_path).set_duration(AudioFileClip(audio_path).duration)
         audio_clip = AudioFileClip(audio_path)
-        if tanpura_clip:
-            audio_clip = CompositeAudioClip([audio_clip, tanpura_clip.volumex(0.3).set_duration(audio_clip.duration)])
-        clip = ImageClip(img_path).set_duration(audio_clip.duration).set_audio(audio_clip)
-        clips.append(clip)
+
+        if os.path.exists(TANPURA_FILE):
+            tanpura_clip = AudioFileClip(TANPURA_FILE).volumex(0.2)
+            audio_clip = CompositeAudioClip([audio_clip, tanpura_clip])
+
+        img_clip = img_clip.set_audio(audio_clip)
+        clips.append(img_clip)
 
     final_clip = concatenate_videoclips(clips, method="compose")
     final_clip.write_videofile(FINAL_VIDEO, fps=24, codec="libx264", audio_codec="aac")
-    print(f"✅ FINAL VIDEO READY: {FINAL_VIDEO}")
 
 # ---------------- MAIN ----------------
 def main():
-    # Read script and split into blocks
     blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
+
+    # Intro & outro
     intro = "नमस्कार। स्वागत है आप सभी का VishnuPriya श्रृंखला में। आज हम आपके लिए Vishnu Purana का पहला एपिसोड लाए हैं।"
     outro = "\n\n🙏 अगर आपको यह वीडियो पसंद आया हो, तो कृपया लाइक, शेयर और सब्सक्राइब जरूर करें। हर दिन एक नया एपिसोड आएगा।"
     blocks.insert(0, intro)
     blocks.append(outro)
 
-    # Generate images, narration, video
     generate_images(blocks)
     generate_audio(blocks)
     create_video(blocks)
+    print("✅ FINAL VIDEO READY:", FINAL_VIDEO)
 
 if __name__ == "__main__":
     main()
