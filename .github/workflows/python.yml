@@ -16,7 +16,7 @@ jobs:
       - name: Install system tools
         run: |
           sudo apt update
-          sudo apt install -y ffmpeg imagemagick wget
+          sudo apt install -y ffmpeg imagemagick wget python3-pip
 
       # ================= PYTHON =================
       - name: Set up Python 3.11
@@ -27,15 +27,20 @@ jobs:
       # ================= PYTHON DEPENDENCIES =================
       - name: Install Python dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install requests pillow moviepy imageio imageio-ffmpeg edge-tts
+          python3 -m pip install --upgrade pip
+          python3 -m pip install --force-reinstall moviepy==2.0.0 gtts requests pillow imageio imageio-ffmpeg edge-tts
+
+      # ================= VERIFY MOVIEPY =================
+      - name: Verify moviepy
+        run: |
+          python3 -c "from moviepy.editor import AudioFileClip, ImageClip; print('✅ moviepy OK')"
 
       # ================= RUN BOT =================
       - name: Run Sanatan Gyan Dhara Bot
         env:
           HF_API_KEY: ${{ secrets.HF_API_KEY }}
         run: |
-          python upload.py
+          python3 upload.py
 
       # ================= VERIFY FINAL VIDEO =================
       - name: Verify final video exists
