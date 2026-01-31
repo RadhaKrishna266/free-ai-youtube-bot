@@ -16,10 +16,7 @@ jobs:
       - name: Install system tools
         run: |
           sudo apt update
-          sudo apt install -y \
-            ffmpeg \
-            imagemagick \
-            wget
+          sudo apt install -y ffmpeg imagemagick wget
 
       # ================= PYTHON =================
       - name: Set up Python 3.11
