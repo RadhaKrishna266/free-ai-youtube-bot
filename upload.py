@@ -2,8 +2,9 @@ import os
 import subprocess
 import requests
 from pathlib import Path
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
+# ---------------- CONFIG ----------------
 SCRIPT_FILE = "script.txt"
 IMAGE_DIR = "images"
 AUDIO_DIR = "audio_blocks"
@@ -22,68 +23,78 @@ def run(cmd):
     subprocess.run(cmd, check=True)
 
 # ---------------- PLACEHOLDER IMAGE ----------------
-def placeholder(path, text):
-    img = Image.new("RGB", (1280, 720), (15, 10, 5))
+def create_placeholder(path, text):
+    img = Image.new("RGB", (1280, 720), (20, 12, 6))
     d = ImageDraw.Draw(img)
-    d.text((40, 340), text[:80], fill=(255, 200, 0))
+    try:
+        font = ImageFont.truetype("DejaVuSans.ttf", 42)
+    except:
+        font = ImageFont.load_default()
+    d.text((60, 330), text[:120], fill=(255, 200, 80), font=font)
     img.save(path)
 
-# ---------------- IMAGES (PIXABAY ONLY) ----------------
+# ---------------- IMAGES (PIXABAY) ----------------
 def download_images(blocks):
-    print("🖼 Downloading devotional images...")
+    print("🖼 Downloading images from Pixabay...")
 
-    hits = []
-    if PIXABAY_API_KEY:
-        r = requests.get(
-            "https://pixabay.com/api/",
-            params={
-                "key": PIXABAY_API_KEY,
-                "q": "Lord Vishnu Krishna Hindu devotional art",
-                "image_type": "photo",
-                "orientation": "horizontal",
-                "safesearch": "true",
-                "per_page": 50
-            },
-            timeout=30
-        ).json()
-        hits = r.get("hits", [])
+    r = requests.get(
+        "https://pixabay.com/api/",
+        params={
+            "key": PIXABAY_API_KEY,
+            "q": "Lord Vishnu Krishna Hindu devotional art",
+            "image_type": "photo",
+            "orientation": "horizontal",
+            "safesearch": "true",
+            "per_page": 50,
+        },
+        timeout=30
+    ).json()
+
+    hits = r.get("hits", [])
 
     for i, text in enumerate(blocks):
-        path = f"{IMAGE_DIR}/{i:03d}.jpg"
+        img_path = f"{IMAGE_DIR}/{i:03d}.jpg"
+
         if hits:
-            img = requests.get(hits[i % len(hits)]["largeImageURL"], timeout=30).content
-            with open(path, "wb") as f:
-                f.write(img)
+            try:
+                url = hits[i % len(hits)]["largeImageURL"]
+                img = requests.get(url, timeout=30).content
+                with open(img_path, "wb") as f:
+                    f.write(img)
+            except Exception:
+                print(f"⚠ Image failed for block {i}, using placeholder")
+                create_placeholder(img_path, text)
         else:
-            placeholder(path, text)
+            print(f"⚠ No images found, using placeholder for block {i}")
+            create_placeholder(img_path, text)
 
-# ---------------- HINDI AUDIO (REAL, CI-SAFE) ----------------
+# ---------------- AUDIO (HINDI – NEURAL) ----------------
 def generate_audio(blocks):
-    print("🎙 Generating REAL Hindi voice (espeak)...")
+    print("🎙 Generating NATURAL Hindi voice (Azure Neural)...")
 
     for i, text in enumerate(blocks):
-        out = f"{AUDIO_DIR}/{i:03d}.wav"
-
         if not text.strip():
-            # silent filler so ffmpeg never breaks
-            run(["ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc", "-t", "1", out])
             continue
 
+        out = f"{AUDIO_DIR}/{i:03d}.wav"
+
         run([
-            "espeak",
-            "-v", "hi",
-            "-s", "135",
-            "-w", out,
-            text
+            "python", "-m", "edge_tts",
+            "--voice", "hi-IN-MadhurNeural",
+            "--rate", "+0%",
+            "--pitch", "+0Hz",
+            "--text", text,
+            "--write-media", out
         ])
 
 # ---------------- VIDEO ----------------
 def create_video(blocks):
-    print("🎞 Creating video...")
+    print("🎞 Creating video blocks...")
     clips = []
 
     for i in range(len(blocks)):
         clip = f"{VIDEO_DIR}/{i:03d}.mp4"
+
         run([
             "ffmpeg", "-y",
             "-loop", "1",
@@ -113,9 +124,11 @@ def create_video(blocks):
 # ---------------- MAIN ----------------
 def main():
     blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
+
     download_images(blocks)
     generate_audio(blocks)
     create_video(blocks)
+
     print("✅ FINAL VIDEO READY:", FINAL_VIDEO)
 
 if __name__ == "__main__":
