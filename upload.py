@@ -1,114 +1,110 @@
 import os
 import subprocess
-import requests
+import asyncio
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
+import edge_tts
+from moviepy.editor import AudioFileClip, ImageClip, CompositeAudioClip, concatenate_videoclips
 
-# ================= CONFIG =================
+# ---------------- CONFIG ----------------
 SCRIPT_FILE = "script.txt"
 IMAGE_DIR = "images"
-VIDEO_DIR = "video"
-AUDIO_DIR = "audio"
-
-TANPURA = "audio/tanpura.mp3"
+AUDIO_DIR = "audio_blocks"
+VIDEO_DIR = "video_blocks"
 FINAL_VIDEO = "final_video.mp4"
-
-WIDTH, HEIGHT = 1280, 720
-SLIDE_DURATION = 8  # seconds per image
-
+TANPURA_FILE = "tanpura.mp3"  # Place your tanpura.mp3 in repo
+MAX_IMAGE_BLOCKS = 50  # max AI images
 os.makedirs(IMAGE_DIR, exist_ok=True)
+os.makedirs(AUDIO_DIR, exist_ok=True)
 os.makedirs(VIDEO_DIR, exist_ok=True)
 
-# ================= UTILS =================
+# ---------------- UTILS ----------------
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-# ================= SCRIPT =================
-with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
-    blocks = [b.strip() for b in f.read().split("\n\n") if b.strip()]
-
-# ================= IMAGES =================
-def generate_ai_image(prompt, out):
+# ---------------- PLACEHOLDER IMAGE ----------------
+def placeholder(path, text="ॐ नमो नारायणाय"):
+    img = Image.new("RGB", (1280, 720), (10, 5, 0))
+    d = ImageDraw.Draw(img)
+    font = None
     try:
-        url = f"https://image.pollinations.ai/prompt/{requests.utils.quote(prompt)}"
-        r = requests.get(url, timeout=15)
-        if r.status_code == 200:
-            with open(out, "wb") as f:
-                f.write(r.content)
-            return True
+        font = ImageFont.truetype("arial.ttf", 48)
     except:
         pass
-    return False
+    d.text((60, 330), text, fill=(255, 215, 0), font=font)
+    img.save(path)
 
-def placeholder_image(out):
-    img = Image.new("RGB", (WIDTH, HEIGHT), (12, 8, 4))
-    d = ImageDraw.Draw(img)
-    try:
-        font = ImageFont.truetype("DejaVuSans.ttf", 60)
-    except:
-        font = None
-    d.text((100, HEIGHT//2 - 40), "ॐ नमो नारायणाय", fill=(255, 215, 0), font=font)
-    img.save(out)
+# ---------------- AI IMAGE GENERATION ----------------
+def generate_ai_image(prompt, out_path):
+    """
+    Generate AI image using stable diffusion or any external AI API.
+    Here, it is a placeholder function. Replace with your actual AI API call.
+    """
+    print(f"🖼 Generating AI image for: {prompt}")
+    # For testing without AI API, use placeholder
+    placeholder(out_path, text=prompt.split(",")[0][:30])
 
-print("🖼 Generating Vishnu images...")
-for i in range(len(blocks)):
-    out = f"{IMAGE_DIR}/{i:03d}.jpg"
-    prompt = (
-        "Lord Vishnu Vaikuntha divine illustration, "
-        "blue skin, golden crown, four arms, conch chakra gada padma, "
-        "celestial clouds, spiritual Hindu art, cinematic lighting"
+def generate_images(blocks):
+    print("🖼 Generating AI Vishnu / Vaikunth images...")
+    for i, text in enumerate(blocks):
+        path = f"{IMAGE_DIR}/{i:03d}.jpg"
+        prompt = f"Lord Vishnu, Vaikunth, divine illustration, Hindu mythology, vibrant, detailed, cinematic"
+        generate_ai_image(prompt, path)
+
+# ---------------- HINDI NEURAL VOICE ----------------
+async def generate_single_audio(text, index):
+    out = f"{AUDIO_DIR}/{index:03d}.wav"
+    communicate = edge_tts.Communicate(
+        text=text,
+        voice="hi-IN-MadhurNeural",
+        rate="+0%",
+        pitch="+0Hz"
     )
-    if not generate_ai_image(prompt, out):
-        placeholder_image(out)
+    await communicate.save(out)
 
-# ================= VIDEO SLIDES =================
-print("🎞 Creating video slides...")
-clips = []
+def generate_audio(blocks):
+    print("🎙 Generating Hindi narration...")
+    async def runner():
+        for i, text in enumerate(blocks):
+            if text.strip():
+                await generate_single_audio(text, i)
+    asyncio.run(runner())
 
-for i in range(len(blocks)):
-    img = f"{IMAGE_DIR}/{i:03d}.jpg"
-    out = f"{VIDEO_DIR}/{i:03d}.mp4"
+# ---------------- CREATE VIDEO CLIPS ----------------
+def create_video(blocks):
+    print("🎞 Creating video with tanpura...")
+    clips = []
+    tanpura_clip = None
+    if os.path.exists(TANPURA_FILE):
+        tanpura_clip = AudioFileClip(TANPURA_FILE)
 
-    run([
-        "ffmpeg", "-y",
-        "-loop", "1",
-        "-i", img,
-        "-t", str(SLIDE_DURATION),
-        "-vf", f"scale={WIDTH}:{HEIGHT},format=yuv420p",
-        "-c:v", "libx264",
-        out
-    ])
-    clips.append(out)
+    for i in range(len(blocks)):
+        img_path = f"{IMAGE_DIR}/{i:03d}.jpg"
+        audio_path = f"{AUDIO_DIR}/{i:03d}.wav"
+        audio_clip = AudioFileClip(audio_path)
+        if tanpura_clip:
+            audio_clip = CompositeAudioClip([audio_clip, tanpura_clip.volumex(0.3).set_duration(audio_clip.duration)])
+        clip = ImageClip(img_path).set_duration(audio_clip.duration).set_audio(audio_clip)
+        clips.append(clip)
 
-# ================= CONCAT =================
-with open("list.txt", "w") as f:
-    for c in clips:
-        f.write(f"file '{c}'\n")
+    final_clip = concatenate_videoclips(clips, method="compose")
+    final_clip.write_videofile(FINAL_VIDEO, fps=24, codec="libx264", audio_codec="aac")
+    print(f"✅ FINAL VIDEO READY: {FINAL_VIDEO}")
 
-run([
-    "ffmpeg", "-y",
-    "-f", "concat",
-    "-safe", "0",
-    "-i", "list.txt",
-    "-c:v", "copy",
-    "silent.mp4"
-])
+# ---------------- MAIN ----------------
+def main():
+    # Read script and split into blocks
+    blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
+    intro = "नमस्कार। स्वागत है आप सभी का VishnuPriya श्रृंखला में। आज हम आपके लिए Vishnu Purana का पहला एपिसोड लाए हैं।"
+    outro = "\n\n🙏 अगर आपको यह वीडियो पसंद आया हो, तो कृपया लाइक, शेयर और सब्सक्राइब जरूर करें। हर दिन एक नया एपिसोड आएगा।"
+    blocks.insert(0, intro)
+    blocks.append(outro)
 
-# ================= ADD TANPURA =================
-print("🎶 Adding tanpura background...")
-run([
-    "ffmpeg", "-y",
-    "-stream_loop", "-1",
-    "-i", TANPURA,
-    "-i", "silent.mp4",
-    "-shortest",
-    "-map", "1:v:0",
-    "-map", "0:a:0",
-    "-c:v", "copy",
-    "-c:a", "aac",
-    "-b:a", "128k",
-    FINAL_VIDEO
-])
+    # Generate images, narration, video
+    generate_images(blocks)
+    generate_audio(blocks)
+    create_video(blocks)
 
-print("✅ FINAL VIDEO CREATED:", FINAL_VIDEO)
+if __name__ == "__main__":
+    main()
