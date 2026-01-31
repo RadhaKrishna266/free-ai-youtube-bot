@@ -5,9 +5,7 @@ import subprocess
 import requests
 from pathlib import Path
 
-import torch
-import TTS
-
+from TTS.api import TTS
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
@@ -72,12 +70,10 @@ def create_voice():
 
     text = Path(SCRIPT_FILE).read_text(encoding="utf-8")
 
-    # Safe globals context to fix PyTorch 2.6+ unpickling error
-    with torch.serialization.safe_globals([TTS.tts.configs.xtts_config.XttsConfig]):
-        tts = TTS.TTS(
-            model_name="tts_models/multilingual/multi-dataset/xtts_v2",  # supports cloning
-            gpu=False
-        )
+    tts = TTS(
+        model_name="tts_models/multilingual/multi-dataset/xtts_v2",
+        gpu=False
+    )
 
     tts.tts_to_file(
         text=text,
