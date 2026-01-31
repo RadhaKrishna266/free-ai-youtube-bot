@@ -40,12 +40,26 @@ jobs:
             moviepy \
             imageio \
             imageio-ffmpeg \
+            google-api-python-client \
+            google-auth \
+            google-auth-oauthlib \
             TTS
+
+      # ================= PRE-DOWNLOAD XTTS MODEL =================
+      - name: Pre-download XTTS model
+        env:
+          COQUI_TOS_AGREED: "1"
+        run: |
+          python - << 'EOF'
+          from TTS.api import TTS
+          TTS("tts_models/multilingual/multi-dataset/xtts_v2", gpu=False)
+          EOF
 
       # ================= RUN BOT =================
       - name: Run Sanatan Gyan Dhara Bot
         env:
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          YOUTUBE_TOKEN_BASE64: ${{ secrets.YOUTUBE_TOKEN_BASE64 }}
           COQUI_TOS_AGREED: "1"
         run: |
           python upload.py
