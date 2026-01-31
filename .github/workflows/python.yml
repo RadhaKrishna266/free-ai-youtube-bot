@@ -16,10 +16,7 @@ jobs:
       - name: Install system tools
         run: |
           sudo apt update
-          sudo apt install -y \
-            ffmpeg \
-            imagemagick \
-            wget
+          sudo apt install -y ffmpeg imagemagick wget
 
       # ================= PYTHON =================
       - name: Set up Python 3.11
@@ -29,13 +26,9 @@ jobs:
 
       # ================= PYTHON DEPENDENCIES =================
       - name: Install Python dependencies
-        env:
-          COQUI_TOS_AGREED: "1"
         run: |
           python -m pip install --upgrade pip
           pip install \
-            torch==2.5.1 \
-            transformers==4.33.3 \
             requests \
             pillow \
             moviepy \
@@ -44,32 +37,13 @@ jobs:
             google-api-python-client \
             google-auth \
             google-auth-oauthlib \
-            TTS==0.22.0
-
-      # ================= AUDIO CONVERSION =================
-      - name: Normalize all audio
-        run: |
-          mkdir -p audio_fixed
-          ffmpeg -y -i audio/speaker.wav -ac 1 -ar 22050 audio_fixed/speaker_fixed.wav
-          ffmpeg -y -i audio/tanpura.mp3 -ac 1 -ar 22050 audio_fixed/tanpura_fixed.mp3
-          ffmpeg -y -i audio/temple_bell.mp3 -ac 1 -ar 22050 audio_fixed/temple_bell_fixed.mp3
-
-      # ================= PRE-DOWNLOAD XTTS MODEL =================
-      - name: Pre-download XTTS model
-        env:
-          COQUI_TOS_AGREED: "1"
-        run: |
-          python - << 'EOF'
-          from TTS.api import TTS
-          TTS("tts_models/multilingual/multi-dataset/xtts_v2", gpu=False)
-          EOF
+            edge-tts
 
       # ================= RUN BOT =================
       - name: Run Sanatan Gyan Dhara Bot
         env:
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           YOUTUBE_TOKEN_BASE64: ${{ secrets.YOUTUBE_TOKEN_BASE64 }}
-          COQUI_TOS_AGREED: "1"
         run: |
           python upload.py
 
