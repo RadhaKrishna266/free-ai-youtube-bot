@@ -4,16 +4,15 @@ import base64
 import subprocess
 import requests
 from pathlib import Path
+from TTS.api import TTS
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
-from TTS.api import TTS
 
 # ================= CONFIG =================
-SCRIPT_FILE = "script.txt"  # your Episode 1 script
+SCRIPT_FILE = "script.txt"   # Phoneme-safe Episode 1 script
 
-SPEAKER_WAV = "audio_fixed/speaker_fixed.wav"  # optional reference
 NARRATION_WAV = "narration.wav"
 FINAL_AUDIO = "final_audio.wav"
 FINAL_VIDEO = "final_video.mp4"
@@ -32,47 +31,46 @@ def run(cmd):
     subprocess.run(cmd, check=True)
 
 # ================= IMAGES =================
-def download_images(count=20):
-    print("🖼 Downloading divine images")
-
-    r = requests.get(
+def download_images(count=50):
+    """Download relevant divine images from Pixabay"""
+    print("🖼 Downloading divine images...")
+    response = requests.get(
         "https://pixabay.com/api/",
         params={
             "key": os.environ["PIXABAY_API_KEY"],
-            "q": "lord Vishnu illustration",
+            "q": "Lord Vishnu painting, Krishna childhood, Vishnu temple illustration",
             "image_type": "photo",
             "orientation": "horizontal",
             "per_page": count
         }
     ).json()
 
-    hits = r.get("hits", [])
+    hits = response.get("hits", [])
     if not hits:
         raise RuntimeError("No images returned from Pixabay API.")
 
     for i, hit in enumerate(hits):
-        img = requests.get(hit["largeImageURL"]).content
+        img_data = requests.get(hit["largeImageURL"]).content
         with open(f"{IMAGE_DIR}/{i:03d}.jpg", "wb") as f:
-            f.write(img)
+            f.write(img_data)
 
 # ================= VOICE =================
-def create_voice():
-    print("🎙 Generating narration in Hindi")
-
+def generate_narration():
+    """Generate pure Hindi narration from phoneme-safe script"""
+    print("🎙 Generating narration in Hindi...")
     text = Path(SCRIPT_FILE).read_text(encoding="utf-8")
 
-    # Use high-quality multilingual TTS
+    # TTS - no custom voice to avoid gibberish
     tts = TTS(model_name="tts_models/multilingual/multi-dataset/xtts_v2", gpu=False)
-
     tts.tts_to_file(
         text=text,
-        speaker_wav=SPEAKER_WAV if os.path.exists(SPEAKER_WAV) else None,
+        speaker_wav=None,  # ✅ No speaker.wav
         language="hi",
         file_path="narration_raw.wav",
         speed=1.0
     )
 
-    # Normalize + mono + resample
+    # Normalize audio: mono + 24kHz
     run([
         "ffmpeg", "-y",
         "-i", "narration_raw.wav",
@@ -84,8 +82,8 @@ def create_voice():
 
 # ================= AUDIO MIX =================
 def mix_tanpura():
-    print("🎶 Mixing tanpura softly")
-
+    """Mix narration with soft tanpura background"""
+    print("🎶 Mixing tanpura...")
     temp_audio = "final_audio_temp.wav"
 
     run([
@@ -94,7 +92,7 @@ def mix_tanpura():
         "-stream_loop", "-1",
         "-i", TANPURA,
         "-filter_complex",
-        "[1:a]volume=0.12,atrim=0:{}[bg];[0:a][bg]amix=inputs=2:dropout_transition=0".format(TARGET_DURATION),
+        f"[1:a]volume=0.12,atrim=0:{TARGET_DURATION}[bg];[0:a][bg]amix=inputs=2:dropout_transition=0",
         "-t", str(TARGET_DURATION),
         temp_audio
     ])
@@ -104,12 +102,11 @@ def mix_tanpura():
 
 # ================= VIDEO =================
 def create_video(duration):
-    print("🎞 Creating video with images")
-
-    # Framerate: 1 image per 6 seconds → 10 minutes = 100 images for smoothness
+    """Create video from images + final audio"""
+    print("🎞 Creating video...")
     run([
         "ffmpeg", "-y",
-        "-framerate", "1/6",
+        "-framerate", "1/6",  # 1 image per 6 seconds → ~10 min
         "-pattern_type", "glob",
         "-i", f"{IMAGE_DIR}/*.jpg",
         "-i", FINAL_AUDIO,
@@ -122,10 +119,10 @@ def create_video(duration):
         FINAL_VIDEO
     ])
 
-# ================= YOUTUBE =================
+# ================= YOUTUBE UPLOAD =================
 def upload_youtube():
-    print("📤 Uploading to YouTube")
-
+    """Upload video to YouTube"""
+    print("📤 Uploading to YouTube...")
     token_info = json.loads(
         base64.b64decode(os.environ["YOUTUBE_TOKEN_BASE64"]).decode()
     )
@@ -168,8 +165,8 @@ def upload_youtube():
 
 # ================= MAIN =================
 def main():
-    download_images(count=50)  # more images for smooth 10min video
-    create_voice()
+    download_images(count=50)
+    generate_narration()
     duration = mix_tanpura()
     create_video(duration)
     upload_youtube()
