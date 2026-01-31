@@ -1,3 +1,4 @@
+
 name: AI Temple Video Bot
 
 on:
@@ -16,15 +17,15 @@ jobs:
       - name: Install system tools
         run: |
           sudo apt update
-          sudo apt install -y ffmpeg imagemagick python3-venv git wget
+          sudo apt install -y ffmpeg imagemagick wget python3-venv
 
-      # ================= SETUP VIRTUAL ENV =================
-      - name: Set up Python venv
+      # ================= CREATE VENV =================
+      - name: Create virtual environment
         run: |
           python3 -m venv venv
           source venv/bin/activate
-          python -m pip install --upgrade pip
-          pip install requests pillow moviepy edge-tts torch diffusers transformers accelerate safetensors
+          pip install --upgrade pip
+          pip install requests pillow moviepy imageio imageio-ffmpeg edge-tts
 
       # ================= RUN BOT =================
       - name: Run Sanatan Gyan Dhara Bot
@@ -38,12 +39,12 @@ jobs:
       - name: Verify final video exists
         run: |
           echo "📂 Workspace files:"
-          ls -lh
+          ls -R
           if [ ! -f final_video.mp4 ]; then
-            echo "❌ final_video.mp4 NOT FOUND"
+            echo "❌ Video NOT FOUND"
             exit 1
           fi
-          echo "✅ final_video.mp4 FOUND"
+          echo "✅ Video FOUND"
 
       # ================= ARTIFACT =================
       - name: Upload final video
