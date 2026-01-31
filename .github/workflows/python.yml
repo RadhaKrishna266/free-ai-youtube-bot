@@ -16,7 +16,7 @@ jobs:
       - name: Install system tools
         run: |
           sudo apt update
-          sudo apt install -y ffmpeg imagemagick wget
+          sudo apt install -y ffmpeg imagemagick
 
       # ================= PYTHON =================
       - name: Set up Python 3.11
@@ -28,30 +28,12 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install \
-            requests \
-            pillow \
-            moviepy \
-            imageio \
-            imageio-ffmpeg \
-            google-api-python-client \
-            google-auth \
-            google-auth-oauthlib \
-            edge-tts
-
-      # ================= VERIFY EDGE-TTS =================
-      - name: Verify Edge TTS
-        run: |
-          python - << 'EOF'
-          import edge_tts
-          print("✅ Edge TTS OK")
-          EOF
+          pip install requests pillow moviepy gtts imageio imageio-ffmpeg
 
       # ================= RUN BOT =================
       - name: Run Sanatan Gyan Dhara Bot
         env:
-          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
-          YOUTUBE_TOKEN_BASE64: ${{ secrets.YOUTUBE_TOKEN_BASE64 }}
+          HF_API_KEY: ${{ secrets.HF_API_KEY }}
         run: |
           python upload.py
 
@@ -59,16 +41,16 @@ jobs:
       - name: Verify final video exists
         run: |
           echo "📂 Workspace files:"
-          ls -lh
-          if [ ! -f final_video.mp4 ]; then
-            echo "❌ final_video.mp4 NOT FOUND"
+          ls -R
+          if [ ! -f video/vishnu_purana_episode_1.mp4 ]; then
+            echo "❌ Video NOT FOUND"
             exit 1
           fi
-          echo "✅ final_video.mp4 FOUND"
+          echo "✅ Video FOUND"
 
       # ================= ARTIFACT =================
       - name: Upload final video
         uses: actions/upload-artifact@v4
         with:
-          name: sanatan-gyan-dhara-video
-          path: final_video.mp4
+          name: sanatan-gyan-dhara-episode-1
+          path: video/vishnu_purana_episode_1.mp4
