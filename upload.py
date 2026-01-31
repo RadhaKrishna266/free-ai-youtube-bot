@@ -1,9 +1,17 @@
 import os
+import sys
 import subprocess
 import requests
 from pathlib import Path
-from TTS.api import TTS
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
+
+# ================= AUTO-INSTALL TTS =================
+try:
+    from TTS.api import TTS
+except ModuleNotFoundError:
+    print("📦 TTS not found, installing...")
+    subprocess.run([sys.executable, "-m", "pip", "install", "TTS==0.22.0"], check=True)
+    from TTS.api import TTS
 
 # ================= CONFIG =================
 SCRIPT_FILE = "script.txt"
@@ -23,24 +31,22 @@ def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-# ================= FALLBACK IMAGE =================
-def create_placeholder(path, text):
-    img = Image.new("RGB", (1280, 720), color=(20, 20, 20))
+# ================= PLACEHOLDER IMAGE =================
+def placeholder(path, text):
+    img = Image.new("RGB", (1280, 720), (15, 15, 15))
     d = ImageDraw.Draw(img)
-    msg = text[:80] + "..." if len(text) > 80 else text
-    d.text((60, 330), msg, fill=(255, 215, 0))
+    d.text((60, 330), text[:70], fill=(255, 200, 0))
     img.save(path)
 
 # ================= IMAGES =================
 def download_images(blocks):
     print("🖼 Downloading images from Pixabay...")
-    query = "Lord Vishnu Krishna Hindu devotional art"
 
     r = requests.get(
         "https://pixabay.com/api/",
         params={
             "key": PIXABAY_API_KEY,
-            "q": query,
+            "q": "Lord Vishnu Krishna Hindu devotional art",
             "image_type": "photo",
             "orientation": "horizontal",
             "safesearch": "true",
@@ -51,20 +57,18 @@ def download_images(blocks):
     hits = r.get("hits", [])
 
     for i, text in enumerate(blocks):
-        img_path = f"{IMAGE_DIR}/{i:03d}.jpg"
-
+        path = f"{IMAGE_DIR}/{i:03d}.jpg"
         if hits:
             img_url = hits[i % len(hits)]["largeImageURL"]
             img = requests.get(img_url).content
-            with open(img_path, "wb") as f:
-                f.write(img)
+            open(path, "wb").write(img)
         else:
-            print(f"⚠ No image found for block {i}, using placeholder")
-            create_placeholder(img_path, text)
+            print(f"⚠ Placeholder used for block {i}")
+            placeholder(path, text)
 
-# ================= AUDIO (XTTS – SAFE MODE) =================
+# ================= AUDIO (HINDI XTTS) =================
 def generate_audio(blocks):
-    print("🎙 Generating Hindi audio with XTTS (SAFE MODE)...")
+    print("🎙 Generating pure Hindi narration...")
 
     tts = TTS(
         model_name="tts_models/multilingual/multi-dataset/xtts_v2",
@@ -72,31 +76,26 @@ def generate_audio(blocks):
     )
 
     for i, text in enumerate(blocks):
-        out = f"{AUDIO_DIR}/{i:03d}.wav"
         if not text.strip():
             continue
-
         tts.tts_to_file(
             text=text,
-            file_path=out,
-            language="hi"
+            language="hi",
+            file_path=f"{AUDIO_DIR}/{i:03d}.wav"
         )
 
 # ================= VIDEO =================
 def create_video(blocks):
-    print("🎞 Creating video blocks...")
+    print("🎞 Creating video...")
     clips = []
 
     for i in range(len(blocks)):
-        audio = f"{AUDIO_DIR}/{i:03d}.wav"
-        image = f"{IMAGE_DIR}/{i:03d}.jpg"
         clip = f"{VIDEO_DIR}/{i:03d}.mp4"
-
         run([
             "ffmpeg", "-y",
             "-loop", "1",
-            "-i", image,
-            "-i", audio,
+            "-i", f"{IMAGE_DIR}/{i:03d}.jpg",
+            "-i", f"{AUDIO_DIR}/{i:03d}.wav",
             "-vf", "scale=1280:720,format=yuv420p",
             "-c:v", "libx264",
             "-c:a", "aac",
@@ -111,8 +110,7 @@ def create_video(blocks):
 
     run([
         "ffmpeg", "-y",
-        "-f", "concat",
-        "-safe", "0",
+        "-f", "concat", "-safe", "0",
         "-i", "list.txt",
         "-c", "copy",
         FINAL_VIDEO
@@ -121,11 +119,9 @@ def create_video(blocks):
 # ================= MAIN =================
 def main():
     blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
-
     download_images(blocks)
     generate_audio(blocks)
     create_video(blocks)
-
     print("✅ FINAL VIDEO READY:", FINAL_VIDEO)
 
 if __name__ == "__main__":
