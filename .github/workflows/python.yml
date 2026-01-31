@@ -1,4 +1,4 @@
-name: Sanatan Gyan Dhara Bot
+name: AI Temple Video Bot
 
 on:
   workflow_dispatch:
@@ -8,48 +8,48 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ================= CHECKOUT =================
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ================= SYSTEM TOOLS =================
       - name: Install system tools
         run: |
           sudo apt update
-          sudo apt install -y ffmpeg imagemagick wget python3-pip
+          sudo apt install -y ffmpeg imagemagick wget
 
-      # ================= PYTHON =================
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # ================= PYTHON DEPENDENCIES =================
       - name: Install Python dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install requests pillow moviepy gtts huggingface_hub imageio imageio-ffmpeg
+          python3 -m pip install --upgrade pip
+          python3 -m pip install \
+            moviepy \
+            requests \
+            pillow \
+            gtts \
+            huggingface_hub \
+            imageio \
+            imageio-ffmpeg
 
-      # ================= RUN BOT =================
       - name: Run Sanatan Gyan Dhara Bot
         env:
           HF_API_KEY: ${{ secrets.HF_API_KEY }}
-        run: python upload.py
+        run: python3 upload.py
 
-      # ================= VERIFY OUTPUT =================
       - name: Verify final video exists
         run: |
           echo "📂 Workspace files:"
-          ls -R
-          if [ ! -f final_video.mp4 ]; then
+          ls -lh video/
+          if [ ! -f video/vishnu_purana_episode_1.mp4 ]; then
             echo "❌ Video NOT FOUND"
             exit 1
           fi
           echo "✅ Video FOUND"
 
-      # ================= ARTIFACT =================
       - name: Upload final video
         uses: actions/upload-artifact@v4
         with:
           name: sanatan-gyan-dhara-episode-1
-          path: final_video.mp4
+          path: video/vishnu_purana_episode_1.mp4
