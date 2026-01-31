@@ -13,18 +13,19 @@ from google.auth.transport.requests import Request
 
 # ================= CONFIG =================
 SCRIPT_FILE = "script.txt"       # Your narration script
-VOICE_SAMPLE = "speaker.wav"     # Short sample of your voice
+VOICE_SAMPLE = "audio_fixed/speaker_fixed.wav"  # normalized on-the-fly
 FINAL_AUDIO = "final_audio.wav"
 FINAL_VIDEO = "final_video.mp4"
 
 IMAGE_DIR = "images"
-TANPURA = "audio/tanpura.mp3"
+TANPURA = "audio_fixed/tanpura_fixed.mp3"  # normalized on-the-fly
 
-TARGET_DURATION = 600  # 10 minutes = 600 seconds
+TARGET_DURATION = 600  # 10 minutes
 
 YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube.upload"
 
 os.makedirs(IMAGE_DIR, exist_ok=True)
+os.makedirs("audio_fixed", exist_ok=True)
 
 # ================= UTILS =================
 def run(cmd):
@@ -79,7 +80,7 @@ def create_voice():
         text=text,
         speaker_wav=VOICE_SAMPLE,
         file_path=FINAL_AUDIO,
-        language="hi"  # Multi-lingual model requires language
+        language="hi"
     )
 
 # ================= AUDIO MIX =================
