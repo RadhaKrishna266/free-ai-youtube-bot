@@ -1,14 +1,12 @@
 import os
 import subprocess
+import requests
 import asyncio
 from pathlib import Path
-import requests
-from PIL import Image, ImageDraw
-
 import edge_tts
+from random import sample
 
-# ---------------- CONFIG ----------------
-SCRIPT_FILE = "script.txt"           # Your shlok + arth + bhavarth file
+SCRIPT_FILE = "script.txt"
 IMAGE_DIR = "images"
 AUDIO_DIR = "audio_blocks"
 VIDEO_DIR = "video_blocks"
@@ -18,42 +16,47 @@ os.makedirs(IMAGE_DIR, exist_ok=True)
 os.makedirs(AUDIO_DIR, exist_ok=True)
 os.makedirs(VIDEO_DIR, exist_ok=True)
 
-# ---------------- CURATED VISHNU / VAIKUNTH IMAGES ----------------
-VISHNU_IMAGES = [
-    "https://upload.wikimedia.org/wikipedia/commons/2/23/Vishnu_Purana_cover.jpg",        # Vishnu Purana book cover
-    "https://upload.wikimedia.org/wikipedia/commons/1/1b/Vishnu_dashavatara_1.jpg",
-    "https://upload.wikimedia.org/wikipedia/commons/3/36/Vishnu_cosmic_form.jpg",
-    "https://upload.wikimedia.org/wikipedia/commons/5/50/Vaikuntha_painting.jpg",
-    "https://upload.wikimedia.org/wikipedia/commons/7/71/Vishnu_Purana_manuscript_illustration.jpg",
-    # Add more URLs of authentic Vishnu illustrations for no repeats
-]
-
 # ---------------- UTILS ----------------
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-def placeholder(path, text):
-    img = Image.new("RGB", (1280, 720), (10, 5, 0))
-    d = ImageDraw.Draw(img)
-    d.text((60, 330), "ॐ नमो नारायणाय", fill=(255, 215, 0))
-    img.save(path)
+# ---------------- DOWNLOAD VISHNU IMAGES ----------------
+def wikimedia_images(query="Vishnu Dashavatara illustration", limit=50):
+    print(f"🖼 Downloading {limit} Vishnu images from Wikimedia...")
+    url = "https://commons.wikimedia.org/w/api.php"
+    params = {
+        "action": "query",
+        "generator": "search",
+        "gsrsearch": query,
+        "gsrlimit": str(limit),
+        "prop": "imageinfo",
+        "iiprop": "url",
+        "format": "json",
+        "gsrnamespace": 6  # File namespace
+    }
+    r = requests.get(url, params=params)
+    data = r.json()
+    images = []
+    pages = data.get("query", {}).get("pages", {})
+    for p in pages.values():
+        ii = p.get("imageinfo", [])
+        if ii:
+            images.append(ii[0]["url"])
+    return images
 
-# ---------------- DOWNLOAD IMAGES ----------------
 def download_images(blocks):
-    print("🖼 Downloading AUTHENTIC Vishnu / Vaikuntha images...")
-    if not VISHNU_IMAGES:
-        raise RuntimeError("No curated Vishnu images provided!")
-
+    urls = wikimedia_images(limit=len(blocks) + 1)
+    if not urls:
+        raise RuntimeError("❌ No Vishnu images found on Wikimedia!")
+    
     for i, text in enumerate(blocks):
         path = f"{IMAGE_DIR}/{i:03d}.jpg"
-        url = VISHNU_IMAGES[i % len(VISHNU_IMAGES)]  # no repeats if enough images
-        try:
-            img_data = requests.get(url).content
-            with open(path, "wb") as f:
-                f.write(img_data)
-        except:
-            placeholder(path, text)
+        img_url = urls[i % len(urls)]
+        img_data = requests.get(img_url).content
+        with open(path, "wb") as f:
+            f.write(img_data)
+    print(f"✅ {len(blocks)} Vishnu images downloaded")
 
 # ---------------- HINDI NEURAL VOICE ----------------
 async def generate_single_audio(text, index):
@@ -74,10 +77,11 @@ def generate_audio(blocks):
                 await generate_single_audio(text, i)
     asyncio.run(runner())
 
-# ---------------- VIDEO CREATION ----------------
+# ---------------- VIDEO ----------------
 def create_video(blocks):
     print("🎞 Creating final video...")
     clips = []
+
     for i in range(len(blocks)):
         clip = f"{VIDEO_DIR}/{i:03d}.mp4"
         run([
@@ -112,9 +116,8 @@ def main():
     download_images(blocks)
     generate_audio(blocks)
     create_video(blocks)
-    print("✅ EPISODE 1 OF VISHNUPRIYA SERIES READY:", FINAL_VIDEO)
-    print("📢 Daily we will upload one episode of Vishnupriya series with shlok + arth + bhavarth.")
-    print("🙏 Please like, share, and subscribe for more devotional videos!")
+    print("✅ FINAL VISHNU VIDEO READY:", FINAL_VIDEO)
+    print("📌 Daily episodes of VishnuPurana coming! Like, share & subscribe!")
 
 if __name__ == "__main__":
     main()
