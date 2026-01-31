@@ -1,12 +1,12 @@
 import os
-import asyncio
 import requests
+import asyncio
+import subprocess
 from pathlib import Path
 from PIL import Image, ImageDraw
-import subprocess
 from edge_tts import Communicate
 
-# ================= PATHS =================
+# ---------------- DIRECTORIES ----------------
 SCRIPT_FILE = "script.txt"
 IMAGE_DIR = "images"
 AUDIO_DIR = "audio_blocks"
@@ -19,19 +19,19 @@ os.makedirs(IMAGE_DIR, exist_ok=True)
 os.makedirs(AUDIO_DIR, exist_ok=True)
 os.makedirs(VIDEO_DIR, exist_ok=True)
 
-# ================= UTILS =================
+# ---------------- UTILS ----------------
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-# ================= PLACEHOLDER IMAGE =================
 def placeholder(path, text):
+    """Create placeholder image if Pixabay returns nothing"""
     img = Image.new("RGB", (1280, 720), (15, 10, 5))
     d = ImageDraw.Draw(img)
     d.text((40, 340), text[:80], fill=(255, 200, 0))
     img.save(path)
 
-# ================= DOWNLOAD IMAGES =================
+# ---------------- IMAGES ----------------
 def download_images(blocks):
     print("🖼 Downloading devotional images...")
     r = requests.get(
@@ -47,38 +47,38 @@ def download_images(blocks):
     ).json()
 
     hits = r.get("hits", [])
+
     for i, text in enumerate(blocks):
         path = f"{IMAGE_DIR}/{i:03d}.jpg"
-        try:
-            if hits:
-                img = requests.get(hits[i % len(hits)]["largeImageURL"]).content
-                with open(path, "wb") as f:
-                    f.write(img)
-            else:
-                placeholder(path, text)
-        except:
+        if hits:
+            img_data = requests.get(hits[i % len(hits)]["largeImageURL"]).content
+            with open(path, "wb") as f:
+                f.write(img_data)
+        else:
             placeholder(path, text)
 
-# ================= EDGE TTS (Hindi Neural Voice) =================
+# ---------------- HINDI AUDIO (Edge TTS) ----------------
 async def generate_single_audio(text, i):
-    out_file = f"{AUDIO_DIR}/{i:03d}.wav"
+    out_path = f"{AUDIO_DIR}/{i:03d}.wav"
     communicate = Communicate(text, voice="hi-IN-MadhurNeural")
-    await communicate.save(out_file)
+    await communicate.save(out_path)
 
 def generate_audio(blocks):
     print("🎙 Generating REAL Hindi Neural voice...")
-    os.makedirs(AUDIO_DIR, exist_ok=True)
-    tasks = [asyncio.create_task(generate_single_audio(text, i))
-             for i, text in enumerate(blocks) if text.strip()]
-    asyncio.run(asyncio.gather(*tasks))
 
-# ================= CREATE VIDEO =================
+    async def runner():
+        tasks = [generate_single_audio(text, i) for i, text in enumerate(blocks) if text.strip()]
+        await asyncio.gather(*tasks)
+
+    asyncio.run(runner())
+
+# ---------------- VIDEO ----------------
 def create_video(blocks):
     print("🎞 Creating video...")
     clips = []
 
     for i in range(len(blocks)):
-        clip = f"{VIDEO_DIR}/{i:03d}.mp4"
+        clip_path = f"{VIDEO_DIR}/{i:03d}.mp4"
         run([
             "ffmpeg", "-y",
             "-loop", "1",
@@ -88,9 +88,9 @@ def create_video(blocks):
             "-c:v", "libx264",
             "-c:a", "aac",
             "-shortest",
-            clip
+            clip_path
         ])
-        clips.append(clip)
+        clips.append(clip_path)
 
     # Concatenate all clips
     with open("list.txt", "w") as f:
@@ -106,7 +106,7 @@ def create_video(blocks):
         FINAL_VIDEO
     ])
 
-# ================= MAIN =================
+# ---------------- MAIN ----------------
 def main():
     blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
     download_images(blocks)
