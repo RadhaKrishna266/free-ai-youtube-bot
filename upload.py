@@ -1,9 +1,8 @@
 import os
 import subprocess
-import requests
 import asyncio
+import requests
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
 import edge_tts
 
 # ---------------- CONFIG ----------------
@@ -12,113 +11,62 @@ IMAGE_DIR = "images"
 AUDIO_DIR = "audio_blocks"
 VIDEO_DIR = "video_blocks"
 FINAL_VIDEO = "final_video.mp4"
-FALLBACK_IMAGES_DIR = "fallback_images"  # Pre-downloaded Vishnu/Avatars images
-PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY")
 
-# ---------------- CREATE FOLDERS ----------------
 os.makedirs(IMAGE_DIR, exist_ok=True)
 os.makedirs(AUDIO_DIR, exist_ok=True)
 os.makedirs(VIDEO_DIR, exist_ok=True)
-os.makedirs(FALLBACK_IMAGES_DIR, exist_ok=True)
 
 # ---------------- UTILS ----------------
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-# ---------------- PLACEHOLDER ----------------
-def placeholder(path, text="ॐ नमो नारायणाय"):
-    img = Image.new("RGB", (1280, 720), (10, 5, 0))
-    d = ImageDraw.Draw(img)
-    font = None
-    try:
-        font = ImageFont.truetype("arial.ttf", 48)
-    except:
-        pass
-    d.text((60, 330), text, fill=(255, 215, 0), font=font)
-    img.save(path)
+# ---------------- AI IMAGE (POLLINATIONS) ----------------
+def generate_ai_image(prompt, out_path):
+    url = "https://image.pollinations.ai/prompt/" + requests.utils.quote(prompt)
+    r = requests.get(url, timeout=20)
+    with open(out_path, "wb") as f:
+        f.write(r.content)
 
-# ---------------- WIKIMEDIA IMAGE FETCH ----------------
-def wikimedia_images(query="Vishnu Dashavatara illustration", limit=50):
-    print(f"🖼 Downloading {limit} Vishnu images from Wikimedia...")
-    url = "https://commons.wikimedia.org/w/api.php"
-    params = {
-        "action": "query",
-        "generator": "search",
-        "gsrsearch": query,
-        "gsrlimit": str(limit),
-        "prop": "imageinfo",
-        "iiprop": "url",
-        "format": "json",
-        "gsrnamespace": 6
-    }
-    headers = {"User-Agent": "VishnuPuranaVideoBot/1.0 (example@example.com)"}
-    try:
-        r = requests.get(url, params=params, headers=headers, timeout=15)
-        r.raise_for_status()
-        data = r.json()
-    except (requests.RequestException, ValueError) as e:
-        print("❌ Wikimedia API failed:", e)
-        return []
+# ---------------- IMAGES ----------------
+def generate_images(blocks):
+    print("🖼 Generating AI Vishnu images (Vaikuntha style)...")
 
-    images = []
-    pages = data.get("query", {}).get("pages", {})
-    for p in pages.values():
-        ii = p.get("imageinfo", [])
-        if ii:
-            images.append(ii[0]["url"])
-    print(f"✅ Found {len(images)} images from Wikimedia")
-    return images
-
-# ---------------- DOWNLOAD VISHNU IMAGES ----------------
-def download_images(blocks):
-    print("🖼 Preparing Vishnu images for video...")
-    urls = wikimedia_images(limit=len(blocks) + 1)
-
-    fallback_files = list(Path(FALLBACK_IMAGES_DIR).glob("*.jpg"))
-    fallback_idx = 0
+    prompts = [
+        "Vishnu Purana ancient manuscript illustration book cover, Indian miniature painting",
+        "Lord Vishnu seated on Sheshnag in Vaikuntha, divine Hindu art",
+        "Dashavatara of Vishnu, Matsya Kurma Varaha Narasimha Vamana Parashurama Rama Krishna Kalki, epic painting",
+        "Cosmic Vishnu Vishwaroop form, galaxies, stars, divine glow",
+        "Lord Vishnu holding Shankha Chakra Gada Padma, devotional painting"
+    ]
 
     for i, text in enumerate(blocks):
-        path = f"{IMAGE_DIR}/{i:03d}.jpg"
-        try:
-            if urls:
-                img_data = requests.get(urls[i % len(urls)], timeout=10).content
-                with open(path, "wb") as f:
-                    f.write(img_data)
-            elif fallback_files:
-                # Use fallback local image
-                fallback_file = fallback_files[fallback_idx % len(fallback_files)]
-                img = Image.open(fallback_file)
-                img.save(path)
-                fallback_idx += 1
-            else:
-                placeholder(path)
-        except Exception as e:
-            print("❌ Failed to download image, using placeholder:", e)
-            placeholder(path)
+        prompt = prompts[i % len(prompts)] + f", ultra detailed, sacred art, episode {i+1}"
+        out = f"{IMAGE_DIR}/{i:03d}.jpg"
+        generate_ai_image(prompt, out)
 
-# ---------------- HINDI NEURAL VOICE ----------------
-async def generate_single_audio(text, index):
-    out = f"{AUDIO_DIR}/{index:03d}.wav"
-    communicate = edge_tts.Communicate(
+# ---------------- AUDIO ----------------
+async def gen_audio(text, idx):
+    out = f"{AUDIO_DIR}/{idx:03d}.wav"
+    tts = edge_tts.Communicate(
         text=text,
         voice="hi-IN-MadhurNeural",
         rate="+0%",
         pitch="+0Hz"
     )
-    await communicate.save(out)
+    await tts.save(out)
 
 def generate_audio(blocks):
-    print("🎙 Generating HIGH-QUALITY Hindi Neural voice...")
+    print("🎙 Generating Hindi Neural Voice...")
     async def runner():
-        for i, text in enumerate(blocks):
-            if text.strip():
-                await generate_single_audio(text, i)
+        for i, b in enumerate(blocks):
+            if b.strip():
+                await gen_audio(b, i)
     asyncio.run(runner())
 
-# ---------------- VIDEO CREATION ----------------
+# ---------------- VIDEO ----------------
 def create_video(blocks):
-    print("🎞 Creating final video...")
+    print("🎞 Creating video...")
     clips = []
 
     for i in range(len(blocks)):
@@ -151,17 +99,25 @@ def create_video(blocks):
 
 # ---------------- MAIN ----------------
 def main():
-    # Read script and add daily intro/outro
     blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
-    intro = "नमस्कार। स्वागत है आप सभी का VishnuPriya श्रृंखला में। आज हम आपके लिए Vishnu Purana का पहला एपिसोड लाए हैं।"
-    outro = "\n\n🙏 अगर आपको यह वीडियो पसंद आया हो, तो कृपया लाइक, शेयर और सब्सक्राइब जरूर करें। हर दिन एक नया एपिसोड आएगा।"
+
+    intro = (
+        "नमस्कार। VishnuPriya श्रृंखला में आपका स्वागत है। "
+        "आज हम विष्णु पुराण का प्रथम अध्याय आरंभ कर रहे हैं।"
+    )
+    outro = (
+        "यदि आपको यह दिव्य ज्ञान प्रिय लगे, तो कृपया लाइक, शेयर और सब्सक्राइब करें। "
+        "हम प्रतिदिन विष्णु पुराण का एक नया एपिसोड प्रस्तुत करेंगे।"
+    )
+
     blocks.insert(0, intro)
     blocks.append(outro)
 
-    download_images(blocks)
+    generate_images(blocks)
     generate_audio(blocks)
     create_video(blocks)
-    print("✅ FINAL VISHNU VIDEO READY:", FINAL_VIDEO)
+
+    print("✅ FINAL VIDEO READY:", FINAL_VIDEO)
 
 if __name__ == "__main__":
     main()
