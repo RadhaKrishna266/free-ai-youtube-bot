@@ -54,15 +54,14 @@ def download_images(blocks):
                 f.write(img_data)
         else:
             print(f"⚠ No image found for block {i}, using placeholder")
-            # Create blank placeholder
             open(f"{IMAGE_DIR}/{i:03d}.jpg", "wb").close()
 
 # ================= VOICE =================
 def generate_audio_blocks(blocks):
     """Generate Hindi narration for each block using single-speaker TTS"""
     print("🎙 Generating narration in blocks...")
-    # ✅ Correct TTS model
-    tts = TTS(model_name="tts_models/multilingual/multi-dataset/tts_m-multi-hi", gpu=False)
+    # ✅ Working Hindi TTS model
+    tts = TTS(model_name="tts_models/hi/vits", gpu=False)
 
     block_files = []
     for i, block in enumerate(blocks):
@@ -72,7 +71,6 @@ def generate_audio_blocks(blocks):
         print(f"Generating block {i+1}/{len(blocks)}...")
         tts.tts_to_file(
             text=block.strip(),
-            language="hi",
             file_path=audio_file,
             speed=1.0
         )
