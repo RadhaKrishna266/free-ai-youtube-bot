@@ -4,28 +4,25 @@ import base64
 import subprocess
 import requests
 from pathlib import Path
-
-from TTS.api import TTS
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
+from TTS.api import TTS
 
 # ================= CONFIG =================
-SCRIPT_FILE = "script.txt"       # Your narration script
-VOICE_SAMPLE = "audio_fixed/speaker_fixed.wav"  # normalized on-the-fly
+SCRIPT_FILE = "script.txt"
+VOICE_FILE = "audio_fixed/speaker_fixed.wav"
 FINAL_AUDIO = "final_audio.wav"
 FINAL_VIDEO = "final_video.mp4"
 
 IMAGE_DIR = "images"
-TANPURA = "audio_fixed/tanpura_fixed.mp3"  # normalized on-the-fly
-
+TANPURA = "audio_fixed/tanpura_fixed.mp3"
 TARGET_DURATION = 600  # 10 minutes
 
 YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube.upload"
 
 os.makedirs(IMAGE_DIR, exist_ok=True)
-os.makedirs("audio_fixed", exist_ok=True)
 
 # ================= UTILS =================
 def run(cmd):
@@ -44,7 +41,6 @@ def get_duration(path):
 # ================= IMAGES =================
 def download_images(count=20):
     print("🖼 Downloading divine images")
-
     r = requests.get(
         "https://pixabay.com/api/",
         params={
@@ -68,7 +64,6 @@ def download_images(count=20):
 # ================= VOICE =================
 def create_voice():
     print("🎙 Generating narration in your voice (XTTS-v2)")
-
     text = Path(SCRIPT_FILE).read_text(encoding="utf-8")
 
     tts = TTS(
@@ -78,43 +73,36 @@ def create_voice():
 
     tts.tts_to_file(
         text=text,
-        speaker_wav=VOICE_SAMPLE,
-        file_path=FINAL_AUDIO,
-        language="hi"
+        file_path=VOICE_FILE,
+        language="hi"  # important for multi-lingual XTTS
     )
 
 # ================= AUDIO MIX =================
-def mix_tanpura(target_duration=TARGET_DURATION):
+def mix_tanpura():
     print("🎶 Mixing tanpura softly")
+    duration = TARGET_DURATION  # use 10 minutes
 
-    narration_duration = get_duration(FINAL_AUDIO)
-    final_duration = max(narration_duration, target_duration)
-
+    temp_audio = "final_audio_temp.wav"
     run([
         "ffmpeg", "-y",
-        "-i", FINAL_AUDIO,
+        "-i", VOICE_FILE,
         "-stream_loop", "-1", "-i", TANPURA,
         "-filter_complex",
-        f"[1:a]volume=0.15,atrim=0:{final_duration}[bg];[0:a][bg]amix=inputs=2",
-        "-t", str(final_duration),
-        FINAL_AUDIO
+        f"[1:a]volume=0.15,atrim=0:{duration}[bg];[0:a][bg]amix=inputs=2",
+        "-t", str(duration),
+        temp_audio
     ])
 
-    return final_duration
+    # Replace final audio
+    os.replace(temp_audio, FINAL_AUDIO)
+    return duration
 
 # ================= VIDEO =================
 def create_video(duration):
     print("🎞 Creating video")
-
-    image_files = os.listdir(IMAGE_DIR)
-    if not image_files:
-        raise RuntimeError("No images found in IMAGE_DIR")
-
-    framerate = len(image_files) / duration  # Spread images evenly over video
-
     run([
         "ffmpeg", "-y",
-        "-framerate", str(framerate),
+        "-framerate", "1/6",
         "-pattern_type", "glob",
         "-i", f"{IMAGE_DIR}/*.jpg",
         "-i", FINAL_AUDIO,
@@ -129,7 +117,6 @@ def create_video(duration):
 # ================= YOUTUBE =================
 def upload_youtube():
     print("📤 Uploading to YouTube")
-
     token_info = json.loads(
         base64.b64decode(os.environ["YOUTUBE_TOKEN_BASE64"]).decode("utf-8")
     )
