@@ -28,42 +28,49 @@ def placeholder(path, text):
     d.text((40, 340), text[:80], fill=(255, 200, 0))
     img.save(path)
 
-# ---------------- IMAGES ----------------
+# ---------------- IMAGES (PIXABAY ONLY) ----------------
 def download_images(blocks):
     print("🖼 Downloading devotional images...")
-    r = requests.get(
-        "https://pixabay.com/api/",
-        params={
-            "key": PIXABAY_API_KEY,
-            "q": "Lord Vishnu Krishna Hindu devotional art painting",
-            "image_type": "photo",
-            "orientation": "horizontal",
-            "safesearch": "true",
-            "per_page": 50
-        }
-    ).json()
 
-    hits = r.get("hits", [])
+    hits = []
+    if PIXABAY_API_KEY:
+        r = requests.get(
+            "https://pixabay.com/api/",
+            params={
+                "key": PIXABAY_API_KEY,
+                "q": "Lord Vishnu Krishna Hindu devotional art",
+                "image_type": "photo",
+                "orientation": "horizontal",
+                "safesearch": "true",
+                "per_page": 50
+            },
+            timeout=30
+        ).json()
+        hits = r.get("hits", [])
 
     for i, text in enumerate(blocks):
         path = f"{IMAGE_DIR}/{i:03d}.jpg"
         if hits:
-            img = requests.get(hits[i % len(hits)]["largeImageURL"]).content
-            open(path, "wb").write(img)
+            img = requests.get(hits[i % len(hits)]["largeImageURL"], timeout=30).content
+            with open(path, "wb") as f:
+                f.write(img)
         else:
             placeholder(path, text)
 
-# ---------------- HINDI AUDIO (espeak-ng) ----------------
+# ---------------- HINDI AUDIO (REAL, CI-SAFE) ----------------
 def generate_audio(blocks):
-    print("🎙 Generating REAL Hindi voice (espeak-ng)...")
+    print("🎙 Generating REAL Hindi voice (espeak)...")
 
     for i, text in enumerate(blocks):
+        out = f"{AUDIO_DIR}/{i:03d}.wav"
+
         if not text.strip():
+            # silent filler so ffmpeg never breaks
+            run(["ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc", "-t", "1", out])
             continue
 
-        out = f"{AUDIO_DIR}/{i:03d}.wav"
         run([
-            "espeak-ng",
+            "espeak",
             "-v", "hi",
             "-s", "135",
             "-w", out,
