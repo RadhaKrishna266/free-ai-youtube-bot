@@ -37,4 +37,19 @@ jobs:
         run: python upload.py
 
       # ================= VERIFY OUTPUT =================
-      - name: Verify final video
+      - name: Verify final video exists
+        run: |
+          echo "📂 Workspace files:"
+          ls -R
+          if [ ! -f final_video.mp4 ]; then
+            echo "❌ Video NOT FOUND"
+            exit 1
+          fi
+          echo "✅ Video FOUND"
+
+      # ================= ARTIFACT =================
+      - name: Upload final video
+        uses: actions/upload-artifact@v4
+        with:
+          name: sanatan-gyan-dhara-episode-1
+          path: final_video.mp4
