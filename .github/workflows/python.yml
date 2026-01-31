@@ -28,8 +28,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          # Install moviepy with [gfx] to include editor module
-          pip install requests pillow "moviepy[gfx]" imageio imageio-ffmpeg edge-tts
+          pip install requests pillow moviepy imageio imageio-ffmpeg edge-tts
 
       # ================= RUN BOT =================
       - name: Run Sanatan Gyan Dhara Bot
@@ -38,18 +37,18 @@ jobs:
         run: |
           python upload.py
 
-      # ================= VERIFY OUTPUT =================
+      # ================= VERIFY FINAL VIDEO =================
       - name: Verify final video exists
         run: |
           echo "📂 Workspace files:"
-          ls -lh
+          ls -R
           if [ ! -f final_video.mp4 ]; then
-            echo "❌ final_video.mp4 NOT FOUND"
+            echo "❌ Video NOT FOUND"
             exit 1
           fi
-          echo "✅ final_video.mp4 FOUND"
+          echo "✅ Video FOUND"
 
-      # ================= ARTIFACT =================
+      # ================= UPLOAD ARTIFACT =================
       - name: Upload final video
         uses: actions/upload-artifact@v4
         with:
