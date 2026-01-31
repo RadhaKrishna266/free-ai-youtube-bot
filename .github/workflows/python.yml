@@ -39,6 +39,11 @@ jobs:
             google-auth-oauthlib \
             edge-tts
 
+      # ================= VERIFY EDGE-TTS =================
+      - name: Test Edge TTS
+        run: |
+          python -c "import edge_tts; print('Edge TTS installed ✅')"
+
       # ================= RUN BOT =================
       - name: Run Sanatan Gyan Dhara Bot
         env:
