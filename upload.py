@@ -2,6 +2,7 @@ import os
 import json
 import base64
 import subprocess
+import requests
 from pathlib import Path
 from TTS.api import TTS
 from googleapiclient.discovery import build
@@ -11,34 +12,63 @@ from google.auth.transport.requests import Request
 
 # ================= CONFIG =================
 SCRIPT_FILE = "script.txt"   # Your Episode 1 script (blocks separated by double newlines)
-IMAGE_DIR = "images"         # 000.jpg, 001.jpg, etc.
+IMAGE_DIR = "images"         # Will store downloaded Pixabay images
 TANPURA = "audio_fixed/tanpura_fixed.mp3"
 FINAL_AUDIO = "final_audio.wav"
 FINAL_VIDEO = "final_video.mp4"
 YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube.upload"
 
+PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY")  # Set your Pixabay API key
+
 os.makedirs("audio_blocks", exist_ok=True)
 os.makedirs("video_blocks", exist_ok=True)
+os.makedirs(IMAGE_DIR, exist_ok=True)
 
 # ================= UTILS =================
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
+# ================= IMAGES =================
+def download_images(blocks):
+    print("🖼 Downloading images from Pixabay...")
+    for i, block in enumerate(blocks):
+        # Take first 5 words from block as keyword
+        words = block.strip().split()[:5]
+        keyword = " ".join(words) if words else "Vishnu Krishna devotional"
+        response = requests.get(
+            "https://pixabay.com/api/",
+            params={
+                "key": PIXABAY_API_KEY,
+                "q": keyword,
+                "image_type": "photo",
+                "orientation": "horizontal",
+                "per_page": 3
+            }
+        ).json()
+
+        hits = response.get("hits", [])
+        if hits:
+            img_url = hits[0]["largeImageURL"]
+            img_data = requests.get(img_url).content
+            with open(f"{IMAGE_DIR}/{i:03d}.jpg", "wb") as f:
+                f.write(img_data)
+        else:
+            print(f"⚠ No image found for block {i}, using placeholder")
+            open(f"{IMAGE_DIR}/{i:03d}.jpg", "wb").close()
+
 # ================= VOICE =================
-def generate_audio_blocks():
+def generate_audio_blocks(blocks):
     """Generate Hindi narration for each block using single-speaker TTS"""
     print("🎙 Generating narration in blocks...")
-    tts = TTS(model_name="tts_models/multilingual/multi-dataset/fastspeech2", gpu=False)
+    tts = TTS(model_name="tts_models/hi/vits", gpu=False)
 
-    text_blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
     block_files = []
-
-    for i, block in enumerate(text_blocks):
+    for i, block in enumerate(blocks):
         if not block.strip():
             continue
         audio_file = f"audio_blocks/{i:03d}.wav"
-        print(f"Generating block {i+1}/{len(text_blocks)}...")
+        print(f"Generating block {i+1}/{len(blocks)}...")
         tts.tts_to_file(
             text=block.strip(),
             language="hi",
@@ -58,24 +88,27 @@ def generate_audio_blocks():
         "-c", "copy", "narration_raw.wav"
     ])
 
-    # Normalize + resample
-    run([
-        "ffmpeg", "-y",
-        "-i", "narration_raw.wav",
-        "-ac", "1",
-        "-ar", "24000",
-        "-filter:a", "volume=1.0",
-        FINAL_AUDIO
-    ])
+    # Mix with tanpura if available
+    if os.path.exists(TANPURA):
+        run([
+            "ffmpeg", "-y",
+            "-i", "narration_raw.wav",
+            "-stream_loop", "-1",
+            "-i", TANPURA,
+            "-filter_complex", "[1:a]volume=0.12,atrim=0:600[bg];[0:a][bg]amix=inputs=2",
+            "-t", "600",
+            FINAL_AUDIO
+        ])
+    else:
+        run(["ffmpeg", "-y", "-i", "narration_raw.wav", FINAL_AUDIO])
 
 # ================= VIDEO =================
-def create_video():
+def create_video(blocks):
     """Create video using one image per block"""
     print("🎞 Creating video block-by-block...")
-    text_blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
     input_files = []
 
-    for i, block in enumerate(text_blocks):
+    for i, block in enumerate(blocks):
         if not block.strip():
             continue
         audio_file = f"audio_blocks/{i:03d}.wav"
@@ -165,8 +198,10 @@ def upload_youtube():
 
 # ================= MAIN =================
 def main():
-    generate_audio_blocks()
-    create_video()
+    text_blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
+    download_images(text_blocks)
+    generate_audio_blocks(text_blocks)
+    create_video(text_blocks)
     upload_youtube()
 
 if __name__ == "__main__":
