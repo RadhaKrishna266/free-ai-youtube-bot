@@ -3,8 +3,9 @@ import subprocess
 import requests
 import asyncio
 from pathlib import Path
-from hashlib import md5
+from PIL import Image, ImageDraw
 import edge_tts
+from io import BytesIO
 
 SCRIPT_FILE = "script.txt"
 IMAGE_DIR = "images"
@@ -12,110 +13,124 @@ AUDIO_DIR = "audio_blocks"
 VIDEO_DIR = "video_blocks"
 FINAL_VIDEO = "final_video.mp4"
 
+PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY")
+
 os.makedirs(IMAGE_DIR, exist_ok=True)
 os.makedirs(AUDIO_DIR, exist_ok=True)
 os.makedirs(VIDEO_DIR, exist_ok=True)
-
-USED_IMAGES = set()
 
 # ---------------- UTILS ----------------
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-# ---------------- WIKIMEDIA SEARCH ----------------
-def wikimedia_search(query, limit=30):
-    url = "https://commons.wikimedia.org/w/api.php"
-    params = {
-        "action": "query",
-        "format": "json",
-        "generator": "search",
-        "gsrsearch": query,
-        "gsrlimit": limit,
-        "prop": "imageinfo",
-        "iiprop": "url"
-    }
-    r = requests.get(url, params=params).json()
-    pages = r.get("query", {}).get("pages", {})
+def safe_get_json(url, params):
+    try:
+        r = requests.get(url, params=params, timeout=15)
+        if r.status_code != 200 or not r.text.strip().startswith("{"):
+            return None
+        return r.json()
+    except Exception:
+        return None
+
+# ---------------- PLACEHOLDER ----------------
+def placeholder(path, text="ॐ नमो नारायणाय"):
+    img = Image.new("RGB", (1280, 720), (15, 10, 5))
+    d = ImageDraw.Draw(img)
+    d.text((420, 330), text, fill=(255, 215, 0))
+    img.save(path)
+
+# ---------------- IMAGE COLLECTION ----------------
+def collect_pixabay_images(query, limit):
+    data = safe_get_json(
+        "https://pixabay.com/api/",
+        {
+            "key": PIXABAY_API_KEY,
+            "q": query,
+            "image_type": "photo",
+            "orientation": "horizontal",
+            "safesearch": "true",
+            "per_page": limit
+        }
+    )
+    if not data:
+        return []
+
     images = []
-    for p in pages.values():
-        info = p.get("imageinfo")
-        if info:
-            images.append(info[0]["url"])
+    for h in data.get("hits", []):
+        tags = h.get("tags", "").lower()
+        if "vishnu" in tags or "narayana" in tags or "krishna" in tags:
+            images.append(h["largeImageURL"])
     return images
 
 # ---------------- DOWNLOAD IMAGES ----------------
 def download_images(blocks):
     print("🖼 Downloading AUTHENTIC Vishnu Purana images (NO repeats)...")
 
-    # FIRST IMAGE — VISHNU PURANA BOOK
-    book_imgs = wikimedia_search("Vishnu Purana manuscript illustration", 10)
-    if not book_imgs:
-        raise RuntimeError("No Vishnu Purana manuscript found")
+    used = set()
+    collected = []
 
-    first_img = book_imgs[0]
-    save_image(first_img, 0)
+    # 1️⃣ Vishnu Purana manuscript / book FIRST
+    book_imgs = collect_pixabay_images("Vishnu Purana manuscript book", 10)
+    if book_imgs:
+        collected.append(book_imgs[0])
+        used.add(book_imgs[0])
 
+    # 2️⃣ Vishnu, Vaikuntha, Dashavatara
     queries = [
+        "Lord Vishnu painting",
         "Vishnu Vaikuntha painting",
-        "Dashavatara Vishnu painting",
-        "Vishnu cosmic form painting",
-        "Vishnu temple mural",
-        "Narayana Hindu painting"
+        "Vishnu Dashavatara painting",
+        "Vishnu cosmic form painting"
     ]
 
-    image_pool = []
     for q in queries:
-        image_pool.extend(wikimedia_search(q, 40))
+        imgs = collect_pixabay_images(q, 30)
+        for img in imgs:
+            if img not in used:
+                collected.append(img)
+                used.add(img)
 
-    if len(image_pool) < len(blocks):
-        raise RuntimeError("Not enough Vishnu images")
+    if not collected:
+        raise RuntimeError("❌ No Vishnu images found. Check Pixabay API key.")
 
-    idx = 1
-    for url in image_pool:
-        if idx >= len(blocks):
-            break
-        if save_image(url, idx):
-            idx += 1
+    print(f"✅ {len(collected)} unique Vishnu images collected")
 
-    if idx < len(blocks):
-        raise RuntimeError("Ran out of unique Vishnu images")
+    for i, text in enumerate(blocks):
+        path = f"{IMAGE_DIR}/{i:03d}.jpg"
+        if i < len(collected):
+            try:
+                img = requests.get(collected[i], timeout=20).content
+                Image.open(BytesIO(img)).convert("RGB").save(path)
+            except Exception:
+                placeholder(path)
+        else:
+            placeholder(path)
 
-def save_image(url, index):
-    h = md5(url.encode()).hexdigest()
-    if h in USED_IMAGES:
-        return False
-    img = requests.get(url).content
-    path = f"{IMAGE_DIR}/{index:03d}.jpg"
-    with open(path, "wb") as f:
-        f.write(img)
-    USED_IMAGES.add(h)
-    return True
-
-# ---------------- AUDIO (EDGE-TTS) ----------------
-async def speak(text, index):
+# ---------------- AUDIO ----------------
+async def generate_single_audio(text, index):
     out = f"{AUDIO_DIR}/{index:03d}.wav"
-    tts = edge_tts.Communicate(
+    communicate = edge_tts.Communicate(
         text=text,
         voice="hi-IN-MadhurNeural",
         rate="+0%",
         pitch="+0Hz"
     )
-    await tts.save(out)
+    await communicate.save(out)
 
 def generate_audio(blocks):
-    print("🎙 Generating devotional Hindi voice...")
+    print("🎙 Generating HIGH-QUALITY Hindi Neural voice...")
     async def runner():
-        for i, t in enumerate(blocks):
-            if t.strip():
-                await speak(t, i)
+        for i, text in enumerate(blocks):
+            if text.strip():
+                await generate_single_audio(text, i)
     asyncio.run(runner())
 
 # ---------------- VIDEO ----------------
 def create_video(blocks):
-    print("🎞 Rendering final Vishnu Purana episode...")
-
+    print("🎞 Creating FINAL video...")
     clips = []
+
     for i in range(len(blocks)):
         clip = f"{VIDEO_DIR}/{i:03d}.mp4"
         run([
@@ -150,7 +165,7 @@ def main():
     download_images(blocks)
     generate_audio(blocks)
     create_video(blocks)
-    print("✅ FIRST EPISODE READY:", FINAL_VIDEO)
+    print("✅ FINAL EPISODE-1 VISHNU PURANA VIDEO READY:", FINAL_VIDEO)
 
 if __name__ == "__main__":
     main()
