@@ -5,8 +5,8 @@ import asyncio
 from pathlib import Path
 from PIL import Image, ImageDraw
 import edge_tts
-from io import BytesIO
 
+# ---------------- CONFIG ----------------
 SCRIPT_FILE = "script.txt"
 IMAGE_DIR = "images"
 AUDIO_DIR = "audio_blocks"
@@ -24,90 +24,69 @@ def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-def safe_get_json(url, params):
-    try:
-        r = requests.get(url, params=params, timeout=15)
-        if r.status_code != 200 or not r.text.strip().startswith("{"):
-            return None
-        return r.json()
-    except Exception:
-        return None
-
 # ---------------- PLACEHOLDER ----------------
 def placeholder(path, text="ॐ नमो नारायणाय"):
-    img = Image.new("RGB", (1280, 720), (15, 10, 5))
+    img = Image.new("RGB", (1280, 720), (10, 5, 0))
     d = ImageDraw.Draw(img)
-    d.text((420, 330), text, fill=(255, 215, 0))
+    d.text((60, 330), text, fill=(255, 215, 0))
     img.save(path)
 
-# ---------------- IMAGE COLLECTION ----------------
-def collect_pixabay_images(query, limit):
-    data = safe_get_json(
-        "https://pixabay.com/api/",
-        {
-            "key": PIXABAY_API_KEY,
-            "q": query,
-            "image_type": "photo",
-            "orientation": "horizontal",
-            "safesearch": "true",
-            "per_page": limit
-        }
-    )
-    if not data:
-        return []
-
-    images = []
-    for h in data.get("hits", []):
-        tags = h.get("tags", "").lower()
-        if "vishnu" in tags or "narayana" in tags or "krishna" in tags:
-            images.append(h["largeImageURL"])
-    return images
-
-# ---------------- DOWNLOAD IMAGES ----------------
+# ---------------- DOWNLOAD VISHNU IMAGES ----------------
 def download_images(blocks):
-    print("🖼 Downloading AUTHENTIC Vishnu Purana images (NO repeats)...")
+    print("🖼 Downloading AUTHENTIC Vishnu / Vaikuntha images...")
 
-    used = set()
-    collected = []
-
-    # 1️⃣ Vishnu Purana manuscript / book FIRST
-    book_imgs = collect_pixabay_images("Vishnu Purana manuscript book", 10)
-    if book_imgs:
-        collected.append(book_imgs[0])
-        used.add(book_imgs[0])
-
-    # 2️⃣ Vishnu, Vaikuntha, Dashavatara
     queries = [
+        "Vishnu Purana book illustration",
         "Lord Vishnu painting",
-        "Vishnu Vaikuntha painting",
-        "Vishnu Dashavatara painting",
-        "Vishnu cosmic form painting"
+        "Vishnu Dashavatara illustration",
+        "Vishnu cosmic form painting",
+        "Vaikuntha lok painting",
     ]
 
+    all_hits = []
+    seen_urls = set()
+
     for q in queries:
-        imgs = collect_pixabay_images(q, 30)
-        for img in imgs:
-            if img not in used:
-                collected.append(img)
-                used.add(img)
+        try:
+            r = requests.get(
+                "https://pixabay.com/api/",
+                params={
+                    "key": PIXABAY_API_KEY,
+                    "q": q,
+                    "image_type": "photo",
+                    "orientation": "horizontal",
+                    "safesearch": "true",
+                    "per_page": 50
+                },
+                timeout=15
+            ).json()
 
-    if not collected:
-        raise RuntimeError("❌ No Vishnu images found. Check Pixabay API key.")
+            for h in r.get("hits", []):
+                url = h.get("largeImageURL")
+                tags = h.get("tags", "").lower()
+                if url and url not in seen_urls and any(k in tags for k in ["vishnu", "narayana", "dashavatara", "vaikuntha", "hindu god"]):
+                    all_hits.append(h)
+                    seen_urls.add(url)
+        except Exception as e:
+            print("⚠️ Pixabay request failed:", e)
 
-    print(f"✅ {len(collected)} unique Vishnu images collected")
+    if not all_hits:
+        raise RuntimeError("❌ No Vishnu images found. Check PIXABAY_API_KEY or internet")
+
+    print(f"✅ {len(all_hits)} Vishnu images collected")
 
     for i, text in enumerate(blocks):
         path = f"{IMAGE_DIR}/{i:03d}.jpg"
-        if i < len(collected):
-            try:
-                img = requests.get(collected[i], timeout=20).content
-                Image.open(BytesIO(img)).convert("RGB").save(path)
-            except Exception:
-                placeholder(path)
-        else:
-            placeholder(path)
+        try:
+            hit = all_hits[i % len(all_hits)]
+            img_data = requests.get(hit["largeImageURL"], timeout=15).content
+            with open(path, "wb") as f:
+                f.write(img_data)
+        except Exception as e:
+            print(f"⚠️ Failed to download image {i}, using placeholder:", e)
+            placeholder(path, text)
 
-# ---------------- AUDIO ----------------
+# ---------------- HINDI NEURAL VOICE ----------------
 async def generate_single_audio(text, index):
     out = f"{AUDIO_DIR}/{index:03d}.wav"
     communicate = edge_tts.Communicate(
@@ -120,15 +99,17 @@ async def generate_single_audio(text, index):
 
 def generate_audio(blocks):
     print("🎙 Generating HIGH-QUALITY Hindi Neural voice...")
+
     async def runner():
         for i, text in enumerate(blocks):
             if text.strip():
                 await generate_single_audio(text, i)
+
     asyncio.run(runner())
 
 # ---------------- VIDEO ----------------
 def create_video(blocks):
-    print("🎞 Creating FINAL video...")
+    print("🎞 Creating final video...")
     clips = []
 
     for i in range(len(blocks)):
@@ -165,7 +146,8 @@ def main():
     download_images(blocks)
     generate_audio(blocks)
     create_video(blocks)
-    print("✅ FINAL EPISODE-1 VISHNU PURANA VIDEO READY:", FINAL_VIDEO)
+    print("✅ FINAL VISHNU PURANA VIDEO READY:", FINAL_VIDEO)
+    print("🕉️ Remember: Daily episodes will be uploaded. Like, share, subscribe!")
 
 if __name__ == "__main__":
     main()
