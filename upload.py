@@ -1,116 +1,114 @@
 import os
-import time
-import requests
 import subprocess
+import requests
 from pathlib import Path
-from PIL import Image
-from moviepy.editor import *
-import edge_tts
+from PIL import Image, ImageDraw, ImageFont
 
 # ================= CONFIG =================
-HF_TOKEN = os.getenv("HF_TOKEN")
-IMG_DIR = Path("images")
-AUDIO_DIR = Path("audio")
+SCRIPT_FILE = "script.txt"
+IMAGE_DIR = "images"
+VIDEO_DIR = "video"
+AUDIO_DIR = "audio"
+
+TANPURA = "audio/tanpura.mp3"
 FINAL_VIDEO = "final_video.mp4"
 
-IMG_DIR.mkdir(exist_ok=True)
-AUDIO_DIR.mkdir(exist_ok=True)
+WIDTH, HEIGHT = 1280, 720
+SLIDE_DURATION = 8  # seconds per image
 
-HF_MODEL = "stabilityai/stable-diffusion-xl-base-1.0"
+os.makedirs(IMAGE_DIR, exist_ok=True)
+os.makedirs(VIDEO_DIR, exist_ok=True)
 
-# Vishnu-specific prompts (NO randomness)
-IMAGE_PROMPTS = [
-    "Lord Vishnu resting on Sheshnag in Vaikuntha, divine light, ultra detailed, hindu devotional art",
-    "Vaikuntha loka golden palace, celestial clouds, divine atmosphere, hindu art",
-    "Lord Vishnu four arms holding shankha chakra gada padma, glowing blue skin",
-    "Cosmic Vishnu source of creation, universe emerging, spiritual art",
-    "Devotees listening to Vishnu Purana, ancient rishis, spiritual ambience"
-]
+# ================= UTILS =================
+def run(cmd):
+    print("▶", " ".join(cmd))
+    subprocess.run(cmd, check=True)
 
-# ================= IMAGE GENERATION =================
-def generate_ai_image(prompt, out_path):
-    url = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
-    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-    payload = {"inputs": prompt}
+# ================= SCRIPT =================
+with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
+    blocks = [b.strip() for b in f.read().split("\n\n") if b.strip()]
 
-    for attempt in range(3):
-        try:
-            r = requests.post(url, headers=headers, json=payload, timeout=40)
-            if r.status_code == 200:
-                with open(out_path, "wb") as f:
-                    f.write(r.content)
-                Image.open(out_path).verify()
-                return
-        except Exception as e:
-            print(f"⚠ Image retry {attempt+1}/3 failed:", e)
-            time.sleep(5)
+# ================= IMAGES =================
+def generate_ai_image(prompt, out):
+    try:
+        url = f"https://image.pollinations.ai/prompt/{requests.utils.quote(prompt)}"
+        r = requests.get(url, timeout=15)
+        if r.status_code == 200:
+            with open(out, "wb") as f:
+                f.write(r.content)
+            return True
+    except:
+        pass
+    return False
 
-    raise RuntimeError("❌ AI image generation failed")
+def placeholder_image(out):
+    img = Image.new("RGB", (WIDTH, HEIGHT), (12, 8, 4))
+    d = ImageDraw.Draw(img)
+    try:
+        font = ImageFont.truetype("DejaVuSans.ttf", 60)
+    except:
+        font = None
+    d.text((100, HEIGHT//2 - 40), "ॐ नमो नारायणाय", fill=(255, 215, 0), font=font)
+    img.save(out)
 
-def generate_images():
-    print("🖼 Generating Vishnu / Vaikuntha images...")
-    paths = []
-    for i, prompt in enumerate(IMAGE_PROMPTS):
-        out = IMG_DIR / f"img_{i}.png"
-        generate_ai_image(prompt, out)
-        paths.append(str(out))
-    return paths
-
-# ================= VOICE =================
-async def generate_voice(text):
-    print("🎙 Generating narration...")
-    out = AUDIO_DIR / "voice.mp3"
-    communicate = edge_tts.Communicate(
-        text=text,
-        voice="hi-IN-MadhurNeural",
-        rate="-5%"
+print("🖼 Generating Vishnu images...")
+for i in range(len(blocks)):
+    out = f"{IMAGE_DIR}/{i:03d}.jpg"
+    prompt = (
+        "Lord Vishnu Vaikuntha divine illustration, "
+        "blue skin, golden crown, four arms, conch chakra gada padma, "
+        "celestial clouds, spiritual Hindu art, cinematic lighting"
     )
-    await communicate.save(str(out))
-    return str(out)
+    if not generate_ai_image(prompt, out):
+        placeholder_image(out)
 
-# ================= VIDEO =================
-def create_video(images, voice_path):
-    print("🎬 Creating video...")
-    clips = []
-    duration_per_image = 12
+# ================= VIDEO SLIDES =================
+print("🎞 Creating video slides...")
+clips = []
 
-    for img in images:
-        clips.append(
-            ImageClip(img)
-            .set_duration(duration_per_image)
-            .resize(height=1080)
-        )
+for i in range(len(blocks)):
+    img = f"{IMAGE_DIR}/{i:03d}.jpg"
+    out = f"{VIDEO_DIR}/{i:03d}.mp4"
 
-    video = concatenate_videoclips(clips, method="compose")
+    run([
+        "ffmpeg", "-y",
+        "-loop", "1",
+        "-i", img,
+        "-t", str(SLIDE_DURATION),
+        "-vf", f"scale={WIDTH}:{HEIGHT},format=yuv420p",
+        "-c:v", "libx264",
+        out
+    ])
+    clips.append(out)
 
-    narration = AudioFileClip(voice_path)
-    tanpura = AudioFileClip("tanpura.mp3").volumex(0.25)
+# ================= CONCAT =================
+with open("list.txt", "w") as f:
+    for c in clips:
+        f.write(f"file '{c}'\n")
 
-    if tanpura.duration < narration.duration:
-        tanpura = tanpura.audio_loop(duration=narration.duration)
+run([
+    "ffmpeg", "-y",
+    "-f", "concat",
+    "-safe", "0",
+    "-i", "list.txt",
+    "-c:v", "copy",
+    "silent.mp4"
+])
 
-    final_audio = CompositeAudioClip([tanpura, narration])
-    video = video.set_audio(final_audio)
+# ================= ADD TANPURA =================
+print("🎶 Adding tanpura background...")
+run([
+    "ffmpeg", "-y",
+    "-stream_loop", "-1",
+    "-i", TANPURA,
+    "-i", "silent.mp4",
+    "-shortest",
+    "-map", "1:v:0",
+    "-map", "0:a:0",
+    "-c:v", "copy",
+    "-c:a", "aac",
+    "-b:a", "128k",
+    FINAL_VIDEO
+])
 
-    video.write_videofile(
-        FINAL_VIDEO,
-        fps=24,
-        codec="libx264",
-        audio_codec="aac"
-    )
-
-# ================= MAIN =================
-def main():
-    script = Path("script.txt").read_text(encoding="utf-8")
-
-    images = generate_images()
-
-    import asyncio
-    voice = asyncio.run(generate_voice(script))
-
-    create_video(images, voice)
-
-    print("✅ FINAL VIDEO READY:", FINAL_VIDEO)
-
-if __name__ == "__main__":
-    main()
+print("✅ FINAL VIDEO CREATED:", FINAL_VIDEO)
