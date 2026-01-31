@@ -1,102 +1,91 @@
+# upload.py
 import os
-import asyncio
+import time
+import random
 from pathlib import Path
-from PIL import Image
-import requests
+from gtts import gTTS
 from moviepy.editor import AudioFileClip, ImageClip, CompositeAudioClip, concatenate_videoclips
-import edge_tts
+from huggingface_hub import InferenceClient
 
-# ---------------- CONFIG ----------------
+# ========== CONFIG ==========
 SCRIPT_FILE = "script.txt"
-IMAGE_DIR = "images"
-AUDIO_DIR = "audio_blocks"
-VIDEO_DIR = "video_blocks"
-FINAL_VIDEO = "final_video.mp4"
-TANPURA_FILE = "audio/tanpura.mp3"
+OUTPUT_VIDEO = "final_video.mp4"
+BACKGROUND_MUSIC = "audio/tanpura.mp3"
+IMAGE_DIR = "generated_images"
+AUDIO_DIR = "generated_audio"
+
 HF_API_KEY = os.environ.get("HF_API_KEY")
 
-# ---------------- CREATE FOLDERS ----------------
+# ========== FOLDERS ==========
 os.makedirs(IMAGE_DIR, exist_ok=True)
 os.makedirs(AUDIO_DIR, exist_ok=True)
-os.makedirs(VIDEO_DIR, exist_ok=True)
 
-# ---------------- HUGGINGFACE IMAGE ----------------
-def hf_generate_image(prompt, path):
-    """Generate image using HuggingFace text-to-image API."""
-    url = "https://api-inference.huggingface.co/models/gsdf/Counterfeit-V2.5"
-    headers = {"Authorization": f"Bearer {HF_API_KEY}"}
-    payload = {
-        "inputs": prompt,
-        "options": {"wait_for_model": True}
-    }
-    try:
-        r = requests.post(url, headers=headers, json=payload, timeout=60)
-        r.raise_for_status()
-        img_data = r.content
-        with open(path, "wb") as f:
-            f.write(img_data)
-        print(f"✅ Generated image for: {prompt}")
-    except Exception as e:
-        print("❌ Failed to generate image:", e)
-        # fallback: blank placeholder
-        Image.new("RGB", (1280, 720), (10, 5, 0)).save(path)
+# ========== FUNCTIONS ==========
 
-def prepare_images(blocks):
-    print("🖼 Generating images from HF API...")
-    for i, text in enumerate(blocks):
-        path = f"{IMAGE_DIR}/{i:03d}.png"
-        hf_generate_image(text[:100] + " Vishnu illustration, temple, devotional, divine", path)
+def load_script(script_file):
+    with open(script_file, "r", encoding="utf-8") as f:
+        blocks = [b.strip() for b in f.read().split("\n\n") if b.strip()]
+    return blocks
 
-# ---------------- EDGE-TTS AUDIO ----------------
-async def generate_single_audio(text, index):
-    out = f"{AUDIO_DIR}/{index:03d}.wav"
-    communicate = edge_tts.Communicate(
-        text=text,
-        voice="hi-IN-MadhurNeural",
-        rate="+0%",
-        pitch="+0Hz"
-    )
-    await communicate.save(out)
+def generate_audio(text, filename):
+    tts = gTTS(text=text, lang="hi")
+    tts.save(filename)
+    return filename
 
-def generate_audio(blocks):
-    print("🎙 Generating narration using Edge TTS...")
-    async def runner():
-        for i, text in enumerate(blocks):
-            if text.strip():
-                await generate_single_audio(text, i)
-    asyncio.run(runner())
+def generate_hf_image(prompt, filename, retries=3):
+    client = InferenceClient(token=HF_API_KEY)
+    for attempt in range(1, retries + 1):
+        try:
+            print(f"🎨 Generating image for prompt [{prompt[:50]}...] (attempt {attempt})")
+            result = client.text_to_image(prompt, height=720, width=1280)
+            with open(filename, "wb") as f:
+                f.write(result)
+            return filename
+        except Exception as e:
+            print(f"⚠ HF image generation failed: {e}, retrying...")
+            time.sleep(5)
+    raise RuntimeError("❌ AI image generation failed completely")
 
-# ---------------- VIDEO CREATION ----------------
-def create_video(blocks):
-    print("🎞 Combining images and audio into final video...")
+def create_video(script_blocks):
     clips = []
-    tanpura_clip = AudioFileClip(TANPURA_FILE)
 
-    for i in range(len(blocks)):
-        img_path = f"{IMAGE_DIR}/{i:03d}.png"
-        aud_path = f"{AUDIO_DIR}/{i:03d}.wav"
+    for i, block in enumerate(script_blocks):
+        # Generate audio
+        audio_file = f"{AUDIO_DIR}/{i:03d}.mp3"
+        generate_audio(block, audio_file)
+        audio_clip = AudioFileClip(audio_file)
 
-        img_clip = ImageClip(img_path).set_duration(AudioFileClip(aud_path).duration)
-        audio_clip = CompositeAudioClip([AudioFileClip(aud_path), tanpura_clip.volumex(0.2)])
+        # Generate image
+        img_file = f"{IMAGE_DIR}/{i:03d}.png"
+        prompt = f"Divine Lord Vishnu, glowing, serene, traditional Indian style, HD"
+        generate_hf_image(prompt, img_file)
+
+        # Create clip
+        img_clip = ImageClip(img_file).set_duration(audio_clip.duration).set_fps(24)
         img_clip = img_clip.set_audio(audio_clip)
         clips.append(img_clip)
 
-    final_clip = concatenate_videoclips(clips, method="compose")
-    final_clip.write_videofile(FINAL_VIDEO, fps=24, codec="libx264", audio_codec="aac")
-    print("✅ FINAL VIDEO CREATED:", FINAL_VIDEO)
+    # Concatenate all clips
+    final_video = concatenate_videoclips(clips, method="compose")
 
-# ---------------- MAIN ----------------
+    # Add background music
+    if os.path.exists(BACKGROUND_MUSIC):
+        bg_music = AudioFileClip(BACKGROUND_MUSIC).volumex(0.2)
+        final_audio = CompositeAudioClip([final_video.audio, bg_music.set_duration(final_video.duration)])
+        final_video = final_video.set_audio(final_audio)
+
+    # Write video
+    final_video.write_videofile(OUTPUT_VIDEO, fps=24)
+
+# ========== MAIN ==========
 def main():
-    blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
-    # add intro/outro if desired
-    intro = "नमस्कार। स्वागत है आप सभी का Sanatan Gyan Dhara में। आज हम आपके लिए Vishnu Purana का पहला एपिसोड लाए हैं।"
-    outro = "\n\n🙏 अगर आपको यह वीडियो पसंद आया हो, तो कृपया लाइक, शेयर और सब्सक्राइब जरूर करें।"
-    blocks.insert(0, intro)
-    blocks.append(outro)
+    print("📖 Loading script...")
+    blocks = load_script(SCRIPT_FILE)
 
-    prepare_images(blocks)
-    generate_audio(blocks)
+    print("🎬 Generating video with AI images and narration...")
     create_video(blocks)
+
+    print(f"✅ FINAL VIDEO READY: {OUTPUT_VIDEO}")
 
 if __name__ == "__main__":
     main()
