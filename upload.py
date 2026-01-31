@@ -3,9 +3,12 @@ import subprocess
 import asyncio
 import requests
 from pathlib import Path
+from PIL import Image
 import edge_tts
+import time
+import urllib.parse
 
-# ---------------- CONFIG ----------------
+# ================= CONFIG =================
 SCRIPT_FILE = "script.txt"
 IMAGE_DIR = "images"
 AUDIO_DIR = "audio_blocks"
@@ -16,38 +19,65 @@ os.makedirs(IMAGE_DIR, exist_ok=True)
 os.makedirs(AUDIO_DIR, exist_ok=True)
 os.makedirs(VIDEO_DIR, exist_ok=True)
 
-# ---------------- UTILS ----------------
+# ================= UTILS =================
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-# ---------------- AI IMAGE (POLLINATIONS) ----------------
+# ================= AI IMAGE GENERATION =================
 def generate_ai_image(prompt, out_path):
-    url = "https://image.pollinations.ai/prompt/" + requests.utils.quote(prompt)
-    r = requests.get(url, timeout=20)
-    with open(out_path, "wb") as f:
-        f.write(r.content)
+    encoded = urllib.parse.quote(prompt)
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1280&height=720&seed={int(time.time())}"
 
-# ---------------- IMAGES ----------------
+    for attempt in range(3):  # max 3 tries
+        try:
+            r = requests.get(url, timeout=20)
+            r.raise_for_status()
+            with open(out_path, "wb") as f:
+                f.write(r.content)
+            return
+        except Exception as e:
+            print(f"⚠ Image retry {attempt+1}/3 failed:", e)
+            time.sleep(2)
+
+    raise RuntimeError("❌ AI image generation failed completely")
+
 def generate_images(blocks):
-    print("🖼 Generating AI Vishnu images (Vaikuntha style)...")
+    print("🖼 Generating AI Vishnu Purana images...")
 
-    prompts = [
-        "Vishnu Purana ancient manuscript illustration book cover, Indian miniature painting",
-        "Lord Vishnu seated on Sheshnag in Vaikuntha, divine Hindu art",
-        "Dashavatara of Vishnu, Matsya Kurma Varaha Narasimha Vamana Parashurama Rama Krishna Kalki, epic painting",
-        "Cosmic Vishnu Vishwaroop form, galaxies, stars, divine glow",
-        "Lord Vishnu holding Shankha Chakra Gada Padma, devotional painting"
+    prompts = []
+
+    # First image: Vishnu Purana book (MANDATORY)
+    prompts.append(
+        "ancient Vishnu Purana manuscript book on lotus altar, divine golden light, temple background, ultra detailed, devotional art"
+    )
+
+    avatars = [
+        "Matsya avatar of Vishnu",
+        "Kurma avatar of Vishnu",
+        "Varaha avatar of Vishnu",
+        "Narasimha avatar of Vishnu",
+        "Vamana avatar of Vishnu",
+        "Parashurama avatar of Vishnu",
+        "Rama avatar of Vishnu",
+        "Krishna avatar of Vishnu",
+        "Buddha avatar of Vishnu",
+        "Kalki avatar of Vishnu"
     ]
 
-    for i, text in enumerate(blocks):
-        prompt = prompts[i % len(prompts)] + f", ultra detailed, sacred art, episode {i+1}"
+    for i in range(1, len(blocks)):
+        avatar = avatars[i % len(avatars)]
+        prompts.append(
+            f"{avatar}, Vaikuntha background, celestial clouds, divine aura, Hindu mythology illustration, ultra realistic, sacred art"
+        )
+
+    for i, prompt in enumerate(prompts):
         out = f"{IMAGE_DIR}/{i:03d}.jpg"
         generate_ai_image(prompt, out)
 
-# ---------------- AUDIO ----------------
-async def gen_audio(text, idx):
-    out = f"{AUDIO_DIR}/{idx:03d}.wav"
+# ================= HINDI NEURAL VOICE =================
+async def generate_single_audio(text, index):
+    out = f"{AUDIO_DIR}/{index:03d}.wav"
     tts = edge_tts.Communicate(
         text=text,
         voice="hi-IN-MadhurNeural",
@@ -57,14 +87,14 @@ async def gen_audio(text, idx):
     await tts.save(out)
 
 def generate_audio(blocks):
-    print("🎙 Generating Hindi Neural Voice...")
+    print("🎙 Generating Hindi neural voice...")
     async def runner():
-        for i, b in enumerate(blocks):
-            if b.strip():
-                await gen_audio(b, i)
+        for i, text in enumerate(blocks):
+            if text.strip():
+                await generate_single_audio(text, i)
     asyncio.run(runner())
 
-# ---------------- VIDEO ----------------
+# ================= VIDEO =================
 def create_video(blocks):
     print("🎞 Creating video...")
     clips = []
@@ -97,21 +127,23 @@ def create_video(blocks):
         FINAL_VIDEO
     ])
 
-# ---------------- MAIN ----------------
+# ================= MAIN =================
 def main():
-    blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
+    base_blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
 
     intro = (
-        "नमस्कार। VishnuPriya श्रृंखला में आपका स्वागत है। "
-        "आज हम विष्णु पुराण का प्रथम अध्याय आरंभ कर रहे हैं।"
-    )
-    outro = (
-        "यदि आपको यह दिव्य ज्ञान प्रिय लगे, तो कृपया लाइक, शेयर और सब्सक्राइब करें। "
-        "हम प्रतिदिन विष्णु पुराण का एक नया एपिसोड प्रस्तुत करेंगे।"
+        "नमस्कार। आप सभी का स्वागत है Sanatan Gyan Dhara चैनल पर। "
+        "आज हम आरंभ कर रहे हैं श्री विष्णु पुराण की दिव्य श्रृंखला का प्रथम एपिसोड।"
     )
 
-    blocks.insert(0, intro)
-    blocks.append(outro)
+    outro = (
+        "यदि यह ज्ञान आपको प्रिय लगा हो, "
+        "तो कृपया लाइक करें, शेयर करें और Sanatan Gyan Dhara को सब्सक्राइब करें। "
+        "अब प्रतिदिन विष्णु पुराण का एक नया एपिसोड प्रकाशित किया जाएगा। "
+        "ॐ नमो नारायणाय।"
+    )
+
+    blocks = [intro] + base_blocks + [outro]
 
     generate_images(blocks)
     generate_audio(blocks)
