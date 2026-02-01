@@ -3,70 +3,77 @@ import subprocess
 import requests
 import asyncio
 from pathlib import Path
-import edge_tts
 from PIL import Image, ImageDraw, ImageFont
+import edge_tts
 
-# ---------------- CONFIG ----------------
+# ================= CONFIG =================
 SCRIPT_FILE = "script.txt"
 IMAGE_DIR = "images"
 AUDIO_DIR = "audio_blocks"
 VIDEO_DIR = "video_blocks"
 FINAL_VIDEO = "final_video.mp4"
-TANPURA_FILE = "audio/tanpura.mp3"  # Updated file
-HF_API_KEY = os.environ.get("HF_API_KEY")
+TANPURA_FILE = "audio/tanpura.mp3"
 
-# ---------------- CREATE FOLDERS ----------------
+WIDTH = 1280
+HEIGHT = 720
+
+# ================= CREATE FOLDERS =================
 os.makedirs(IMAGE_DIR, exist_ok=True)
 os.makedirs(AUDIO_DIR, exist_ok=True)
 os.makedirs(VIDEO_DIR, exist_ok=True)
 
-# ---------------- UTILS ----------------
+# ================= UTILS =================
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
 def placeholder(path, text="ॐ नमो नारायणाय"):
-    """Fallback placeholder image if AI image fails."""
-    img = Image.new("RGB", (1280, 720), (10, 5, 0))
-    d = ImageDraw.Draw(img)
-    font = None
+    img = Image.new("RGB", (WIDTH, HEIGHT), (15, 5, 0))
+    draw = ImageDraw.Draw(img)
     try:
-        font = ImageFont.truetype("arial.ttf", 48)
+        font = ImageFont.truetype("DejaVuSans.ttf", 60)
     except:
-        pass
-    d.text((60, 330), text, fill=(255, 215, 0), font=font)
+        font = None
+    draw.text((100, HEIGHT//2 - 40), text, fill=(255, 215, 0), font=font)
     img.save(path)
 
-# ---------------- AI IMAGE GENERATION ----------------
+# ================= IMAGE GENERATION =================
 def generate_ai_image(prompt, out_path):
-    """Generates image from HF API using text prompt."""
-    print(f"🖼 Generating AI image for prompt: {prompt[:50]}...")
-    url = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2"
-    headers = {"Authorization": f"Bearer {HF_API_KEY}"}
-    payload = {"inputs": prompt}
+    print(f"🖼 Generating image: {prompt[:60]}")
+
+    safe_prompt = prompt.replace(" ", "%20")
+    url = (
+        f"https://image.pollinations.ai/prompt/"
+        f"{safe_prompt},%20lord%20vishnu,%20vaikuntha,%20divine,%20hindu%20art"
+        f"?width={WIDTH}&height={HEIGHT}&model=flux&seed=42"
+    )
+
     try:
-        r = requests.post(url, headers=headers, json=payload, timeout=60)
-        if r.status_code == 200:
-            with open(out_path, "wb") as f:
-                f.write(r.content)
-        else:
-            print(f"❌ HF image generation failed ({r.status_code}), using placeholder.")
-            placeholder(out_path)
+        r = requests.get(url, timeout=60)
+        with open(out_path, "wb") as f:
+            f.write(r.content)
+
+        img = Image.open(out_path).convert("RGB")
+        if img.getextrema() == ((0,0),(0,0),(0,0)):
+            raise ValueError("Black image")
+
     except Exception as e:
-        print("❌ Exception generating image:", e)
+        print("❌ Image failed, using placeholder:", e)
         placeholder(out_path)
 
 def prepare_images(blocks):
     for i, text in enumerate(blocks):
         out = f"{IMAGE_DIR}/{i:03d}.jpg"
-        generate_ai_image(text, out)
+        prompt = f"Divine Vaikuntha scene, Lord Vishnu, celestial background, glowing, spiritual art, {text[:120]}"
+        generate_ai_image(prompt, out)
 
-# ---------------- AUDIO GENERATION ----------------
-async def generate_single_audio(text, index):
+# ================= AUDIO GENERATION =================
+async def generate_audio_block(text, index):
     out = f"{AUDIO_DIR}/{index:03d}.mp3"
     communicate = edge_tts.Communicate(
         text=text,
-        voice="hi-IN-MadhurNeural"
+        voice="hi-IN-MadhurNeural",
+        rate="-5%"
     )
     await communicate.save(out)
 
@@ -74,16 +81,18 @@ def generate_audio(blocks):
     async def runner():
         for i, text in enumerate(blocks):
             if text.strip():
-                await generate_single_audio(text, i)
+                await generate_audio_block(text, i)
     asyncio.run(runner())
 
-# ---------------- VIDEO CREATION ----------------
+# ================= VIDEO CREATION =================
 def create_video(blocks):
     clips = []
+
     for i in range(len(blocks)):
         img = f"{IMAGE_DIR}/{i:03d}.jpg"
         aud = f"{AUDIO_DIR}/{i:03d}.mp3"
-        clip = f"{VIDEO_DIR}/{i:03d}.mp4"
+        out = f"{VIDEO_DIR}/{i:03d}.mp4"
+
         run([
             "ffmpeg", "-y",
             "-loop", "1",
@@ -91,20 +100,21 @@ def create_video(blocks):
             "-i", aud,
             "-i", TANPURA_FILE,
             "-filter_complex",
-            "[1:a][2:a]amix=inputs=2:duration=first:dropout_transition=2[a]",
+            "[1:a][2:a]amix=inputs=2:weights=2 0.6[a]",
             "-map", "0:v",
             "-map", "[a]",
             "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
             "-c:a", "aac",
             "-shortest",
-            clip
+            out
         ])
-        clips.append(clip)
+        clips.append(out)
 
-    # Concatenate all clips
     with open("list.txt", "w") as f:
         for c in clips:
             f.write(f"file '{c}'\n")
+
     run([
         "ffmpeg", "-y",
         "-f", "concat",
@@ -114,17 +124,36 @@ def create_video(blocks):
         FINAL_VIDEO
     ])
 
-# ---------------- MAIN ----------------
+# ================= MAIN =================
 def main():
+    if not Path(SCRIPT_FILE).exists():
+        raise FileNotFoundError("❌ script.txt not found")
+
+    if not Path(TANPURA_FILE).exists():
+        raise FileNotFoundError("❌ audio/tanpura.mp3 not found")
+
     blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
-    intro = "नमस्कार। स्वागत है आप सभी का VishnuPriya श्रृंखला में। आज हम आपके लिए Vishnu Purana का पहला एपिसोड लाए हैं।"
-    outro = "\n\n🙏 अगर आपको यह वीडियो पसंद आया हो, तो कृपया लाइक, शेयर और सब्सक्राइब जरूर करें। हर दिन एक नया एपिसोड आएगा।"
+
+    intro = (
+        "ॐ नमो नारायणाय।\n"
+        "Sanatan Gyan Dhara में आपका स्वागत है।\n"
+        "यह विष्णु पुराण की दिव्य श्रृंखला का प्रथम अध्याय है।"
+    )
+
+    outro = (
+        "यदि आपको यह दिव्य ज्ञान प्रिय लगा हो,\n"
+        "तो कृपया Like, Share और Subscribe करें।\n"
+        "हम प्रतिदिन विष्णु पुराण का एक नया अध्याय प्रस्तुत करेंगे।\n"
+        "ॐ नमो नारायणाय।"
+    )
+
     blocks.insert(0, intro)
     blocks.append(outro)
 
     prepare_images(blocks)
     generate_audio(blocks)
     create_video(blocks)
+
     print("✅ FINAL VIDEO READY:", FINAL_VIDEO)
 
 if __name__ == "__main__":
