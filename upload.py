@@ -1,10 +1,10 @@
 import os
-import requests
-import asyncio
 import subprocess
-from bs4 import BeautifulSoup
+import asyncio
+import requests
 from PIL import Image, ImageDraw, ImageFont
 import edge_tts
+import math
 
 # ================= CONFIG =================
 CHANNEL_NAME = "Sanatan Gyan Dhara"
@@ -12,83 +12,78 @@ IMAGE_DIR = "images"
 AUDIO_DIR = "audio_blocks"
 VIDEO_DIR = "video_blocks"
 FINAL_VIDEO = "final_video.mp4"
-TANPURA_FILE = "audio/tanpura.mp3"
-BLOCKS = 5
+TANPURA = "audio/tanpura.mp3"
+
+WIDTH, HEIGHT = 1280, 720
+BLOCKS = 8   # More blocks = longer video (safe)
 
 # ================= FOLDERS =================
-for d in [IMAGE_DIR, AUDIO_DIR, VIDEO_DIR, "audio"]:
-    os.makedirs(d, exist_ok=True)
+os.makedirs(IMAGE_DIR, exist_ok=True)
+os.makedirs(AUDIO_DIR, exist_ok=True)
+os.makedirs(VIDEO_DIR, exist_ok=True)
+os.makedirs("audio", exist_ok=True)
 
 # ================= UTILS =================
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-# ================= PLACEHOLDER IMAGE =================
-def create_vishnu_placeholder(path, text="ॐ नमो नारायणाय"):
-    img = Image.new("RGB", (1280, 720), (18, 12, 6))
-    d = ImageDraw.Draw(img)
-    try:
-        font = ImageFont.truetype("DejaVuSans-Bold.ttf", 60)
-    except:
-        font = None
-    d.text((200, 300), text, fill=(255, 200, 80), font=font)
-    img.save(path)
-
 # ================= FRONT COVER =================
 def create_front_cover():
     path = f"{IMAGE_DIR}/000.jpg"
-    img = Image.new("RGB", (1280, 720), (12, 8, 4))
+    img = Image.new("RGB", (WIDTH, HEIGHT), (20, 10, 0))
     d = ImageDraw.Draw(img)
-    try:
-        big = ImageFont.truetype("DejaVuSans-Bold.ttf", 72)
-        small = ImageFont.truetype("DejaVuSans.ttf", 42)
-    except:
-        big = small = None
 
-    d.text((220, 220), "VISHNU PURANA", fill=(255, 215, 0), font=big)
-    d.text((300, 330), CHANNEL_NAME, fill=(255, 255, 255), font=small)
-    d.text((360, 400), "ॐ नमो नारायणाय", fill=(255, 180, 90), font=small)
+    try:
+        title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 72)
+        sub_font = ImageFont.truetype("DejaVuSans.ttf", 42)
+    except:
+        title_font = sub_font = None
+
+    d.rectangle([80, 120, 1200, 600], outline=(255, 215, 0), width=6)
+    d.text((300, 260), "VISHNU PURANA", fill=(255, 215, 0), font=title_font)
+    d.text((420, 360), CHANNEL_NAME, fill=(255, 230, 180), font=sub_font)
+    d.text((460, 430), "ॐ नमो नारायणाय", fill=(255, 200, 120), font=sub_font)
+
     img.save(path)
     return path
 
 # ================= IMAGE FETCH =================
-def fetch_vishnu_images(max_count):
-    print("🌐 Fetching Vishnu wallpapers...")
-    images = []
-    url = "https://www.bhagwanpuja.com/wallpapers/lord-vishnu/"
+def fetch_vishnu_images(count):
+    urls = [
+        "https://wallpapercave.com/wp/wp6957864.jpg",
+        "https://wallpapercave.com/wp/wp6957873.jpg",
+        "https://wallpapercave.com/wp/wp6957882.jpg",
+        "https://wallpapercave.com/wp/wp6957891.jpg",
+        "https://wallpapercave.com/wp/wp6957901.jpg",
+        "https://wallpapercave.com/wp/wp6957910.jpg",
+        "https://wallpapercave.com/wp/wp6957920.jpg",
+    ]
 
-    try:
-        r = requests.get(url, timeout=20)
-        soup = BeautifulSoup(r.text, "lxml")
-        tags = soup.find_all("img")
+    paths = []
+    for i in range(1, count + 1):
+        path = f"{IMAGE_DIR}/{i:03d}.jpg"
+        try:
+            r = requests.get(urls[i % len(urls)], timeout=15)
+            with open(path, "wb") as f:
+                f.write(r.content)
+        except:
+            create_devotional_placeholder(path)
+        paths.append(path)
 
-        for tag in tags:
-            src = tag.get("src")
-            if not src or "vishnu" not in src.lower():
-                continue
-            if len(images) >= max_count:
-                break
+    return paths
 
-            path = f"{IMAGE_DIR}/{len(images)+1:03d}.jpg"
-            try:
-                img = requests.get(src, timeout=15)
-                if img.status_code == 200:
-                    with open(path, "wb") as f:
-                        f.write(img.content)
-                    images.append(path)
-            except:
-                pass
-
-    except Exception as e:
-        print("⚠ Wallpaper site blocked:", e)
-
-    return images
+# ================= PLACEHOLDER =================
+def create_devotional_placeholder(path):
+    img = Image.new("RGB", (WIDTH, HEIGHT), (25, 15, 5))
+    d = ImageDraw.Draw(img)
+    d.text((420, 340), "ॐ नमो नारायणाय", fill=(255, 215, 0))
+    img.save(path)
 
 # ================= AUDIO =================
 async def tts(text, out):
-    t = edge_tts.Communicate(text=text, voice="hi-IN-MadhurNeural")
-    await t.save(out)
+    communicate = edge_tts.Communicate(text=text, voice="hi-IN-MadhurNeural")
+    await communicate.save(out)
 
 def generate_audio(texts):
     async def runner():
@@ -97,31 +92,29 @@ def generate_audio(texts):
     asyncio.run(runner())
 
 # ================= TANPURA =================
-def generate_tanpura():
-    if not os.path.exists(TANPURA_FILE):
-        run([
-            "ffmpeg", "-y", "-f", "lavfi",
-            "-i", "sine=frequency=110:duration=180",
-            "-af", "volume=0.12",
-            TANPURA_FILE
-        ])
+def generate_tanpura(duration):
+    if os.path.exists(TANPURA):
+        return
+    run([
+        "ffmpeg", "-y", "-f", "lavfi",
+        "-i", f"sine=frequency=110:duration={duration}",
+        "-af", "volume=0.15",
+        TANPURA
+    ])
 
 # ================= VIDEO BLOCK =================
 def make_block(img, audio, idx):
     out = f"{VIDEO_DIR}/{idx:03d}.mp4"
     run([
         "ffmpeg", "-y",
-        "-loop", "1",
-        "-i", img,
+        "-loop", "1", "-i", img,
         "-i", audio,
-        "-i", TANPURA_FILE,
+        "-i", TANPURA,
         "-filter_complex",
-        "[2:a]volume=0.25[a2];[1:a][a2]amix=inputs=2:duration=first[a];"
-        "[0:v]scale=1280:720:force_original_aspect_ratio=decrease,"
-        "pad=1280:720:(ow-iw)/2:(oh-ih)/2[v]",
+        "[2:a]volume=0.2[a2];[1:a][a2]amix=inputs=2:duration=first[a];"
+        "[0:v]scale=1280:720,zoompan=z='min(zoom+0.0004,1.08)':d=9999:fps=25[v]",
         "-map", "[v]",
         "-map", "[a]",
-        "-t", "8",
         "-c:v", "libx264",
         "-pix_fmt", "yuv420p",
         "-shortest",
@@ -138,35 +131,26 @@ def concat(clips):
 
 # ================= MAIN =================
 def main():
-    print("🚀 Starting Sanatan Gyan Dhara bot")
+    print("🚀 Starting Sanatan Gyan Dhara")
 
     images = [create_front_cover()]
-    fetched = fetch_vishnu_images(BLOCKS - 1)
-    images.extend(fetched)
-
-    # 🔒 GUARANTEE IMAGE COUNT
-    while len(images) < BLOCKS:
-        path = f"{IMAGE_DIR}/{len(images):03d}.jpg"
-        create_vishnu_placeholder(path)
-        images.append(path)
+    images += fetch_vishnu_images(BLOCKS - 1)
 
     texts = [
-        f"नमस्कार। आप देख रहे हैं {CHANNEL_NAME}। आज हम Vishnu Purana का प्रथम अध्याय आरंभ करते हैं।",
-        "भगवान विष्णु सृष्टि के पालनकर्ता हैं।",
-        "उनके अवतार धर्म की रक्षा के लिए होते हैं।",
-        "ॐ नमो नारायणाय",
-        "इस दिव्य ज्ञान के लिए चैनल को सब्सक्राइब करें। जय श्री हरि।"
+        f"नमस्कार। आप देख रहे हैं {CHANNEL_NAME}। आज हम प्रारंभ कर रहे हैं विष्णु पुराण।"
     ]
+    texts += ["ॐ नमो नारायणाय। भगवान विष्णु सम्पूर्ण सृष्टि के पालनकर्ता हैं।"] * (BLOCKS - 2)
+    texts += ["इस दिव्य कथा के लिए चैनल को सब्सक्राइब करें। ॐ नमो नारायणाय।"]
 
     generate_audio(texts)
-    generate_tanpura()
+    generate_tanpura(600)
 
     clips = []
-    for i in range(BLOCKS):
+    for i in range(len(images)):
         clips.append(make_block(images[i], f"{AUDIO_DIR}/{i:03d}.mp3", i))
 
     concat(clips)
-    print("✅ FINAL VIDEO READY:", FINAL_VIDEO)
+    print("✅ FINAL VIDEO READY")
 
 if __name__ == "__main__":
     main()
