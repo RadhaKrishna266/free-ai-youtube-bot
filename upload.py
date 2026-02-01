@@ -1,88 +1,89 @@
 import os
 import subprocess
+import requests
 import asyncio
 from pathlib import Path
-from PIL import Image, ImageFilter
 import edge_tts
+from PIL import Image, ImageDraw, ImageFont
+import random
 
-# ================= CONFIG =================
+# ---------------- CONFIG ----------------
 SCRIPT_FILE = "script.txt"
-
 IMAGE_DIR = "images"
 AUDIO_DIR = "audio_blocks"
 VIDEO_DIR = "video_blocks"
-
 FINAL_VIDEO = "final_video.mp4"
-TANPURA_FILE = "audio/tanpura.mp3"  # must exist
+TANPURA_FILE = "audio/tanpura.mp3"  # make sure it's there
+BING_API_KEY = os.environ.get("BING_API_KEY")
+SEARCH_QUERY = "Vaikunth Vishnu Vishnu Avatars Lakshmi Devotional Art"  # mixed collection
+NUM_IMAGES = 20  # Number of images to fetch
 
-W, H = 1280, 720
-
-VOICE = "hi-IN-MadhurNeural"
-
-# =========================================
-
+# ---------------- CREATE FOLDERS ----------------
 os.makedirs(IMAGE_DIR, exist_ok=True)
 os.makedirs(AUDIO_DIR, exist_ok=True)
 os.makedirs(VIDEO_DIR, exist_ok=True)
 
-
+# ---------------- UTILS ----------------
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
+def placeholder(path, text="ॐ नमो नारायणाय"):
+    img = Image.new("RGB", (1280, 720), (10, 5, 0))
+    d = ImageDraw.Draw(img)
+    try:
+        font = ImageFont.truetype("arial.ttf", 48)
+    except:
+        font = None
+    d.text((60, 330), text, fill=(255, 215, 0), font=font)
+    img.save(path)
 
-# ---------- BRIGHT VAIKUNTHA BACKGROUND ----------
-def create_vaikuntha_bg(out_path):
-    # Bright base (NOT black)
-    base = Image.new("RGB", (W, H), (60, 30, 10))
+# ---------------- IMAGE DOWNLOAD ----------------
+def search_bing_images(query, count=NUM_IMAGES):
+    print(f"🔎 Searching Bing for images: {query}")
+    headers = {"Ocp-Apim-Subscription-Key": BING_API_KEY}
+    params = {"q": query, "count": count, "imageType": "Photo", "safeSearch": "Moderate"}
+    url = "https://api.bing.microsoft.com/v7.0/images/search"
+    resp = requests.get(url, headers=headers, params=params, timeout=30)
+    results = resp.json()
+    urls = [img["contentUrl"] for img in results.get("value", [])]
+    return urls
 
-    glow1 = Image.new("RGB", (W, H), (255, 190, 90))
-    glow1 = glow1.filter(ImageFilter.GaussianBlur(260))
-
-    glow2 = Image.new("RGB", (W, H), (160, 90, 20))
-    glow2 = glow2.filter(ImageFilter.GaussianBlur(180))
-
-    img = Image.blend(base, glow1, 0.35)
-    img = Image.blend(img, glow2, 0.45)
-
-    # Force brightness (YouTube-safe)
-    img = img.point(lambda p: min(255, int(p * 1.3)))
-
-    img.save(out_path, quality=95)
-
-
-# ---------- IMAGES ----------
-def prepare_images(blocks):
-    for i in range(len(blocks)):
+def download_images(urls):
+    for i, url in enumerate(urls):
         out = f"{IMAGE_DIR}/{i:03d}.jpg"
-        create_vaikuntha_bg(out)
+        try:
+            r = requests.get(url, timeout=30)
+            r.raise_for_status()
+            with open(out, "wb") as f:
+                f.write(r.content)
+        except:
+            print(f"❌ Failed to download {url}, using placeholder")
+            placeholder(out)
 
-
-# ---------- AUDIO ----------
-async def generate_audio_block(text, index):
+# ---------------- AUDIO GENERATION ----------------
+async def generate_single_audio(text, index):
     out = f"{AUDIO_DIR}/{index:03d}.mp3"
-    tts = edge_tts.Communicate(text=text, voice=VOICE)
-    await tts.save(out)
-
+    communicate = edge_tts.Communicate(
+        text=text,
+        voice="hi-IN-MadhurNeural"
+    )
+    await communicate.save(out)
 
 def generate_audio(blocks):
     async def runner():
         for i, text in enumerate(blocks):
             if text.strip():
-                await generate_audio_block(text, i)
-
+                await generate_single_audio(text, i)
     asyncio.run(runner())
 
-
-# ---------- VIDEO ----------
+# ---------------- VIDEO CREATION ----------------
 def create_video(blocks):
     clips = []
-
     for i in range(len(blocks)):
         img = f"{IMAGE_DIR}/{i:03d}.jpg"
         aud = f"{AUDIO_DIR}/{i:03d}.mp3"
-        out = f"{VIDEO_DIR}/{i:03d}.mp4"
-
+        clip = f"{VIDEO_DIR}/{i:03d}.mp4"
         run([
             "ffmpeg", "-y",
             "-loop", "1",
@@ -90,23 +91,20 @@ def create_video(blocks):
             "-i", aud,
             "-i", TANPURA_FILE,
             "-filter_complex",
-            # narration + soft tanpura
-            "[1:a][2:a]amix=inputs=2:weights=1 0.15:duration=first[a]",
+            "[2:a]volume=0.2[a2];[1:a][a2]amix=inputs=2:duration=first:dropout_transition=2[a]",
             "-map", "0:v",
             "-map", "[a]",
             "-c:v", "libx264",
-            "-pix_fmt", "yuv420p",
             "-c:a", "aac",
             "-shortest",
-            out
+            clip
         ])
+        clips.append(clip)
 
-        clips.append(out)
-
+    # Concatenate all clips
     with open("list.txt", "w") as f:
         for c in clips:
             f.write(f"file '{c}'\n")
-
     run([
         "ffmpeg", "-y",
         "-f", "concat",
@@ -116,36 +114,24 @@ def create_video(blocks):
         FINAL_VIDEO
     ])
 
-
-# ---------- MAIN ----------
+# ---------------- MAIN ----------------
 def main():
-    if not Path(SCRIPT_FILE).exists():
-        raise FileNotFoundError("❌ script.txt not found")
-
-    if not Path(TANPURA_FILE).exists():
-        raise FileNotFoundError("❌ tanpura.mp3 not found in audio/")
-
     blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
-
-    intro = (
-        "नमस्कार। आप सभी का स्वागत है। "
-        "आज हम विष्णु पुराण की दिव्य कथा आरंभ कर रहे हैं।"
-    )
-
-    outro = (
-        "🙏 यदि यह कथा आपको प्रिय लगी हो, "
-        "तो कृपया लाइक, शेयर और सब्सक्राइब अवश्य करें।"
-    )
-
+    intro = "नमस्कार। स्वागत है आप सभी का VishnuPriya श्रृंखला में। आज हम आपके लिए Vishnu Purana का पहला एपिसोड लाए हैं।"
+    outro = "\n\n🙏 अगर आपको यह वीडियो पसंद आया हो, तो कृपया लाइक, शेयर और सब्सक्राइब जरूर करें। हर दिन एक नया एपिसोड आएगा।"
     blocks.insert(0, intro)
     blocks.append(outro)
 
-    prepare_images(blocks)
+    # Download images
+    urls = search_bing_images(SEARCH_QUERY, NUM_IMAGES)
+    download_images(urls)
+
+    # Generate audio
     generate_audio(blocks)
+
+    # Create video
     create_video(blocks)
-
-    print("✅ FINAL VIDEO CREATED:", FINAL_VIDEO)
-
+    print("✅ FINAL VIDEO READY:", FINAL_VIDEO)
 
 if __name__ == "__main__":
     main()
