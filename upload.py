@@ -1,11 +1,10 @@
 import os
 import subprocess
-import requests
 import asyncio
+import requests
 from pathlib import Path
+from bs4 import BeautifulSoup
 import edge_tts
-from PIL import Image, ImageDraw, ImageFont
-import random
 
 # ---------------- CONFIG ----------------
 SCRIPT_FILE = "script.txt"
@@ -13,10 +12,9 @@ IMAGE_DIR = "images"
 AUDIO_DIR = "audio_blocks"
 VIDEO_DIR = "video_blocks"
 FINAL_VIDEO = "final_video.mp4"
-TANPURA_FILE = "audio/tanpura.mp3"  # make sure it's there
-BING_API_KEY = os.environ.get("BING_API_KEY")
-SEARCH_QUERY = "Vaikunth Vishnu Vishnu Avatars Lakshmi Devotional Art"  # mixed collection
-NUM_IMAGES = 20  # Number of images to fetch
+TANPURA_FILE = "audio/tanpura.mp3"
+HF_API_KEY = os.environ.get("HF_API_KEY")  # Not used for images here
+GOOGLE_IMAGES_URL = "https://www.google.com/search?q=vaikunth+vishnu+vishnu+avtara+lakshmi+vishnh+animated+wallpapers+only+photos+without+text&tbm=isch"
 
 # ---------------- CREATE FOLDERS ----------------
 os.makedirs(IMAGE_DIR, exist_ok=True)
@@ -28,38 +26,42 @@ def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-def placeholder(path, text="ॐ नमो नारायणाय"):
-    img = Image.new("RGB", (1280, 720), (10, 5, 0))
-    d = ImageDraw.Draw(img)
-    try:
-        font = ImageFont.truetype("arial.ttf", 48)
-    except:
-        font = None
-    d.text((60, 330), text, fill=(255, 215, 0), font=font)
-    img.save(path)
+# ---------------- IMAGE SCRAPER ----------------
+def fetch_google_images(url, max_images=50):
+    print(f"🖼 Fetching images from Google...")
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    }
+    r = requests.get(url, headers=headers, timeout=20)
+    soup = BeautifulSoup(r.text, "html.parser")
+    images = []
+    for img in soup.find_all("img"):
+        src = img.get("src")
+        if src and src.startswith("http") and "gstatic.com" not in src:
+            images.append(src)
+        if len(images) >= max_images:
+            break
+    print(f"✅ Found {len(images)} images")
+    return images
 
-# ---------------- IMAGE DOWNLOAD ----------------
-def search_bing_images(query, count=NUM_IMAGES):
-    print(f"🔎 Searching Bing for images: {query}")
-    headers = {"Ocp-Apim-Subscription-Key": BING_API_KEY}
-    params = {"q": query, "count": count, "imageType": "Photo", "safeSearch": "Moderate"}
-    url = "https://api.bing.microsoft.com/v7.0/images/search"
-    resp = requests.get(url, headers=headers, params=params, timeout=30)
-    results = resp.json()
-    urls = [img["contentUrl"] for img in results.get("value", [])]
-    return urls
-
-def download_images(urls):
-    for i, url in enumerate(urls):
-        out = f"{IMAGE_DIR}/{i:03d}.jpg"
-        try:
-            r = requests.get(url, timeout=30)
-            r.raise_for_status()
-            with open(out, "wb") as f:
-                f.write(r.content)
-        except:
-            print(f"❌ Failed to download {url}, using placeholder")
-            placeholder(out)
+def download_images(blocks):
+    urls = fetch_google_images(GOOGLE_IMAGES_URL, max_images=len(blocks))
+    if not urls:
+        raise RuntimeError("❌ No images found from Google!")
+    used_urls = set()
+    for i, _ in enumerate(blocks):
+        path = f"{IMAGE_DIR}/{i:03d}.jpg"
+        # Ensure no repeats
+        for url in urls:
+            if url not in used_urls:
+                used_urls.add(url)
+                try:
+                    data = requests.get(url, timeout=15).content
+                    with open(path, "wb") as f:
+                        f.write(data)
+                    break
+                except:
+                    continue
 
 # ---------------- AUDIO GENERATION ----------------
 async def generate_single_audio(text, index):
@@ -122,14 +124,8 @@ def main():
     blocks.insert(0, intro)
     blocks.append(outro)
 
-    # Download images
-    urls = search_bing_images(SEARCH_QUERY, NUM_IMAGES)
-    download_images(urls)
-
-    # Generate audio
+    download_images(blocks)
     generate_audio(blocks)
-
-    # Create video
     create_video(blocks)
     print("✅ FINAL VIDEO READY:", FINAL_VIDEO)
 
