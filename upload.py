@@ -1,10 +1,12 @@
 import os
-import subprocess
-import asyncio
 import requests
+import asyncio
 from pathlib import Path
 from bs4 import BeautifulSoup
+from urllib.parse import urljoin
 import edge_tts
+import subprocess
+import random
 
 # ---------------- CONFIG ----------------
 SCRIPT_FILE = "script.txt"
@@ -13,8 +15,10 @@ AUDIO_DIR = "audio_blocks"
 VIDEO_DIR = "video_blocks"
 FINAL_VIDEO = "final_video.mp4"
 TANPURA_FILE = "audio/tanpura.mp3"
-HF_API_KEY = os.environ.get("HF_API_KEY")  # Not used for images here
-GOOGLE_IMAGES_URL = "https://www.google.com/search?q=vaikunth+vishnu+vishnu+avtara+lakshmi+vishnh+animated+wallpapers+only+photos+without+text&tbm=isch"
+HF_API_KEY = os.environ.get("HF_API_KEY")
+
+# Google image search URL you provided
+GOOGLE_IMAGE_URL = "https://www.google.com/search?q=vaikunth+vishnu+vishnu+avtara+lakshmi+vishnh+animated+wallpapers+only+photos+without+text&tbm=isch"
 
 # ---------------- CREATE FOLDERS ----------------
 os.makedirs(IMAGE_DIR, exist_ok=True)
@@ -27,49 +31,46 @@ def run(cmd):
     subprocess.run(cmd, check=True)
 
 # ---------------- IMAGE SCRAPER ----------------
-def fetch_google_images(url, max_images=50):
-    print(f"🖼 Fetching images from Google...")
+def fetch_google_images(url, n):
+    print("🌐 Fetching images from Google...")
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        "User-Agent": "Mozilla/5.0"
     }
-    r = requests.get(url, headers=headers, timeout=20)
-    soup = BeautifulSoup(r.text, "html.parser")
-    images = []
-    for img in soup.find_all("img"):
+    r = requests.get(url, headers=headers)
+    soup = BeautifulSoup(r.text, "lxml")
+    imgs = soup.find_all("img")
+    urls = []
+    for img in imgs:
         src = img.get("src")
-        if src and src.startswith("http") and "gstatic.com" not in src:
-            images.append(src)
-        if len(images) >= max_images:
-            break
-    print(f"✅ Found {len(images)} images")
-    return images
+        if src and src.startswith("http"):
+            urls.append(src)
+    # Randomize and pick first n unique images
+    urls = list(dict.fromkeys(urls))
+    if len(urls) < n:
+        print(f"⚠ Only found {len(urls)} images, will reuse some.")
+    return urls
 
 def download_images(blocks):
-    urls = fetch_google_images(GOOGLE_IMAGES_URL, max_images=len(blocks))
-    if not urls:
-        raise RuntimeError("❌ No images found from Google!")
-    used_urls = set()
-    for i, _ in enumerate(blocks):
-        path = f"{IMAGE_DIR}/{i:03d}.jpg"
-        # Ensure no repeats
-        for url in urls:
-            if url not in used_urls:
-                used_urls.add(url)
-                try:
-                    data = requests.get(url, timeout=15).content
-                    with open(path, "wb") as f:
-                        f.write(data)
-                    break
-                except:
-                    continue
+    urls = fetch_google_images(GOOGLE_IMAGE_URL, len(blocks))
+    for i, text in enumerate(blocks):
+        img_path = f"{IMAGE_DIR}/{i:03d}.jpg"
+        try:
+            img_url = urls[i % len(urls)]
+            r = requests.get(img_url, timeout=20)
+            with open(img_path, "wb") as f:
+                f.write(r.content)
+        except Exception as e:
+            print("❌ Image download failed, using fallback black image.", e)
+            from PIL import Image, ImageDraw
+            img = Image.new("RGB", (1280, 720), (0, 0, 0))
+            d = ImageDraw.Draw(img)
+            d.text((50, 330), text[:50], fill=(255, 255, 255))
+            img.save(img_path)
 
 # ---------------- AUDIO GENERATION ----------------
 async def generate_single_audio(text, index):
     out = f"{AUDIO_DIR}/{index:03d}.mp3"
-    communicate = edge_tts.Communicate(
-        text=text,
-        voice="hi-IN-MadhurNeural"
-    )
+    communicate = edge_tts.Communicate(text=text, voice="hi-IN-MadhurNeural")
     await communicate.save(out)
 
 def generate_audio(blocks):
