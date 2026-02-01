@@ -1,105 +1,156 @@
 import os
 import requests
-from bs4 import BeautifulSoup
-from PIL import Image
+import asyncio
 import subprocess
-import shutil
+from pathlib import Path
+from bs4 import BeautifulSoup
+import edge_tts
+from PIL import Image
 
-# ================= CONFIG =================
-QUERY = "vaikunth vishnu vishnu avtara lakshmi vishnu wallpaper"
-BLOCKS = 5  # Number of video blocks you want
-OUTPUT_DIR = "video_blocks"
-IMAGES_DIR = "images"
-AUDIO_BLOCKS_DIR = "audio_blocks"
-TANPURA_AUDIO = "audio/tanpura.mp3"
+# ---------------- CONFIG ----------------
+SCRIPT_FILE = "script.txt"
+IMAGE_DIR = "images"
+AUDIO_DIR = "audio_blocks"
+VIDEO_DIR = "video_blocks"
 FINAL_VIDEO = "final_video.mp4"
+TANPURA_FILE = "audio/tanpura.mp3"  # must exist
+HF_API_KEY = os.environ.get("HF_API_KEY")
 
-os.makedirs(IMAGES_DIR, exist_ok=True)
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+# Google search URL for Vishnu images
+GOOGLE_URL = "https://www.google.com/search?q=vaikunth+vishnu+vishnu+avtara+lakshmi+vishnu+animated+wallpapers&tbm=isch"
 
-# ================= FETCH GOOGLE IMAGES =================
-def fetch_google_images_highres(query, max_images=20):
-    url = f"https://www.google.com/search?q={query}&tbm=isch"
+# ---------------- CREATE FOLDERS ----------------
+os.makedirs(IMAGE_DIR, exist_ok=True)
+os.makedirs(AUDIO_DIR, exist_ok=True)
+os.makedirs(VIDEO_DIR, exist_ok=True)
+
+# ---------------- UTILS ----------------
+def run(cmd):
+    print("▶", " ".join(cmd))
+    subprocess.run(cmd, check=True)
+
+def download_image(url, path):
+    try:
+        r = requests.get(url, timeout=15)
+        if r.status_code == 200:
+            with open(path, "wb") as f:
+                f.write(r.content)
+            return True
+    except Exception as e:
+        print("❌ Failed to download image:", e)
+    return False
+
+def fetch_google_images(url, max_images=50):
+    """Fetch high-res image URLs from Google search page."""
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
     }
     r = requests.get(url, headers=headers)
     soup = BeautifulSoup(r.text, "html.parser")
+    img_tags = soup.find_all("img")
 
     urls = []
-    for img in soup.find_all("img"):
-        src = img.get("data-src") or img.get("src")
-        if src and src.startswith("http") and src not in urls:
+    seen = set()
+    for img in img_tags:
+        src = img.get("src")
+        if src and src.startswith("http") and src not in seen:
+            seen.add(src)
             urls.append(src)
         if len(urls) >= max_images:
             break
     return urls
 
-# ================= DOWNLOAD IMAGES =================
-def download_images(urls):
-    paths = []
-    for i, url in enumerate(urls):
-        path = os.path.join(IMAGES_DIR, f"{i:03}.jpg")
-        try:
-            r = requests.get(url, stream=True, timeout=10)
-            if r.status_code == 200:
-                with open(path, 'wb') as f:
-                    shutil.copyfileobj(r.raw, f)
-                resize_for_video(path)
-                paths.append(path)
-        except:
-            continue
-    return paths
+# ---------------- AUDIO GENERATION ----------------
+async def generate_single_audio(text, index):
+    out = f"{AUDIO_DIR}/{index:03d}.mp3"
+    communicate = edge_tts.Communicate(
+        text=text,
+        voice="hi-IN-MadhurNeural"
+    )
+    await communicate.save(out)
 
-# ================= RESIZE IMAGES =================
-def resize_for_video(path):
-    with Image.open(path) as img:
-        img.thumbnail((1280, 720))
-        new_img = Image.new("RGB", (1280, 720), (0,0,0))
-        new_img.paste(img, ((1280-img.width)//2, (720-img.height)//2))
-        new_img.save(path)
+def generate_audio(blocks):
+    async def runner():
+        for i, text in enumerate(blocks):
+            if text.strip():
+                await generate_single_audio(text, i)
+    asyncio.run(runner())
 
-# ================= CREATE VIDEO BLOCK =================
-def run(cmd):
-    print("▶", " ".join(cmd))
-    subprocess.run(cmd, check=True)
+# ---------------- VIDEO CREATION ----------------
+def create_video(num_blocks):
+    clips = []
+    for i in range(num_blocks):
+        img_file = f"{IMAGE_DIR}/{i:03d}.jpg"
+        audio_file = f"{AUDIO_DIR}/{i:03d}.mp3"
+        out_file = f"{VIDEO_DIR}/{i:03d}.mp4"
 
-def create_video(images, audio_blocks, tanpura_audio):
-    for i, (img, audio) in enumerate(zip(images, audio_blocks)):
-        out = os.path.join(OUTPUT_DIR, f"{i:03}.mp4")
+        if not os.path.exists(img_file):
+            print(f"❌ Image missing: {img_file}")
+            Image.new("RGB", (1280, 720), (0,0,0)).save(img_file)
+
         cmd = [
             "ffmpeg", "-y",
-            "-loop", "1", "-i", img,
-            "-i", audio,
-            "-i", tanpura_audio,
+            "-loop", "1",
+            "-i", img_file,
+            "-i", audio_file,
+            "-i", TANPURA_FILE,
             "-filter_complex",
             "[2:a]volume=0.2[a2];[1:a][a2]amix=inputs=2:duration=first:dropout_transition=2[a]",
-            "-map", "0:v", "-map", "[a]",
-            "-c:v", "libx264", "-c:a", "aac", "-shortest", out
+            "-map", "0:v",
+            "-map", "[a]",
+            "-c:v", "libx264",
+            "-c:a", "aac",
+            "-shortest",
+            out_file
         ]
         run(cmd)
+        clips.append(out_file)
 
-# ================= MERGE VIDEO BLOCKS =================
-def merge_videos():
-    with open("video_list.txt", "w") as f:
-        for i in range(len(os.listdir(OUTPUT_DIR))):
-            f.write(f"file '{OUTPUT_DIR}/{i:03}.mp4'\n")
-    run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", "video_list.txt", "-c", "copy", FINAL_VIDEO])
-    os.remove("video_list.txt")
+    # Concatenate all clips
+    with open("list.txt", "w") as f:
+        for clip in clips:
+            f.write(f"file '{clip}'\n")
+    run([
+        "ffmpeg", "-y",
+        "-f", "concat",
+        "-safe", "0",
+        "-i", "list.txt",
+        "-c", "copy",
+        FINAL_VIDEO
+    ])
 
-# ================= MAIN =================
+# ---------------- MAIN ----------------
 def main():
+    blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
+    # Optional intro/outro
+    intro = "नमस्कार। स्वागत है आप सभी का VishnuPriya श्रृंखला में। आज हम आपके लिए Vishnu Purana का पहला एपिसोड लाए हैं।"
+    outro = "\n\n🙏 अगर आपको यह वीडियो पसंद आया हो, तो कृपया लाइक, शेयर और सब्सक्राइब जरूर करें।"
+    blocks.insert(0, intro)
+    blocks.append(outro)
+
     print("🌐 Fetching images from Google...")
-    urls = fetch_google_images_highres(QUERY, max_images=BLOCKS*2)
-    images = download_images(urls)
+    urls = fetch_google_images(GOOGLE_URL, max_images=len(blocks))
+    if len(urls) < len(blocks):
+        print("⚠️ Not enough high-res images, repeating allowed with placeholder fallback.")
 
-    if len(images) < BLOCKS:
-        raise Exception("❌ Not enough unique images. Increase blocks or max_images.")
+    print("🖼 Downloading images...")
+    used = set()
+    for i in range(len(blocks)):
+        path = f"{IMAGE_DIR}/{i:03d}.jpg"
+        url = urls[i % len(urls)]  # repeat if not enough images
+        while url in used and len(used) < len(urls):
+            url = random.choice(urls)
+        used.add(url)
+        if not download_image(url, path):
+            # fallback black image
+            Image.new("RGB", (1280, 720), (0,0,0)).save(path)
 
-    audio_files = sorted([os.path.join(AUDIO_BLOCKS_DIR, f"{i:03}.mp3") for i in range(BLOCKS)])
-    create_video(images[:BLOCKS], audio_files, TANPURA_AUDIO)
-    merge_videos()
-    print(f"✅ Final video created: {FINAL_VIDEO}")
+    print("🔊 Generating audio...")
+    generate_audio(blocks)
+
+    print("🎬 Creating video...")
+    create_video(len(blocks))
+    print("✅ FINAL VIDEO READY:", FINAL_VIDEO)
 
 if __name__ == "__main__":
     main()
