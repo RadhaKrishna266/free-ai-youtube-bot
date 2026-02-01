@@ -1,12 +1,13 @@
 import os
-import subprocess
+import time
+import random
 import requests
 import asyncio
+import subprocess
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
+from io import BytesIO
 import edge_tts
-import sys
-import time
 
 # ---------------- CONFIG ----------------
 SCRIPT_FILE = "script.txt"
@@ -16,134 +17,51 @@ VIDEO_DIR = "video_blocks"
 FINAL_VIDEO = "final_video.mp4"
 TANPURA_FILE = "audio/tanpura.mp3"
 
-MAX_IMAGES = 10
+NUM_IMAGES = 5
 IMAGE_SIZE = (1280, 720)
 
-HEADERS = {
-    "User-Agent": "SanatanGyanDharaBot/1.0 (contact: sanatan@example.com)",
-    "Accept": "application/json"
-}
+HF_API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2-1"
 
-VISHNU_CATEGORIES = [
-    "Vishnu",
-    "Lakshmi_Narayana",
-    "Ananta_Shesh",
-    "Vaikuntha",
-    "Padmanabhaswamy_Temple"
+PROMPTS = [
+    "Lord Vishnu Hindu god blue skin four arms holding shankha chakra gada padma, divine light, ultra realistic, 4k",
+    "Lord Vishnu resting on Ananta Shesha cosmic ocean, glowing aura, devotional art, high detail",
+    "Vishnu standing in Vaikuntha, golden crown, lotus flowers, celestial background, realistic painting",
+    "Hindu god Vishnu divine portrait, blue complexion, peaceful face, spiritual light, 4k realism",
+    "Lord Vishnu with Lakshmi blessing devotees, sacred atmosphere, temple art style, ultra detailed"
 ]
+
+NEGATIVE_PROMPT = "blurry, distorted, extra limbs, low quality, cartoon, anime"
 
 # ---------------- SETUP ----------------
 os.makedirs(IMAGE_DIR, exist_ok=True)
 os.makedirs(AUDIO_DIR, exist_ok=True)
 os.makedirs(VIDEO_DIR, exist_ok=True)
 
+# ---------------- UTILS ----------------
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-# ---------------- PLACEHOLDER (LAST RESORT) ----------------
-def make_vishnu_placeholder(path, text):
-    img = Image.new("RGB", IMAGE_SIZE, (10, 5, 0))
-    d = ImageDraw.Draw(img)
-    try:
-        font = ImageFont.truetype("DejaVuSans.ttf", 48)
-    except:
-        font = None
-    d.text((80, 320), text, fill=(255, 215, 0), font=font)
-    img.save(path)
+# ---------------- AI IMAGE GENERATION ----------------
+def generate_image(prompt, index):
+    payload = {"inputs": f"{prompt}. Negative prompt: {NEGATIVE_PROMPT}"}
+    response = requests.post(HF_API_URL, json=payload, timeout=120)
+    if response.status_code != 200:
+        raise RuntimeError(f"Image generation failed: {response.text}")
+    image = Image.open(BytesIO(response.content)).convert("RGB")
+    image.thumbnail(IMAGE_SIZE, Image.Resampling.LANCZOS)
+    path = os.path.join(IMAGE_DIR, f"{index:03d}.jpg")
+    image.save(path)
+    print(f"✅ Saved {path}")
+    return path
 
-# ---------------- WIKIMEDIA CATEGORY FETCH ----------------
-def fetch_category_images(category, limit=5):
-    url = "https://commons.wikimedia.org/w/api.php"
-    params = {
-        "action": "query",
-        "list": "categorymembers",
-        "cmtitle": f"Category:{category}",
-        "cmtype": "file",
-        "cmlimit": limit,
-        "format": "json",
-        "origin": "*"
-    }
-
-    images = []
-
-    try:
-        r = requests.get(url, headers=HEADERS, params=params, timeout=20)
-        r.raise_for_status()
-        data = r.json()
-
-        for item in data.get("query", {}).get("categorymembers", []):
-            title = item["title"]
-            info = requests.get(
-                "https://commons.wikimedia.org/w/api.php",
-                headers=HEADERS,
-                params={
-                    "action": "query",
-                    "titles": title,
-                    "prop": "imageinfo",
-                    "iiprop": "url|size",
-                    "format": "json",
-                    "origin": "*"
-                },
-                timeout=20
-            ).json()
-
-            pages = info.get("query", {}).get("pages", {})
-            for p in pages.values():
-                img = p.get("imageinfo", [{}])[0]
-                if img.get("width", 0) >= 1000:
-                    images.append(img["url"])
-
-    except Exception as e:
-        print(f"⚠ Wikimedia category error ({category}):", e)
-
-    return images
-
-# ---------------- IMAGE COLLECTION ----------------
-def collect_vishnu_images():
-    collected = []
-
-    for cat in VISHNU_CATEGORIES:
-        if len(collected) >= MAX_IMAGES:
-            break
-        imgs = fetch_category_images(cat, limit=6)
-        for img in imgs:
-            if img not in collected:
-                collected.append(img)
-            if len(collected) >= MAX_IMAGES:
-                break
-        time.sleep(1)  # polite delay
-
-    return collected
-
-# ---------------- DOWNLOAD & PROCESS ----------------
-def prepare_images(urls, count):
+def generate_images(count):
     paths = []
-
-    if not urls:
-        print("⚠ No Wikimedia images. Creating Vishnu placeholders...")
-        for i in range(count):
-            path = f"{IMAGE_DIR}/{i:03d}.jpg"
-            make_vishnu_placeholder(path, "ॐ नमो नारायणाय")
-            paths.append(path)
-        return paths
-
     for i in range(count):
-        path = f"{IMAGE_DIR}/{i:03d}.jpg"
-        url = urls[i % len(urls)]
-
-        try:
-            r = requests.get(url, headers=HEADERS, timeout=20)
-            with open(path, "wb") as f:
-                f.write(r.content)
-            img = Image.open(path).convert("RGB")
-            img.thumbnail(IMAGE_SIZE, Image.Resampling.LANCZOS)
-            img.save(path)
-        except:
-            make_vishnu_placeholder(path, "ॐ नमो नारायणाय")
-
-        paths.append(path)
-
+        prompt = random.choice(PROMPTS)
+        print(f"🎨 Generating Vishnu image {i+1}/{count}")
+        paths.append(generate_image(prompt, i))
+        time.sleep(5)  # rate-limit safety
     return paths
 
 # ---------------- AUDIO ----------------
@@ -158,12 +76,12 @@ def generate_audio(blocks):
             await gen_audio(t, i)
     asyncio.run(runner())
 
-# ---------------- VIDEO ----------------
-def create_video(images, count):
+# ---------------- VIDEO CREATION ----------------
+def create_video(images, blocks_count):
     clips = []
 
-    for i in range(count):
-        img = images[i]
+    for i in range(blocks_count):
+        img = images[i % len(images)]
         aud = f"{AUDIO_DIR}/{i:03d}.mp3"
         clip = f"{VIDEO_DIR}/{i:03d}.mp4"
 
@@ -184,6 +102,7 @@ def create_video(images, count):
         ])
         clips.append(clip)
 
+    # Concatenate all clips
     with open("list.txt", "w") as f:
         for c in clips:
             f.write(f"file '{c}'\n")
@@ -199,22 +118,24 @@ def create_video(images, count):
 
 # ---------------- MAIN ----------------
 def main():
+    # Read script
     blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
+    intro = "नमस्कार। स्वागत है आप सभी का Sanatan Gyan Dhara श्रृंखला में। आज हम आपके लिए Vishnu Purana का पहला एपिसोड लाए हैं।"
+    outro = "\n\n🙏 अगर आपको यह वीडियो पसंद आया हो, तो कृपया लाइक, शेयर और सब्सक्राइब जरूर करें। हर दिन एक नया एपिसोड आएगा।"
+    blocks.insert(0, intro)
+    blocks.append(outro)
 
-    blocks.insert(0, "नमस्कार। आइए भगवान विष्णु के दिव्य स्वरूप का ध्यान करें।")
-    blocks.append("🙏 वीडियो पसंद आए तो Sanatan Gyan Dhara को सब्सक्राइब करें।")
+    # Generate images
+    print("🕉️ Generating Vishnu images automatically...")
+    image_files = generate_images(NUM_IMAGES)
 
-    print("🌐 Collecting authentic Vishnu images automatically...")
-    urls = collect_vishnu_images()
-
-    print(f"🖼 Images found: {len(urls)}")
-    images = prepare_images(urls, len(blocks))
-
-    print("🔊 Generating audio...")
+    # Generate audio
+    print("🔊 Generating audio blocks...")
     generate_audio(blocks)
 
+    # Create video
     print("🎬 Creating video...")
-    create_video(images, len(blocks))
+    create_video(image_files, len(blocks))
 
     print("✅ FINAL VIDEO READY:", FINAL_VIDEO)
 
