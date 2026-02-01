@@ -7,62 +7,74 @@ import edge_tts
 
 # ================= CONFIG =================
 SCRIPT_FILE = "script.txt"
+
 IMAGE_DIR = "images"
 AUDIO_DIR = "audio_blocks"
 VIDEO_DIR = "video_blocks"
+
 FINAL_VIDEO = "final_video.mp4"
-TANPURA_FILE = "audio/tanpura.mp3"
+TANPURA_FILE = "audio/tanpura.mp3"  # must exist
 
 W, H = 1280, 720
 
-# ================= FOLDERS =================
+VOICE = "hi-IN-MadhurNeural"
+
+# =========================================
+
 os.makedirs(IMAGE_DIR, exist_ok=True)
 os.makedirs(AUDIO_DIR, exist_ok=True)
 os.makedirs(VIDEO_DIR, exist_ok=True)
 
-# ================= UTILS =================
+
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-# ================= IMAGE (NO TEXT – NEVER BLACK) =================
+
+# ---------- BRIGHT VAIKUNTHA BACKGROUND ----------
 def create_vaikuntha_bg(out_path):
-    base = Image.new("RGB", (W, H), "#070300")
+    # Bright base (NOT black)
+    base = Image.new("RGB", (W, H), (60, 30, 10))
 
-    glow1 = Image.new("RGB", (W, H), "#2a1400")
-    glow1 = glow1.filter(ImageFilter.GaussianBlur(120))
+    glow1 = Image.new("RGB", (W, H), (255, 190, 90))
+    glow1 = glow1.filter(ImageFilter.GaussianBlur(260))
 
-    glow2 = Image.new("RGB", (W, H), "#1b0c00")
-    glow2 = glow2.filter(ImageFilter.GaussianBlur(200))
+    glow2 = Image.new("RGB", (W, H), (160, 90, 20))
+    glow2 = glow2.filter(ImageFilter.GaussianBlur(180))
 
-    img = Image.blend(base, glow1, 0.6)
-    img = Image.blend(img, glow2, 0.4)
+    img = Image.blend(base, glow1, 0.35)
+    img = Image.blend(img, glow2, 0.45)
 
-    img.save(out_path)
+    # Force brightness (YouTube-safe)
+    img = img.point(lambda p: min(255, int(p * 1.3)))
 
+    img.save(out_path, quality=95)
+
+
+# ---------- IMAGES ----------
 def prepare_images(blocks):
     for i in range(len(blocks)):
         out = f"{IMAGE_DIR}/{i:03d}.jpg"
         create_vaikuntha_bg(out)
 
-# ================= AUDIO =================
-async def gen_audio(text, idx):
-    out = f"{AUDIO_DIR}/{idx:03d}.mp3"
-    tts = edge_tts.Communicate(
-        text=text,
-        voice="hi-IN-MadhurNeural",
-        rate="-5%"
-    )
+
+# ---------- AUDIO ----------
+async def generate_audio_block(text, index):
+    out = f"{AUDIO_DIR}/{index:03d}.mp3"
+    tts = edge_tts.Communicate(text=text, voice=VOICE)
     await tts.save(out)
+
 
 def generate_audio(blocks):
     async def runner():
-        for i, t in enumerate(blocks):
-            if t.strip():
-                await gen_audio(t, i)
+        for i, text in enumerate(blocks):
+            if text.strip():
+                await generate_audio_block(text, i)
+
     asyncio.run(runner())
 
-# ================= VIDEO =================
+
+# ---------- VIDEO ----------
 def create_video(blocks):
     clips = []
 
@@ -78,15 +90,17 @@ def create_video(blocks):
             "-i", aud,
             "-i", TANPURA_FILE,
             "-filter_complex",
-            # narration 100%, tanpura 20%
-            "[2:a]volume=0.2[t];[1:a][t]amix=inputs=2:dropout_transition=2[a]",
+            # narration + soft tanpura
+            "[1:a][2:a]amix=inputs=2:weights=1 0.15:duration=first[a]",
             "-map", "0:v",
             "-map", "[a]",
             "-c:v", "libx264",
             "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
             "-shortest",
             out
         ])
+
         clips.append(out)
 
     with open("list.txt", "w") as f:
@@ -102,18 +116,26 @@ def create_video(blocks):
         FINAL_VIDEO
     ])
 
-# ================= MAIN =================
+
+# ---------- MAIN ----------
 def main():
     if not Path(SCRIPT_FILE).exists():
-        raise FileNotFoundError("script.txt missing")
+        raise FileNotFoundError("❌ script.txt not found")
 
     if not Path(TANPURA_FILE).exists():
-        raise FileNotFoundError("tanpura.mp3 missing")
+        raise FileNotFoundError("❌ tanpura.mp3 not found in audio/")
 
     blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
 
-    intro = "ॐ नमो नारायणाय। विष्णु पुराण की दिव्य कथा में आपका स्वागत है।"
-    outro = "यदि यह कथा आपको प्रिय लगी हो, तो कृपया इसे साझा करें। ॐ नमो नारायणाय।"
+    intro = (
+        "नमस्कार। आप सभी का स्वागत है। "
+        "आज हम विष्णु पुराण की दिव्य कथा आरंभ कर रहे हैं।"
+    )
+
+    outro = (
+        "🙏 यदि यह कथा आपको प्रिय लगी हो, "
+        "तो कृपया लाइक, शेयर और सब्सक्राइब अवश्य करें।"
+    )
 
     blocks.insert(0, intro)
     blocks.append(outro)
@@ -122,7 +144,8 @@ def main():
     generate_audio(blocks)
     create_video(blocks)
 
-    print("✅ FINAL VIDEO READY:", FINAL_VIDEO)
+    print("✅ FINAL VIDEO CREATED:", FINAL_VIDEO)
+
 
 if __name__ == "__main__":
     main()
