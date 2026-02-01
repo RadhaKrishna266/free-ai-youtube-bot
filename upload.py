@@ -31,31 +31,30 @@ def run(cmd):
 def fetch_images():
     headers = {"Authorization": PEXELS_API_KEY}
 
-    # 🎨 ART / ANIMATED STYLE QUERIES
     queries = [
-        "Vaikuntha Vishnu digital art",
-        "Vishnu illustration Hindu god",
-        "Lakshmi Narayan digital painting",
-        "Vishnu avatars illustration",
-        "Hindu god Vishnu artwork",
-        "Krishna Vishnu avatar illustration",
-        "Rama Vishnu avatar painting"
+        "Vishnu digital art",
+        "Vaikuntha Vishnu illustration",
+        "Lakshmi Narayan painting",
+        "Vishnu avatars artwork",
+        "Hindu god Vishnu illustration"
     ]
 
     urls = []
 
     for q in queries:
         print(f"🔍 Searching: {q}")
-        url = f"https://api.pexels.com/v1/search?query={q}&per_page=6&orientation=landscape"
-        r = requests.get(url, headers=headers, timeout=20)
+        r = requests.get(
+            f"https://api.pexels.com/v1/search?query={q}&per_page=8&orientation=landscape",
+            headers=headers,
+            timeout=20
+        )
 
         if r.status_code == 200:
-            photos = r.json().get("photos", [])
-            for p in photos:
+            for p in r.json().get("photos", []):
                 urls.append(p["src"]["large2x"])
 
     if not urls:
-        raise RuntimeError("❌ No animated / art Vishnu images found")
+        raise RuntimeError("❌ No Vishnu images found")
 
     random.shuffle(urls)
     return urls[:TOTAL_IMAGES]
@@ -74,12 +73,12 @@ def create_audio():
     if audio.exists():
         return audio
 
-    print("🎵 Creating background tanpura tone")
+    print("🎵 Creating background tanpura")
     run([
         "ffmpeg", "-y",
         "-f", "lavfi",
-        "-i", "sine=frequency=110:duration=180",
-        "-af", "volume=0.18",
+        "-i", "sine=frequency=110:duration=300",
+        "-af", "volume=0.25",
         str(audio)
     ])
     return audio
@@ -87,20 +86,14 @@ def create_audio():
 # ================= VIDEO BLOCKS =================
 def make_blocks(images, audio):
     blocks = []
-    frames = IMAGE_DURATION * FPS
 
     for i, img in enumerate(images):
         out = VID_DIR / f"{i:03}.mp4"
 
-        filter_complex = (
-            # background blur (fills screen)
-            f"[0:v]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
-            f"crop={WIDTH}:{HEIGHT},boxblur=25:1[bg];"
-            # foreground (NO CROP)
-            f"[0:v]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease,"
-            f"pad={WIDTH}:{HEIGHT}:(ow-iw)/2:(oh-ih)/2,"
-            f"zoompan=z='min(zoom+0.0005,1.06)':d={frames}:fps={FPS}[fg];"
-            f"[bg][fg]overlay=(W-w)/2:(H-h)/2"
+        # SAFE CINEMATIC ZOOM (NO zoompan)
+        vf = (
+            f"scale={WIDTH*1.1}:{HEIGHT*1.1},"
+            f"crop={WIDTH}:{HEIGHT}"
         )
 
         run([
@@ -108,10 +101,10 @@ def make_blocks(images, audio):
             "-loop", "1",
             "-i", str(img),
             "-i", str(audio),
-            "-filter_complex", filter_complex,
+            "-vf", vf,
+            "-t", str(IMAGE_DURATION),
             "-map", "0:v",
             "-map", "1:a",
-            "-t", str(IMAGE_DURATION),
             "-c:v", "libx264",
             "-pix_fmt", "yuv420p",
             "-shortest",
@@ -140,7 +133,7 @@ def concat(blocks):
 
 # ================= MAIN =================
 def main():
-    print("🛕 Fetching animated / art style Vishnu images...")
+    print("🛕 Fetching Vishnu artwork images...")
     urls = fetch_images()
 
     print("⬇ Downloading images...")
@@ -149,13 +142,13 @@ def main():
     print("🔊 Preparing audio...")
     audio = create_audio()
 
-    print("🎞 Creating devotional video...")
+    print("🎞 Creating video blocks...")
     blocks = make_blocks(images, audio)
 
     print("🎬 Merging final video...")
     concat(blocks)
 
-    print("✅ final_video.mp4 CREATED SUCCESSFULLY")
+    print("✅ final_video.mp4 READY")
 
 if __name__ == "__main__":
     main()
