@@ -1,169 +1,118 @@
 import os
 import subprocess
-import requests
-import json
-from pathlib import Path
 import edge_tts
-import asyncio
+from pathlib import Path
+from PIL import Image
+import requests
 
-# ================= CONFIG =================
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-
-IMAGE_DIR = "images"
-AUDIO_DIR = "audio"
-VIDEO_DIR = "video_blocks"
+# ---------------- CONFIG ----------------
+SCRIPT_FILE = "script.txt"  # Your narration script
+IMAGE_FOLDER = "images"     # AI images folder
+VIDEO_BLOCKS = "video_blocks"
+AUDIO_BLOCKS = "audio_blocks"
 FINAL_VIDEO = "final_video.mp4"
-
-WIDTH, HEIGHT = 1280, 720
+TANPURA_FILE = "audio/bg_tanpura.mp3"
+VIDEO_SIZE = (1280, 720)
 FPS = 25
-CLIP_DURATION = 6  # seconds per image
-VIDEO_DURATION = 12 * 60  # 12 minutes
-IMAGES_COUNT = VIDEO_DURATION // CLIP_DURATION  # ~120 images
+DURATION_PER_BLOCK = 6  # seconds per image block
+ZOOM_SPEED = 0.0005
+MAX_ZOOM = 1.06
+TANPURA_FREQ = 110
+TANPURA_VOLUME = 0.15
 
-os.makedirs(IMAGE_DIR, exist_ok=True)
-os.makedirs(AUDIO_DIR, exist_ok=True)
-os.makedirs(VIDEO_DIR, exist_ok=True)
+Path(VIDEO_BLOCKS).mkdir(exist_ok=True)
+Path(AUDIO_BLOCKS).mkdir(exist_ok=True)
+Path("audio").mkdir(exist_ok=True)
 
-# ================= IMAGE PROMPTS =================
-PROMPTS = [
-    # First image: Front cover
-    "Front cover of Vishnu Purana ancient Hindu scripture book, golden cover, Sanskrit text, temple background, ultra detailed digital art",
-    # Main scenes
-    "Lord Vishnu and Goddess Lakshmi seated on Sheshnag in Vaikuntha, divine light, celestial clouds, Hindu mythological digital painting",
-    "Vaikuntha loka, Vishnu resting on Sheshnag, cosmic ocean, glowing sky, spiritual digital art",
-    "Matsya avatar of Vishnu, cosmic waters, divine glow, Hindu illustration",
-    "Kurma avatar of Vishnu, Mount Mandara, Samudra Manthan, epic digital painting",
-    "Varaha avatar lifting Bhudevi, dramatic divine scene",
-    "Narasimha avatar protecting Prahlada, intense divine energy",
-    "Lord Rama avatar, bow and arrow, Ayodhya background, divine digital art",
-    "Lord Krishna avatar, flute, Vrindavan, divine aura",
-]
-
-# ================= UTILS =================
+# ---------------- UTILS ----------------
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-# ================= IMAGE GENERATION =================
-def generate_images():
-    print(f"🎨 Generating {IMAGES_COUNT} AI devotional images...")
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json"
-    }
-
-    for i in range(IMAGES_COUNT):
-        # Rotate prompts for variety
-        prompt = PROMPTS[i % len(PROMPTS)]
-        payload = {
-            "model": "gpt-image-1",
-            "prompt": prompt,
-            "size": "1280x720"
-        }
-
-        r = requests.post(
-            "https://api.openai.com/v1/images/generations",
-            headers=headers,
-            data=json.dumps(payload),
-            timeout=60
-        )
-
-        data = r.json()
-        img_url = data["data"][0]["url"]
-        img_data = requests.get(img_url).content
-
-        with open(f"{IMAGE_DIR}/{i:03d}.png", "wb") as f:
-            f.write(img_data)
-        print(f"✅ Image saved: {IMAGE_DIR}/{i:03d}.png")
-
-# ================= AUDIO =================
-async def generate_audio():
-    narration_file = f"{AUDIO_DIR}/narration.mp3"
-    text = (
-        "नमस्कार। आप देख रहे हैं सनातन ज्ञान धारा। "
-        "आज हम आपके लिए विष्णु पुराण का दिव्य प्रसंग प्रस्तुत कर रहे हैं। "
-        "भगवान विष्णु के अवतारों और वैकुंठ लोक की महिमा।"
-    )
-
-    # TTS Narration
-    tts = edge_tts.Communicate(text, voice="hi-IN-MadhurNeural")
-    await tts.save(narration_file)
-    print(f"✅ Narration saved: {narration_file}")
-
-    # Soft Tanpura
-    tanpura_file = f"{AUDIO_DIR}/tanpura.mp3"
-    if not os.path.exists(tanpura_file):
-        subprocess.run([
-            "ffmpeg", "-y",
-            "-f", "lavfi",
-            "-i", f"sine=frequency=110:duration={VIDEO_DURATION+60}",  # loop if needed
-            "-af", "volume=0.18",
-            tanpura_file
-        ], check=True)
-        print(f"✅ Soft tanpura saved: {tanpura_file}")
-
-    # Mix Narration + Tanpura
-    mixed_file = f"{AUDIO_DIR}/mixed.mp3"
-    subprocess.run([
-        "ffmpeg", "-y",
-        "-i", narration_file,
-        "-stream_loop", "-1",  # loop tanpura
-        "-i", tanpura_file,
-        "-filter_complex", "[0:a][1:a]amix=inputs=2:duration=longest:dropout_transition=2[a]",
-        "-map", "[a]",
-        mixed_file
-    ], check=True)
-    print(f"✅ Mixed narration + soft tanpura: {mixed_file}")
-
-    return mixed_file
-
-# ================= VIDEO =================
-def create_video(mixed_audio_file):
-    clips = []
-
-    for i in range(IMAGES_COUNT):
-        img = f"{IMAGE_DIR}/{i:03d}.png"
-        out = f"{VIDEO_DIR}/{i:03d}.mp4"
-
-        vf = f"zoompan=z='min(zoom+0.0006,1.08)':d={FPS*CLIP_DURATION}:s={WIDTH}x{HEIGHT}"
-
+# ---------------- TANPURA ----------------
+def create_tanpura_audio(path=TANPURA_FILE):
+    if not os.path.exists(path):
+        print("🎵 Creating light tanpura audio...")
         run([
-            "ffmpeg", "-y",
-            "-loop", "1",
-            "-i", img,
-            "-filter_complex", vf,
-            "-t", str(CLIP_DURATION),
-            "-pix_fmt", "yuv420p",
-            "-c:v", "libx264",
-            out
+            "ffmpeg", "-y", "-f", "lavfi", f"-i", f"sine=frequency={TANPURA_FREQ}:duration=180",
+            "-af", f"volume={TANPURA_VOLUME}", path
         ])
+    return path
 
-        clips.append(out)
-        print(f"✅ Video block created: {out}")
+# ---------------- NARRATION ----------------
+async def generate_single_narration(text, out_path):
+    communicate = edge_tts.Communicate(text, voice="hi-IN-MadhurNeural")
+    await communicate.save(out_path)
 
-    # Concatenate clips
-    with open("list.txt", "w") as f:
-        for c in clips:
-            f.write(f"file '{c}'\n")
+def generate_narration_blocks(script_path=SCRIPT_FILE):
+    # Read script
+    lines = [line.strip() for line in Path(script_path).read_text(encoding="utf-8").split("\n") if line.strip()]
+    
+    # Add intro/outro
+    intro = "नमस्कार। स्वागत है आप सभी का Sanatan Gyan Dhara श्रृंखला में। आज हम आपके लिए Vishnu Purana का पहला एपिसोड लाए हैं।"
+    outro = "🙏 अगर आपको यह वीडियो पसंद आया हो, तो कृपया लाइक, शेयर और सब्सक्राइब जरूर करें। हर दिन एक नया एपिसोड आएगा।"
+    
+    blocks = [intro] + lines + [outro]
+    
+    narr_files = []
+    import asyncio
+    for i, text in enumerate(blocks):
+        out_file = f"{AUDIO_BLOCKS}/{i:03}.mp3"
+        asyncio.run(generate_single_narration(text, out_file))
+        narr_files.append(out_file)
+    return narr_files
 
-    run([
+# ---------------- VIDEO BLOCK ----------------
+def create_video_block(img_path, narration_file, tanpura_file, output_file):
+    cmd = [
         "ffmpeg", "-y",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", "list.txt",
-        "-i", mixed_audio_file,
-        "-c:v", "copy",
-        "-c:a", "aac",
-        "-shortest",
-        FINAL_VIDEO
-    ])
-    print(f"✅ Final video ready: {FINAL_VIDEO}")
+        "-loop", "1", "-i", img_path,
+        "-i", narration_file,
+        "-i", tanpura_file,
+        "-filter_complex",
+        f"[0:v]scale={VIDEO_SIZE[0]}:{VIDEO_SIZE[1]}:force_original_aspect_ratio=decrease,"
+        f"pad={VIDEO_SIZE[0]}:{VIDEO_SIZE[1]}:(ow-iw)/2:(oh-ih)/2,"
+        f"zoompan=z='min(zoom+{ZOOM_SPEED},{MAX_ZOOM})':d={DURATION_PER_BLOCK*FPS}:fps={FPS}[v];"
+        f"[1:a][2:a]amix=inputs=2:duration=first[a]",
+        "-map", "[v]", "-map", "[a]",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        "-shortest", output_file
+    ]
+    run(cmd)
 
-# ================= MAIN =================
+def create_video_blocks(images, narr_files, tanpura_file):
+    blocks = []
+    for i, (img, narr) in enumerate(zip(images, narr_files)):
+        out_file = f"{VIDEO_BLOCKS}/{i:03}.mp4"
+        create_video_block(img, narr, tanpura_file, out_file)
+        blocks.append(out_file)
+    return blocks
+
+# ---------------- MERGE ----------------
+def merge_blocks(blocks, output_file=FINAL_VIDEO):
+    with open("blocks.txt", "w") as f:
+        for b in blocks:
+            f.write(f"file '{b}'\n")
+    run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", "blocks.txt", "-c", "copy", output_file])
+
+# ---------------- MAIN ----------------
 def main():
-    generate_images()
-    mixed_audio_file = asyncio.run(generate_audio())
-    create_video(mixed_audio_file)
+    print("🎨 Preparing AI images...")
+    images = sorted(Path(IMAGE_FOLDER).glob("*.*"))
+    if not images:
+        raise Exception(f"No images found in {IMAGE_FOLDER}/")
+    
+    print("🔊 Preparing audio...")
+    tanpura_file = create_tanpura_audio()
+    narr_files = generate_narration_blocks()
+    
+    print("🎞 Creating video blocks...")
+    blocks = create_video_blocks([str(img) for img in images], narr_files, tanpura_file)
+    
+    print("🔗 Merging video blocks...")
+    merge_blocks(blocks)
+    
+    print(f"✅ Final video ready: {FINAL_VIDEO}")
 
 if __name__ == "__main__":
     main()
