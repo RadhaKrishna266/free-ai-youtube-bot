@@ -3,9 +3,10 @@ import subprocess
 import requests
 import asyncio
 from pathlib import Path
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 import edge_tts
 import sys
+import time
 
 # ---------------- CONFIG ----------------
 SCRIPT_FILE = "script.txt"
@@ -16,13 +17,19 @@ FINAL_VIDEO = "final_video.mp4"
 TANPURA_FILE = "audio/tanpura.mp3"
 
 MAX_IMAGES = 10
+IMAGE_SIZE = (1280, 720)
 
-VISHNU_TERMS = [
+HEADERS = {
+    "User-Agent": "SanatanGyanDharaBot/1.0 (contact: sanatan@example.com)",
+    "Accept": "application/json"
+}
+
+VISHNU_CATEGORIES = [
     "Vishnu",
-    "Vaikuntha Vishnu",
-    "Ananta Shayana Vishnu",
-    "Lakshmi Narayan",
-    "Padmanabhaswamy Vishnu"
+    "Lakshmi_Narayana",
+    "Ananta_Shesh",
+    "Vaikuntha",
+    "Padmanabhaswamy_Temple"
 ]
 
 # ---------------- SETUP ----------------
@@ -34,68 +41,109 @@ def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-# ---------------- WIKIMEDIA (CORRECT WAY) ----------------
-def fetch_vishnu_images(term, limit=5):
+# ---------------- PLACEHOLDER (LAST RESORT) ----------------
+def make_vishnu_placeholder(path, text):
+    img = Image.new("RGB", IMAGE_SIZE, (10, 5, 0))
+    d = ImageDraw.Draw(img)
+    try:
+        font = ImageFont.truetype("DejaVuSans.ttf", 48)
+    except:
+        font = None
+    d.text((80, 320), text, fill=(255, 215, 0), font=font)
+    img.save(path)
+
+# ---------------- WIKIMEDIA CATEGORY FETCH ----------------
+def fetch_category_images(category, limit=5):
     url = "https://commons.wikimedia.org/w/api.php"
     params = {
         "action": "query",
-        "generator": "search",
-        "gsrsearch": f"intitle:{term}",
-        "gsrnamespace": 6,              # 🔑 FILE namespace
-        "gsrlimit": limit,
-        "prop": "imageinfo",
-        "iiprop": "url|size",
-        "iiurlwidth": 1920,
-        "format": "json"
+        "list": "categorymembers",
+        "cmtitle": f"Category:{category}",
+        "cmtype": "file",
+        "cmlimit": limit,
+        "format": "json",
+        "origin": "*"
     }
 
     images = []
 
     try:
-        r = requests.get(url, params=params, timeout=20).json()
-        pages = r.get("query", {}).get("pages", {})
-        for p in pages.values():
-            info = p.get("imageinfo", [{}])[0]
-            if info.get("width", 0) >= 1000:
-                images.append(info["url"])
+        r = requests.get(url, headers=HEADERS, params=params, timeout=20)
+        r.raise_for_status()
+        data = r.json()
+
+        for item in data.get("query", {}).get("categorymembers", []):
+            title = item["title"]
+            info = requests.get(
+                "https://commons.wikimedia.org/w/api.php",
+                headers=HEADERS,
+                params={
+                    "action": "query",
+                    "titles": title,
+                    "prop": "imageinfo",
+                    "iiprop": "url|size",
+                    "format": "json",
+                    "origin": "*"
+                },
+                timeout=20
+            ).json()
+
+            pages = info.get("query", {}).get("pages", {})
+            for p in pages.values():
+                img = p.get("imageinfo", [{}])[0]
+                if img.get("width", 0) >= 1000:
+                    images.append(img["url"])
+
     except Exception as e:
-        print("⚠ Wikimedia error:", e)
+        print(f"⚠ Wikimedia category error ({category}):", e)
 
     return images
 
 # ---------------- IMAGE COLLECTION ----------------
-def collect_images():
+def collect_vishnu_images():
     collected = []
 
-    for term in VISHNU_TERMS:
+    for cat in VISHNU_CATEGORIES:
         if len(collected) >= MAX_IMAGES:
             break
-        imgs = fetch_vishnu_images(term, limit=6)
+        imgs = fetch_category_images(cat, limit=6)
         for img in imgs:
             if img not in collected:
                 collected.append(img)
             if len(collected) >= MAX_IMAGES:
                 break
-
-    if not collected:
-        print("❌ Wikimedia returned 0 Vishnu images")
-        sys.exit(1)
+        time.sleep(1)  # polite delay
 
     return collected
 
-# ---------------- DOWNLOAD & PREP ----------------
-def prepare_images(urls):
+# ---------------- DOWNLOAD & PROCESS ----------------
+def prepare_images(urls, count):
     paths = []
-    for i, url in enumerate(urls):
-        path = f"{IMAGE_DIR}/{i:03d}.jpg"
-        r = requests.get(url, timeout=20)
-        with open(path, "wb") as f:
-            f.write(r.content)
 
-        img = Image.open(path).convert("RGB")
-        img.thumbnail((1280, 720), Image.Resampling.LANCZOS)
-        img.save(path)
+    if not urls:
+        print("⚠ No Wikimedia images. Creating Vishnu placeholders...")
+        for i in range(count):
+            path = f"{IMAGE_DIR}/{i:03d}.jpg"
+            make_vishnu_placeholder(path, "ॐ नमो नारायणाय")
+            paths.append(path)
+        return paths
+
+    for i in range(count):
+        path = f"{IMAGE_DIR}/{i:03d}.jpg"
+        url = urls[i % len(urls)]
+
+        try:
+            r = requests.get(url, headers=HEADERS, timeout=20)
+            with open(path, "wb") as f:
+                f.write(r.content)
+            img = Image.open(path).convert("RGB")
+            img.thumbnail(IMAGE_SIZE, Image.Resampling.LANCZOS)
+            img.save(path)
+        except:
+            make_vishnu_placeholder(path, "ॐ नमो नारायणाय")
+
         paths.append(path)
+
     return paths
 
 # ---------------- AUDIO ----------------
@@ -115,7 +163,7 @@ def create_video(images, count):
     clips = []
 
     for i in range(count):
-        img = images[i % len(images)]
+        img = images[i]
         aud = f"{AUDIO_DIR}/{i:03d}.mp3"
         clip = f"{VIDEO_DIR}/{i:03d}.mp4"
 
@@ -153,25 +201,22 @@ def create_video(images, count):
 def main():
     blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
 
-    blocks.insert(0,
-        "नमस्कार। आज हम भगवान विष्णु के दिव्य स्वरूप का ध्यान करेंगे।"
-    )
-    blocks.append(
-        "🙏 वीडियो पसंद आए तो लाइक और सब्सक्राइब करें।"
-    )
+    blocks.insert(0, "नमस्कार। आइए भगवान विष्णु के दिव्य स्वरूप का ध्यान करें।")
+    blocks.append("🙏 वीडियो पसंद आए तो Sanatan Gyan Dhara को सब्सक्राइब करें।")
 
-    print("🌐 Fetching Vishnu images from Wikimedia...")
-    image_urls = collect_images()
-    images = prepare_images(image_urls)
+    print("🌐 Collecting authentic Vishnu images automatically...")
+    urls = collect_vishnu_images()
 
-    print(f"🖼 Images collected: {len(images)}")
+    print(f"🖼 Images found: {len(urls)}")
+    images = prepare_images(urls, len(blocks))
+
     print("🔊 Generating audio...")
     generate_audio(blocks)
 
     print("🎬 Creating video...")
     create_video(images, len(blocks))
 
-    print("✅ FINAL VIDEO CREATED:", FINAL_VIDEO)
+    print("✅ FINAL VIDEO READY:", FINAL_VIDEO)
 
 if __name__ == "__main__":
     main()
