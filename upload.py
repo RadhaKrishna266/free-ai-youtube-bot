@@ -2,7 +2,7 @@ import os
 import subprocess
 import asyncio
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageFilter
 import edge_tts
 
 # ================= CONFIG =================
@@ -25,52 +25,25 @@ def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-# ================= IMAGE CREATION =================
-def create_divine_image(text, out_path):
-    img = Image.new("RGB", (W, H), "#050200")
+# ================= IMAGE (NO TEXT – NEVER BLACK) =================
+def create_vaikuntha_bg(out_path):
+    base = Image.new("RGB", (W, H), "#070300")
 
-    # Background glow
-    glow = Image.new("RGB", (W, H), "#1a0d00")
-    glow = glow.filter(ImageFilter.GaussianBlur(120))
-    img = Image.blend(img, glow, 0.6)
+    glow1 = Image.new("RGB", (W, H), "#2a1400")
+    glow1 = glow1.filter(ImageFilter.GaussianBlur(120))
 
-    draw = ImageDraw.Draw(img)
+    glow2 = Image.new("RGB", (W, H), "#1b0c00")
+    glow2 = glow2.filter(ImageFilter.GaussianBlur(200))
 
-    # Font
-    try:
-        font = ImageFont.truetype("DejaVuSans.ttf", 52)
-    except:
-        font = ImageFont.load_default()
-
-    # Text wrap
-    lines = []
-    words = text.split()
-    line = ""
-    for w in words:
-        if len(line + w) < 26:
-            line += w + " "
-        else:
-            lines.append(line)
-            line = w + " "
-    lines.append(line)
-
-    y = H//2 - len(lines)*35
-    for l in lines:
-        draw.text(
-            (W//2, y),
-            l.strip(),
-            fill=(255, 215, 140),
-            font=font,
-            anchor="mm"
-        )
-        y += 70
+    img = Image.blend(base, glow1, 0.6)
+    img = Image.blend(img, glow2, 0.4)
 
     img.save(out_path)
 
 def prepare_images(blocks):
-    for i, text in enumerate(blocks):
+    for i in range(len(blocks)):
         out = f"{IMAGE_DIR}/{i:03d}.jpg"
-        create_divine_image(text, out)
+        create_vaikuntha_bg(out)
 
 # ================= AUDIO =================
 async def gen_audio(text, idx):
@@ -105,7 +78,8 @@ def create_video(blocks):
             "-i", aud,
             "-i", TANPURA_FILE,
             "-filter_complex",
-            "[1:a][2:a]amix=inputs=2:weights=2 0.5[a]",
+            # narration 100%, tanpura 20%
+            "[2:a]volume=0.2[t];[1:a][t]amix=inputs=2:dropout_transition=2[a]",
             "-map", "0:v",
             "-map", "[a]",
             "-c:v", "libx264",
@@ -139,7 +113,7 @@ def main():
     blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
 
     intro = "ॐ नमो नारायणाय। विष्णु पुराण की दिव्य कथा में आपका स्वागत है।"
-    outro = "इस दिव्य ज्ञान को आगे बढ़ाएँ। Like, Share और Subscribe करें। ॐ नमो नारायणाय।"
+    outro = "यदि यह कथा आपको प्रिय लगी हो, तो कृपया इसे साझा करें। ॐ नमो नारायणाय।"
 
     blocks.insert(0, intro)
     blocks.append(outro)
