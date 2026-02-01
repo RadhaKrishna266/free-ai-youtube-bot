@@ -13,10 +13,12 @@ IMAGE_DIR = "images"
 AUDIO_DIR = "audio_blocks"
 VIDEO_DIR = "video_blocks"
 FINAL_VIDEO = "final_video.mp4"
-TANPURA_FILE = "audio/tanpura.mp3"  # Make sure this exists
+
+TANPURA_FILE = "audio/tanpura.mp3"   # must exist
 PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY")
-QUERY = "Vaikunth Vishnu Lakshmi Narayan"
-BLOCKS = 5  # Number of blocks/images in video
+
+BLOCKS = 5
+PIXABAY_QUERY = "Lord Vishnu statue"
 
 # ---------------- CREATE FOLDERS ----------------
 os.makedirs(IMAGE_DIR, exist_ok=True)
@@ -31,30 +33,68 @@ def run(cmd):
 def placeholder(path, text="ॐ नमो नारायणाय"):
     img = Image.new("RGB", (1280, 720), (10, 5, 0))
     d = ImageDraw.Draw(img)
-    font = None
     try:
         font = ImageFont.truetype("arial.ttf", 48)
     except:
-        pass
+        font = None
     d.text((60, 330), text, fill=(255, 215, 0), font=font)
     img.save(path)
 
-# ---------------- PIXABAY IMAGE FETCH ----------------
-def fetch_pixabay_images(query, count):
-    url = f"https://pixabay.com/api/?key={PIXABAY_API_KEY}&q={query}&image_type=photo&orientation=horizontal&per_page={count}"
+# ---------------- WIKIMEDIA COMMONS ----------------
+def fetch_commons_images(category, count):
+    url = f"https://commons.wikimedia.org/wiki/Category:{category.replace(' ', '_')}"
+    images = []
+
     try:
-        res = requests.get(url).json()
-        hits = res.get("hits", [])
-        if len(hits) < count:
-            raise Exception("Not enough images from Pixabay")
-        urls = [h["largeImageURL"] for h in hits]
-        return urls
+        html = requests.get(url, timeout=20).text
+        soup = BeautifulSoup(html, "html.parser")
+
+        for img in soup.select("img"):
+            src = img.get("src")
+            if src and src.startswith("//upload.wikimedia.org"):
+                images.append("https:" + src)
+            if len(images) >= count:
+                break
+
     except Exception as e:
-        print("⚠ Failed to fetch from Pixabay:", e)
+        print("⚠ Wikimedia error:", e)
+
+    return images
+
+# ---------------- PIXABAY FALLBACK ----------------
+def fetch_pixabay_images(query, count):
+    url = "https://pixabay.com/api/"
+    params = {
+        "key": PIXABAY_API_KEY,
+        "q": query,
+        "image_type": "photo",
+        "orientation": "horizontal",
+        "category": "religion",
+        "editors_choice": "true",
+        "per_page": count * 3,
+        "safesearch": "true"
+    }
+
+    try:
+        res = requests.get(url, params=params, timeout=20).json()
+        hits = res.get("hits", [])
+
+        filtered = []
+        for h in hits:
+            tags = h.get("tags", "").lower()
+            if any(k in tags for k in ["vishnu", "lakshmi", "narayan"]):
+                filtered.append(h["largeImageURL"])
+
+        return filtered[:count]
+
+    except Exception as e:
+        print("⚠ Pixabay error:", e)
         return []
 
+# ---------------- IMAGE DOWNLOAD ----------------
 def download_images(urls):
     paths = []
+
     for i, url in enumerate(urls):
         path = f"{IMAGE_DIR}/{i:03d}.jpg"
         try:
@@ -62,36 +102,36 @@ def download_images(urls):
             if r.status_code == 200:
                 with open(path, "wb") as f:
                     f.write(r.content)
-                paths.append(path)
             else:
                 placeholder(path)
-                paths.append(path)
         except:
             placeholder(path)
-            paths.append(path)
+
+        paths.append(path)
+
     return paths
 
-# ---------------- PROCESS IMAGES ----------------
+# ---------------- IMAGE PROCESS ----------------
 def process_images(image_paths):
-    processed = []
     for path in image_paths:
-        img = Image.open(path)
-        # Resize while keeping aspect ratio
+        img = Image.open(path).convert("RGB")
         img.thumbnail((1280, 720), Image.Resampling.LANCZOS)
-        # Ensure width & height divisible by 2
-        new_w = img.width + img.width % 2
-        new_h = img.height + img.height % 2
-        new_img = Image.new("RGB", (new_w, new_h), (0, 0, 0))  # black background
-        new_img.paste(img, ((new_w - img.width)//2, (new_h - img.height)//2))
-        new_img.save(path)
-        processed.append(path)
-    return processed
 
-# ---------------- AUDIO GENERATION ----------------
+        w, h = img.size
+        w += w % 2
+        h += h % 2
+
+        bg = Image.new("RGB", (w, h), (0, 0, 0))
+        bg.paste(img, ((w - img.width)//2, (h - img.height)//2))
+        bg.save(path)
+
+    return image_paths
+
+# ---------------- AUDIO ----------------
 async def generate_single_audio(text, index):
     out = f"{AUDIO_DIR}/{index:03d}.mp3"
-    communicate = edge_tts.Communicate(text=text, voice="hi-IN-MadhurNeural")
-    await communicate.save(out)
+    voice = edge_tts.Communicate(text=text, voice="hi-IN-MadhurNeural")
+    await voice.save(out)
 
 def generate_audio(blocks):
     async def runner():
@@ -100,13 +140,15 @@ def generate_audio(blocks):
                 await generate_single_audio(text, i)
     asyncio.run(runner())
 
-# ---------------- VIDEO CREATION ----------------
-def create_video(image_files, blocks_count):
+# ---------------- VIDEO ----------------
+def create_video(images, count):
     clips = []
-    for i in range(blocks_count):
-        img = image_files[i]
+
+    for i in range(count):
+        img = images[i]
         aud = f"{AUDIO_DIR}/{i:03d}.mp3"
         clip = f"{VIDEO_DIR}/{i:03d}.mp4"
+
         cmd = [
             "ffmpeg", "-y",
             "-loop", "1",
@@ -114,7 +156,7 @@ def create_video(image_files, blocks_count):
             "-i", aud,
             "-i", TANPURA_FILE,
             "-filter_complex",
-            "[2:a]volume=0.2[a2];[1:a][a2]amix=inputs=2:duration=first:dropout_transition=2[a]",
+            "[2:a]volume=0.2[a2];[1:a][a2]amix=inputs=2:duration=first[a]",
             "-map", "0:v",
             "-map", "[a]",
             "-c:v", "libx264",
@@ -122,13 +164,14 @@ def create_video(image_files, blocks_count):
             "-shortest",
             clip
         ]
+
         run(cmd)
         clips.append(clip)
 
-    # Concatenate clips
     with open("list.txt", "w") as f:
         for c in clips:
             f.write(f"file '{c}'\n")
+
     run([
         "ffmpeg", "-y",
         "-f", "concat",
@@ -140,24 +183,36 @@ def create_video(image_files, blocks_count):
 
 # ---------------- MAIN ----------------
 def main():
-    # Read script
     blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
-    intro = "नमस्कार। स्वागत है आप सभी का VishnuPriya श्रृंखला में। आज हम आपके लिए Vishnu Purana का पहला एपिसोड लाए हैं।"
-    outro = "\n\n🙏 अगर आपको यह वीडियो पसंद आया हो, तो कृपया लाइक, शेयर और सब्सक्राइब जरूर करें। हर दिन एक नया एपिसोड आएगा।"
+
+    intro = (
+        "नमस्कार। स्वागत है आप सभी का "
+        "Sanatan Gyan Dhara चैनल पर। "
+        "आज हम आपके लिए विष्णु पुराण का प्रथम एपिसोड प्रस्तुत कर रहे हैं।"
+    )
+
+    outro = (
+        "🙏 यदि आपको यह वीडियो पसंद आया हो, "
+        "तो कृपया लाइक, शेयर और सब्सक्राइब अवश्य करें। "
+        "Sanatan Gyan Dhara पर प्रतिदिन नया ज्ञान।"
+    )
+
     blocks.insert(0, intro)
     blocks.append(outro)
 
-    # Fetch and process images
-    print("🌐 Fetching high-res images from Pixabay...")
-    urls = fetch_pixabay_images(QUERY, BLOCKS)
+    print("🌐 Fetching images from Wikimedia Commons...")
+    urls = fetch_commons_images("Vishnu", BLOCKS)
+
+    if len(urls) < BLOCKS:
+        print("⚠ Falling back to Pixabay...")
+        urls = fetch_pixabay_images(PIXABAY_QUERY, BLOCKS)
+
     image_files = download_images(urls)
     image_files = process_images(image_files)
 
-    # Generate audio
-    print("🔊 Generating audio blocks...")
+    print("🔊 Generating audio...")
     generate_audio(blocks)
 
-    # Create video
     print("🎬 Creating video...")
     create_video(image_files, BLOCKS)
 
