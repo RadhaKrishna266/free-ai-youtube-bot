@@ -1,91 +1,138 @@
 import os
-import time
-import random
+import subprocess
 import requests
 import asyncio
-import subprocess
 from pathlib import Path
 from PIL import Image
-from io import BytesIO
 import edge_tts
+import random
 
-# ---------------- CONFIG ----------------
+# ================= CONFIG =================
 SCRIPT_FILE = "script.txt"
+
 IMAGE_DIR = "images"
 AUDIO_DIR = "audio_blocks"
 VIDEO_DIR = "video_blocks"
+
 FINAL_VIDEO = "final_video.mp4"
 TANPURA_FILE = "audio/tanpura.mp3"
 
-NUM_IMAGES = 5
-IMAGE_SIZE = (1280, 720)
+PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY")
 
-HF_API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2-1"
+TARGET_IMAGES = 6   # number of visual blocks
 
-PROMPTS = [
-    "Lord Vishnu Hindu god blue skin four arms holding shankha chakra gada padma, divine light, ultra realistic, 4k",
-    "Lord Vishnu resting on Ananta Shesha cosmic ocean, glowing aura, devotional art, high detail",
-    "Vishnu standing in Vaikuntha, golden crown, lotus flowers, celestial background, realistic painting",
-    "Hindu god Vishnu divine portrait, blue complexion, peaceful face, spiritual light, 4k realism",
-    "Lord Vishnu with Lakshmi blessing devotees, sacred atmosphere, temple art style, ultra detailed"
+PEXELS_QUERIES = [
+    "lord vishnu painting",
+    "vishnu temple india",
+    "hindu temple art",
+    "vaikuntha art painting",
+    "hindu devotional art",
+    "narayana painting"
 ]
 
-NEGATIVE_PROMPT = "blurry, distorted, extra limbs, low quality, cartoon, anime"
-
-# ---------------- SETUP ----------------
+# ================= SETUP =================
 os.makedirs(IMAGE_DIR, exist_ok=True)
 os.makedirs(AUDIO_DIR, exist_ok=True)
 os.makedirs(VIDEO_DIR, exist_ok=True)
 
-# ---------------- UTILS ----------------
+# ================= UTILS =================
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-# ---------------- AI IMAGE GENERATION ----------------
-def generate_image(prompt, index):
-    payload = {"inputs": f"{prompt}. Negative prompt: {NEGATIVE_PROMPT}"}
-    response = requests.post(HF_API_URL, json=payload, timeout=120)
-    if response.status_code != 200:
-        raise RuntimeError(f"Image generation failed: {response.text}")
-    image = Image.open(BytesIO(response.content)).convert("RGB")
-    image.thumbnail(IMAGE_SIZE, Image.Resampling.LANCZOS)
-    path = os.path.join(IMAGE_DIR, f"{index:03d}.jpg")
-    image.save(path)
-    print(f"✅ Saved {path}")
-    return path
+# ================= IMAGE FETCH =================
+def fetch_pexels_images():
+    if not PEXELS_API_KEY:
+        raise RuntimeError("PEXELS_API_KEY not set")
 
-def generate_images(count):
+    headers = {"Authorization": PEXELS_API_KEY}
+    collected = []
+
+    for query in PEXELS_QUERIES:
+        if len(collected) >= TARGET_IMAGES:
+            break
+
+        url = "https://api.pexels.com/v1/search"
+        params = {
+            "query": query,
+            "per_page": 5,
+            "orientation": "landscape"
+        }
+
+        try:
+            r = requests.get(url, headers=headers, params=params, timeout=20)
+            data = r.json()
+            photos = data.get("photos", [])
+
+            random.shuffle(photos)
+            for p in photos:
+                img_url = p["src"]["large"]
+                if img_url not in collected:
+                    collected.append(img_url)
+                if len(collected) >= TARGET_IMAGES:
+                    break
+
+        except Exception as e:
+            print("⚠ Pexels error:", e)
+
+    return collected
+
+def download_images(urls):
     paths = []
-    for i in range(count):
-        prompt = random.choice(PROMPTS)
-        print(f"🎨 Generating Vishnu image {i+1}/{count}")
-        paths.append(generate_image(prompt, i))
-        time.sleep(5)  # rate-limit safety
+    for i, url in enumerate(urls):
+        path = f"{IMAGE_DIR}/{i:03d}.jpg"
+        try:
+            r = requests.get(url, timeout=20)
+            if r.status_code == 200:
+                with open(path, "wb") as f:
+                    f.write(r.content)
+                paths.append(path)
+        except:
+            pass
     return paths
 
-# ---------------- AUDIO ----------------
+def process_images(paths):
+    final = []
+    for p in paths:
+        img = Image.open(p).convert("RGB")
+        img.thumbnail((1280, 720), Image.Resampling.LANCZOS)
+
+        bg = Image.new("RGB", (1280, 720), (0, 0, 0))
+        bg.paste(
+            img,
+            ((1280 - img.width)//2, (720 - img.height)//2)
+        )
+        bg.save(p)
+        final.append(p)
+
+    return final
+
+# ================= AUDIO =================
 async def gen_audio(text, idx):
     out = f"{AUDIO_DIR}/{idx:03d}.mp3"
-    tts = edge_tts.Communicate(text=text, voice="hi-IN-MadhurNeural")
+    tts = edge_tts.Communicate(
+        text=text,
+        voice="hi-IN-MadhurNeural"
+    )
     await tts.save(out)
 
 def generate_audio(blocks):
     async def runner():
         for i, t in enumerate(blocks):
-            await gen_audio(t, i)
+            if t.strip():
+                await gen_audio(t, i)
     asyncio.run(runner())
 
-# ---------------- VIDEO CREATION ----------------
+# ================= VIDEO =================
 def create_video(images, blocks_count):
     clips = []
 
     for i in range(blocks_count):
-        img = images[i % len(images)]
+        img = images[i]
         aud = f"{AUDIO_DIR}/{i:03d}.mp3"
         clip = f"{VIDEO_DIR}/{i:03d}.mp4"
 
-        run([
+        cmd = [
             "ffmpeg", "-y",
             "-loop", "1",
             "-i", img,
@@ -96,13 +143,13 @@ def create_video(images, blocks_count):
             "-map", "0:v",
             "-map", "[a]",
             "-c:v", "libx264",
-            "-c:a", "aac",
+            "-pix_fmt", "yuv420p",
             "-shortest",
             clip
-        ])
+        ]
+        run(cmd)
         clips.append(clip)
 
-    # Concatenate all clips
     with open("list.txt", "w") as f:
         for c in clips:
             f.write(f"file '{c}'\n")
@@ -116,28 +163,38 @@ def create_video(images, blocks_count):
         FINAL_VIDEO
     ])
 
-# ---------------- MAIN ----------------
+# ================= MAIN =================
 def main():
-    # Read script
+    print("🌐 Fetching devotional images from Pexels...")
+    urls = fetch_pexels_images()
+
+    if not urls:
+        raise RuntimeError("No images fetched from Pexels")
+
+    images = download_images(urls)
+    images = process_images(images)
+
     blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
-    intro = "नमस्कार। स्वागत है आप सभी का Sanatan Gyan Dhara श्रृंखला में। आज हम आपके लिए Vishnu Purana का पहला एपिसोड लाए हैं।"
-    outro = "\n\n🙏 अगर आपको यह वीडियो पसंद आया हो, तो कृपया लाइक, शेयर और सब्सक्राइब जरूर करें। हर दिन एक नया एपिसोड आएगा।"
-    blocks.insert(0, intro)
-    blocks.append(outro)
 
-    # Generate images
-    print("🕉️ Generating Vishnu images automatically...")
-    image_files = generate_images(NUM_IMAGES)
+    intro = (
+        "नमस्कार। आप देख रहे हैं Sanatan Gyan Dhara। "
+        "आज हम भगवान विष्णु के दिव्य स्वरूप और वैकुण्ठ धाम के रहस्यों के बारे में जानेंगे।"
+    )
+    outro = (
+        "🙏 यदि यह वीडियो आपको पसंद आया हो, तो कृपया लाइक, शेयर और सब्सक्राइब करें। "
+        "Sanatan Gyan Dhara के साथ जुड़े रहें।"
+    )
 
-    # Generate audio
-    print("🔊 Generating audio blocks...")
-    generate_audio(blocks)
+    blocks = [intro] + blocks + [outro]
 
-    # Create video
-    print("🎬 Creating video...")
-    create_video(image_files, len(blocks))
+    final_count = min(len(images), len(blocks))
 
-    print("✅ FINAL VIDEO READY:", FINAL_VIDEO)
+    print(f"✅ Using {final_count} blocks")
+
+    generate_audio(blocks[:final_count])
+    create_video(images[:final_count], final_count)
+
+    print("🎉 FINAL VIDEO READY:", FINAL_VIDEO)
 
 if __name__ == "__main__":
     main()
