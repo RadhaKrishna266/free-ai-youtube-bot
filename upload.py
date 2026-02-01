@@ -13,37 +13,35 @@ IMAGE_DIR = "images"
 AUDIO_DIR = "audio_blocks"
 VIDEO_DIR = "video_blocks"
 FINAL_VIDEO = "final_video.mp4"
-
 TANPURA_FILE = "audio/tanpura.mp3"
 
-MAX_IMAGES = 8
+MAX_IMAGES = 10
 
 VISHNU_TERMS = [
     "Vishnu",
     "Vaikuntha Vishnu",
     "Ananta Shayana Vishnu",
     "Lakshmi Narayan",
-    "Padmanabhaswamy Vishnu",
-    "Chaturbhuja Vishnu"
+    "Padmanabhaswamy Vishnu"
 ]
 
-# ---------------- CREATE FOLDERS ----------------
+# ---------------- SETUP ----------------
 os.makedirs(IMAGE_DIR, exist_ok=True)
 os.makedirs(AUDIO_DIR, exist_ok=True)
 os.makedirs(VIDEO_DIR, exist_ok=True)
 
-# ---------------- UTILS ----------------
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-# ---------------- WIKIMEDIA API (PROPER WAY) ----------------
-def fetch_wikimedia_images(search, limit=3):
+# ---------------- WIKIMEDIA (CORRECT WAY) ----------------
+def fetch_vishnu_images(term, limit=5):
     url = "https://commons.wikimedia.org/w/api.php"
     params = {
         "action": "query",
         "generator": "search",
-        "gsrsearch": search,
+        "gsrsearch": f"intitle:{term}",
+        "gsrnamespace": 6,              # 🔑 FILE namespace
         "gsrlimit": limit,
         "prop": "imageinfo",
         "iiprop": "url|size",
@@ -56,37 +54,36 @@ def fetch_wikimedia_images(search, limit=3):
     try:
         r = requests.get(url, params=params, timeout=20).json()
         pages = r.get("query", {}).get("pages", {})
-
         for p in pages.values():
             info = p.get("imageinfo", [{}])[0]
             if info.get("width", 0) >= 1000:
                 images.append(info["url"])
-    except:
-        pass
+    except Exception as e:
+        print("⚠ Wikimedia error:", e)
 
     return images
 
-# ---------------- COLLECT VISHNU IMAGES ----------------
-def collect_vishnu_images():
-    images = []
+# ---------------- IMAGE COLLECTION ----------------
+def collect_images():
+    collected = []
 
     for term in VISHNU_TERMS:
-        if len(images) >= MAX_IMAGES:
+        if len(collected) >= MAX_IMAGES:
             break
-        imgs = fetch_wikimedia_images(term, limit=4)
+        imgs = fetch_vishnu_images(term, limit=6)
         for img in imgs:
-            if img not in images:
-                images.append(img)
-            if len(images) >= MAX_IMAGES:
+            if img not in collected:
+                collected.append(img)
+            if len(collected) >= MAX_IMAGES:
                 break
 
-    if not images:
-        print("❌ No Vishnu images found automatically")
+    if not collected:
+        print("❌ Wikimedia returned 0 Vishnu images")
         sys.exit(1)
 
-    return images
+    return collected
 
-# ---------------- DOWNLOAD & PROCESS ----------------
+# ---------------- DOWNLOAD & PREP ----------------
 def prepare_images(urls):
     paths = []
     for i, url in enumerate(urls):
@@ -98,15 +95,14 @@ def prepare_images(urls):
         img = Image.open(path).convert("RGB")
         img.thumbnail((1280, 720), Image.Resampling.LANCZOS)
         img.save(path)
-
         paths.append(path)
     return paths
 
 # ---------------- AUDIO ----------------
 async def gen_audio(text, idx):
     out = f"{AUDIO_DIR}/{idx:03d}.mp3"
-    voice = edge_tts.Communicate(text=text, voice="hi-IN-MadhurNeural")
-    await voice.save(out)
+    tts = edge_tts.Communicate(text=text, voice="hi-IN-MadhurNeural")
+    await tts.save(out)
 
 def generate_audio(blocks):
     async def runner():
@@ -115,10 +111,10 @@ def generate_audio(blocks):
     asyncio.run(runner())
 
 # ---------------- VIDEO ----------------
-def create_video(images, blocks_count):
+def create_video(images, count):
     clips = []
 
-    for i in range(blocks_count):
+    for i in range(count):
         img = images[i % len(images)]
         aud = f"{AUDIO_DIR}/{i:03d}.mp3"
         clip = f"{VIDEO_DIR}/{i:03d}.mp4"
@@ -158,25 +154,24 @@ def main():
     blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
 
     blocks.insert(0,
-        "नमस्कार। स्वागत है आप सभी का Sanatan Gyan Dhara चैनल पर। "
-        "आज हम भगवान विष्णु के दिव्य स्वरूप का स्मरण करेंगे।"
+        "नमस्कार। आज हम भगवान विष्णु के दिव्य स्वरूप का ध्यान करेंगे।"
     )
     blocks.append(
-        "🙏 वीडियो पसंद आए तो लाइक, शेयर और सब्सक्राइब अवश्य करें। "
-        "Sanatan Gyan Dhara — सनातन ज्ञान की धारा।"
+        "🙏 वीडियो पसंद आए तो लाइक और सब्सक्राइब करें।"
     )
 
-    print("🌐 Collecting authentic Vishnu images automatically...")
-    image_urls = collect_vishnu_images()
+    print("🌐 Fetching Vishnu images from Wikimedia...")
+    image_urls = collect_images()
     images = prepare_images(image_urls)
 
-    print(f"🖼 Vishnu images collected: {len(images)}")
-    print(f"📜 Script blocks: {len(blocks)}")
-
+    print(f"🖼 Images collected: {len(images)}")
+    print("🔊 Generating audio...")
     generate_audio(blocks)
+
+    print("🎬 Creating video...")
     create_video(images, len(blocks))
 
-    print("✅ FINAL VIDEO READY:", FINAL_VIDEO)
+    print("✅ FINAL VIDEO CREATED:", FINAL_VIDEO)
 
 if __name__ == "__main__":
     main()
