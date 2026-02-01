@@ -3,9 +3,8 @@ import subprocess
 import requests
 import asyncio
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 import edge_tts
-from bs4 import BeautifulSoup
 import sys
 
 # ---------------- CONFIG ----------------
@@ -16,10 +15,17 @@ VIDEO_DIR = "video_blocks"
 FINAL_VIDEO = "final_video.mp4"
 
 TANPURA_FILE = "audio/tanpura.mp3"
-PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY")
 
-BLOCKS = 5
-PIXABAY_QUERY = "Lord Vishnu statue"
+MAX_IMAGES = 8
+
+VISHNU_TERMS = [
+    "Vishnu",
+    "Vaikuntha Vishnu",
+    "Ananta Shayana Vishnu",
+    "Lakshmi Narayan",
+    "Padmanabhaswamy Vishnu",
+    "Chaturbhuja Vishnu"
+]
 
 # ---------------- CREATE FOLDERS ----------------
 os.makedirs(IMAGE_DIR, exist_ok=True)
@@ -31,99 +37,70 @@ def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-def placeholder(path, text="ॐ नमो नारायणाय"):
-    img = Image.new("RGB", (1280, 720), (10, 5, 0))
-    d = ImageDraw.Draw(img)
-    try:
-        font = ImageFont.truetype("arial.ttf", 48)
-    except:
-        font = None
-    d.text((60, 330), text, fill=(255, 215, 0), font=font)
-    img.save(path)
+# ---------------- WIKIMEDIA API (PROPER WAY) ----------------
+def fetch_wikimedia_images(search, limit=3):
+    url = "https://commons.wikimedia.org/w/api.php"
+    params = {
+        "action": "query",
+        "generator": "search",
+        "gsrsearch": search,
+        "gsrlimit": limit,
+        "prop": "imageinfo",
+        "iiprop": "url|size",
+        "iiurlwidth": 1920,
+        "format": "json"
+    }
 
-# ---------------- WIKIMEDIA ----------------
-def fetch_commons_images(category, count):
-    url = f"https://commons.wikimedia.org/wiki/Category:{category.replace(' ', '_')}"
     images = []
 
     try:
-        html = requests.get(url, timeout=20).text
-        soup = BeautifulSoup(html, "html.parser")
+        r = requests.get(url, params=params, timeout=20).json()
+        pages = r.get("query", {}).get("pages", {})
 
-        for img in soup.select("img"):
-            src = img.get("src")
-            if src and src.startswith("//upload.wikimedia.org"):
-                images.append("https:" + src)
-            if len(images) >= count:
-                break
-    except Exception as e:
-        print("⚠ Wikimedia error:", e)
+        for p in pages.values():
+            info = p.get("imageinfo", [{}])[0]
+            if info.get("width", 0) >= 1000:
+                images.append(info["url"])
+    except:
+        pass
 
     return images
 
-# ---------------- PIXABAY ----------------
-def fetch_pixabay_images(query, count):
-    if not PIXABAY_API_KEY:
-        return []
+# ---------------- COLLECT VISHNU IMAGES ----------------
+def collect_vishnu_images():
+    images = []
 
-    url = "https://pixabay.com/api/"
-    params = {
-        "key": PIXABAY_API_KEY,
-        "q": query,
-        "image_type": "photo",
-        "orientation": "horizontal",
-        "category": "religion",
-        "safesearch": "true",
-        "per_page": count * 3
-    }
+    for term in VISHNU_TERMS:
+        if len(images) >= MAX_IMAGES:
+            break
+        imgs = fetch_wikimedia_images(term, limit=4)
+        for img in imgs:
+            if img not in images:
+                images.append(img)
+            if len(images) >= MAX_IMAGES:
+                break
 
-    try:
-        res = requests.get(url, params=params, timeout=20).json()
-        hits = res.get("hits", [])
+    if not images:
+        print("❌ No Vishnu images found automatically")
+        sys.exit(1)
 
-        out = []
-        for h in hits:
-            tags = h.get("tags", "").lower()
-            if any(k in tags for k in ["vishnu", "narayan", "lakshmi"]):
-                out.append(h["largeImageURL"])
+    return images
 
-        return out[:count]
-    except Exception as e:
-        print("⚠ Pixabay error:", e)
-        return []
-
-# ---------------- IMAGES ----------------
-def download_images(urls):
+# ---------------- DOWNLOAD & PROCESS ----------------
+def prepare_images(urls):
     paths = []
     for i, url in enumerate(urls):
         path = f"{IMAGE_DIR}/{i:03d}.jpg"
-        try:
-            r = requests.get(url, timeout=20)
-            if r.status_code == 200:
-                with open(path, "wb") as f:
-                    f.write(r.content)
-            else:
-                placeholder(path)
-        except:
-            placeholder(path)
+        r = requests.get(url, timeout=20)
+        with open(path, "wb") as f:
+            f.write(r.content)
+
+        img = Image.open(path).convert("RGB")
+        img.thumbnail((1280, 720), Image.Resampling.LANCZOS)
+        img.save(path)
+
         paths.append(path)
     return paths
-
-def process_images(paths):
-    out = []
-    for p in paths:
-        img = Image.open(p).convert("RGB")
-        img.thumbnail((1280, 720), Image.Resampling.LANCZOS)
-
-        w, h = img.size
-        w += w % 2
-        h += h % 2
-
-        bg = Image.new("RGB", (w, h), (0, 0, 0))
-        bg.paste(img, ((w - img.width)//2, (h - img.height)//2))
-        bg.save(p)
-        out.append(p)
-    return out
 
 # ---------------- AUDIO ----------------
 async def gen_audio(text, idx):
@@ -134,25 +111,17 @@ async def gen_audio(text, idx):
 def generate_audio(blocks):
     async def runner():
         for i, t in enumerate(blocks):
-            if t.strip():
-                await gen_audio(t, i)
+            await gen_audio(t, i)
     asyncio.run(runner())
 
 # ---------------- VIDEO ----------------
-def create_video(images, count):
-    if count == 0:
-        print("❌ No clips to create. Skipping ffmpeg.")
-        return
-
+def create_video(images, blocks_count):
     clips = []
 
-    for i in range(count):
-        img = images[i]
+    for i in range(blocks_count):
+        img = images[i % len(images)]
         aud = f"{AUDIO_DIR}/{i:03d}.mp3"
         clip = f"{VIDEO_DIR}/{i:03d}.mp4"
-
-        if not os.path.exists(aud):
-            continue
 
         run([
             "ffmpeg", "-y",
@@ -170,10 +139,6 @@ def create_video(images, count):
             clip
         ])
         clips.append(clip)
-
-    if not clips:
-        print("❌ No video clips generated. Aborting concat.")
-        return
 
     with open("list.txt", "w") as f:
         for c in clips:
@@ -194,31 +159,22 @@ def main():
 
     blocks.insert(0,
         "नमस्कार। स्वागत है आप सभी का Sanatan Gyan Dhara चैनल पर। "
-        "आज हम आपके लिए विष्णु पुराण का प्रथम अध्याय प्रस्तुत कर रहे हैं।"
+        "आज हम भगवान विष्णु के दिव्य स्वरूप का स्मरण करेंगे।"
     )
     blocks.append(
         "🙏 वीडियो पसंद आए तो लाइक, शेयर और सब्सक्राइब अवश्य करें। "
         "Sanatan Gyan Dhara — सनातन ज्ञान की धारा।"
     )
 
-    urls = fetch_commons_images("Vishnu", BLOCKS)
-    if len(urls) < BLOCKS:
-        urls += fetch_pixabay_images(PIXABAY_QUERY, BLOCKS - len(urls))
+    print("🌐 Collecting authentic Vishnu images automatically...")
+    image_urls = collect_vishnu_images()
+    images = prepare_images(image_urls)
 
-    images = process_images(download_images(urls))
-
-    final_count = min(len(blocks), len(images), BLOCKS)
-    print(f"✅ Using {final_count} blocks")
-
-    if final_count == 0:
-        print("❌ NOTHING TO PROCESS. EXITING CLEANLY.")
-        sys.exit(0)
-
-    blocks = blocks[:final_count]
-    images = images[:final_count]
+    print(f"🖼 Vishnu images collected: {len(images)}")
+    print(f"📜 Script blocks: {len(blocks)}")
 
     generate_audio(blocks)
-    create_video(images, final_count)
+    create_video(images, len(blocks))
 
     print("✅ FINAL VIDEO READY:", FINAL_VIDEO)
 
