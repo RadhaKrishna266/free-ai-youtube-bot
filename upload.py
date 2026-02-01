@@ -1,125 +1,142 @@
 import os
 import requests
-import subprocess
-from pathlib import Path
 from urllib.parse import quote
-import random
-import time
+from pathlib import Path
+import subprocess
+from time import sleep
+from random import shuffle
 
-# ================= CONFIG =================
-PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY")  # set in your repo secrets
-HF_API_KEY = os.environ.get("HF_API_KEY")
-BLOCKS = 5  # number of video blocks
-TANPURA_AUDIO = "audio/tanpura.mp3"
-QUERY_LIST = [
-    "Vaikunth Vishnu",
-    "Vishnu Avatars",
-    "Lakshmi Narayan"
-]
-
-# ================= FOLDERS =================
-IMAGES_DIR = Path("images")
-VIDEO_DIR = Path("video_blocks")
+# ---------------- CONFIG ----------------
+PIXABAY_API_KEY = os.getenv("PIXABAY_API_KEY")  # Make sure secret is set
+HF_API_KEY = os.getenv("HF_API_KEY")
+BLOCKS = 5  # Number of video blocks to create
+IMAGE_DIR = Path("images")
+AUDIO_DIR = Path("audio")
 AUDIO_BLOCKS_DIR = Path("audio_blocks")
-IMAGES_DIR.mkdir(exist_ok=True)
-VIDEO_DIR.mkdir(exist_ok=True)
+VIDEO_DIR = Path("video_blocks")
+TANPURA_AUDIO = AUDIO_DIR / "tanpura.mp3"
+QUERY = "Vaikunth Vishnu Lakshmi Narayan"
 
-# ================= PIXABAY FETCH =================
+# Create folders if not exist
+for folder in [IMAGE_DIR, AUDIO_DIR, AUDIO_BLOCKS_DIR, VIDEO_DIR]:
+    folder.mkdir(parents=True, exist_ok=True)
+
+
+# ---------------- PIXABAY FETCH ----------------
 def fetch_pixabay_images(query, num_images):
     print(f"🌐 Fetching images for query: {query}")
     url = f"https://pixabay.com/api/?key={PIXABAY_API_KEY}&q={quote(query)}&image_type=photo&orientation=horizontal&per_page={num_images}"
-    res = requests.get(url).json()
+    try:
+        res = requests.get(url, timeout=10)
+        res.raise_for_status()
+        data = res.json()
+    except Exception as e:
+        print(f"⚠ Failed to fetch from Pixabay: {e}")
+        return []
+    
     images = []
-    for hit in res.get("hits", []):
+    for hit in data.get("hits", []):
         img_url = hit.get("largeImageURL")
         if img_url and img_url not in images:
             images.append(img_url)
     return images
 
-def download_image(url, path):
-    try:
-        r = requests.get(url, stream=True)
-        if r.status_code == 200:
-            with open(path, 'wb') as f:
-                for chunk in r:
-                    f.write(chunk)
-            return True
-    except:
-        pass
-    return False
 
-# ================= HUGGINGFACE FALLBACK =================
-def generate_ai_image(prompt, save_path):
-    print(f"🤖 Generating AI image for missing block: {prompt}")
-    HF_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2"
+# ---------------- IMAGE DOWNLOAD ----------------
+def download_images(urls):
+    local_paths = []
+    for i, url in enumerate(urls):
+        ext = url.split(".")[-1].split("?")[0]
+        path = IMAGE_DIR / f"{i:03d}.{ext}"
+        try:
+            r = requests.get(url, stream=True, timeout=10)
+            if r.status_code == 200:
+                with open(path, "wb") as f:
+                    for chunk in r.iter_content(1024):
+                        f.write(chunk)
+                local_paths.append(path)
+        except Exception as e:
+            print(f"⚠ Failed to download {url}: {e}")
+    return local_paths
+
+
+# ---------------- HF AI GENERATION ----------------
+def generate_ai_images(num):
+    print("🤖 Generating AI fallback images...")
     headers = {"Authorization": f"Bearer {HF_API_KEY}"}
-    payload = {"inputs": prompt}
-    response = requests.post(HF_URL, headers=headers, json=payload)
-    if response.status_code == 200:
-        with open(save_path, 'wb') as f:
-            f.write(response.content)
-        return True
-    else:
-        print("⚠ AI generation failed, retrying after 2s...")
-        time.sleep(2)
-        return generate_ai_image(prompt, save_path)
+    images = []
+    for i in range(num):
+        payload = {
+            "inputs": QUERY,
+            "options": {"wait_for_model": True}
+        }
+        try:
+            r = requests.post("https://api-inference.huggingface.co/models/stable-diffusion-v1-5", headers=headers, json=payload, timeout=60)
+            r.raise_for_status()
+            img_data = r.content
+            path = IMAGE_DIR / f"{i:03d}.png"
+            with open(path, "wb") as f:
+                f.write(img_data)
+            images.append(path)
+        except Exception as e:
+            print(f"⚠ HF generation failed: {e}")
+    return images
 
-# ================= VIDEO CREATION =================
+
+# ---------------- VIDEO CREATION ----------------
 def run(cmd):
+    print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
+
 
 def create_video(images, audio_blocks, tanpura_audio):
     for i, img_path in enumerate(images):
-        audio_path = audio_blocks[i]
-        out_path = VIDEO_DIR / f"{i:03}.mp4"
+        audio_block = audio_blocks[i]
+        out_path = VIDEO_DIR / f"{i:03d}.mp4"
         cmd = [
             "ffmpeg", "-y",
-            "-loop", "1", "-i", str(img_path),
-            "-i", str(audio_path),
+            "-loop", "1",
+            "-i", str(img_path),
+            "-i", str(audio_block),
             "-i", str(tanpura_audio),
             "-filter_complex",
             "[2:a]volume=0.2[a2];[1:a][a2]amix=inputs=2:duration=first:dropout_transition=2[a]",
             "-map", "0:v", "-map", "[a]",
-            "-c:v", "libx264", "-c:a", "aac", "-shortest",
+            "-c:v", "libx264",
+            "-c:a", "aac",
+            "-shortest",
             str(out_path)
         ]
-        print(f"🎬 Creating video block {i+1}/{len(images)}...")
         run(cmd)
 
-# ================= MAIN =================
+
+# ---------------- MAIN ----------------
 def main():
-    # Clear old images
-    for f in IMAGES_DIR.glob("*"): f.unlink()
-    images_urls = []
+    # 1️⃣ Try fetching images from Pixabay
+    pixabay_urls = fetch_pixabay_images(QUERY, BLOCKS)
+    images = download_images(pixabay_urls)
     
-    # Fetch images from Pixabay
-    for query in QUERY_LIST:
-        urls = fetch_pixabay_images(query, BLOCKS)
-        images_urls.extend(urls)
-        if len(images_urls) >= BLOCKS:
-            break
-    images_urls = images_urls[:BLOCKS]
-    
-    # Download images or generate AI if missing
-    images_paths = []
-    for i in range(BLOCKS):
-        img_file = IMAGES_DIR / f"{i:03}.jpg"
-        if i < len(images_urls):
-            success = download_image(images_urls[i], img_file)
-            if not success:
-                generate_ai_image(random.choice(QUERY_LIST), img_file)
-        else:
-            generate_ai_image(random.choice(QUERY_LIST), img_file)
-        images_paths.append(img_file)
+    # 2️⃣ If not enough, fallback to HF AI
+    if len(images) < BLOCKS:
+        needed = BLOCKS - len(images)
+        images += generate_ai_images(needed)
 
-    # Ensure audio_blocks exist
-    audio_files = sorted(list(AUDIO_BLOCKS_DIR.glob("*.mp3")))
+    if len(images) < BLOCKS:
+        raise Exception("❌ Not enough images to create video blocks")
+
+    # 3️⃣ Get audio blocks
+    audio_files = sorted(AUDIO_BLOCKS_DIR.glob("*.mp3"))
     if len(audio_files) < BLOCKS:
-        raise Exception(f"⚠ Not enough audio blocks! Found {len(audio_files)}, needed {BLOCKS}")
+        raise Exception("❌ Not enough audio blocks")
 
-    # Create videos
-    create_video(images_paths, audio_files, TANPURA_AUDIO)
+    # 4️⃣ Shuffle to prevent repetition
+    shuffle(images)
+    shuffle(audio_files)
+
+    # 5️⃣ Create video blocks
+    create_video(images[:BLOCKS], audio_files[:BLOCKS], TANPURA_AUDIO)
     print("✅ Video blocks created successfully!")
+
 
 if __name__ == "__main__":
     main()
