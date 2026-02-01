@@ -33,7 +33,7 @@ jobs:
       # ================= RUN BOT =================
       - name: Run Sanatan Gyan Dhara Bot
         env:
-          HF_API_KEY: ${{ secrets.HF_API_KEY }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}  # ✅ Add this
         run: |
           python upload.py
 
