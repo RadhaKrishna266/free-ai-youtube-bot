@@ -1,9 +1,9 @@
 import os
 import subprocess
 import asyncio
-import edge_tts
 import requests
-from PIL import Image, ImageDraw, ImageFont
+import edge_tts
+from PIL import Image, ImageDraw
 
 # ================= CONFIG =================
 CHANNEL_NAME = "Sanatan Gyan Dhara"
@@ -16,8 +16,10 @@ os.makedirs(AUDIO_DIR, exist_ok=True)
 
 TANPURA = "audio/tanpura.mp3"
 NARRATION = "audio/narration.mp3"
+MIXED_AUDIO = "audio/mixed.mp3"
+SLIDESHOW = "video.mp4"
 
-# Vishnu HD wallpaper (direct image – stable)
+# Stable Vishnu wallpapers (direct CDN)
 IMAGE_URLS = [
     "https://wallpapercave.com/wp/wp6607474.jpg",
     "https://wallpapercave.com/wp/wp6607481.jpg",
@@ -44,22 +46,20 @@ SCRIPT = """
 def run(cmd):
     subprocess.run(cmd, check=True)
 
-# ================= IMAGE =================
+# ================= IMAGES =================
 def download_images():
     paths = []
     for i, url in enumerate(IMAGE_URLS):
         path = f"{IMAGE_DIR}/{i}.jpg"
         try:
             r = requests.get(url, timeout=15)
-            if r.status_code == 200:
-                with open(path, "wb") as f:
-                    f.write(r.content)
-            else:
-                raise Exception()
+            r.raise_for_status()
+            with open(path, "wb") as f:
+                f.write(r.content)
         except:
             img = Image.new("RGB", (1280, 720), (10, 5, 0))
             d = ImageDraw.Draw(img)
-            d.text((400, 330), "ॐ नमो नारायणाय", fill=(255, 215, 0))
+            d.text((420, 340), "ॐ नमो नारायणाय", fill=(255, 215, 0))
             img.save(path)
         paths.append(path)
     return paths
@@ -72,31 +72,38 @@ async def generate_narration():
     )
     await communicate.save(NARRATION)
 
+def mix_audio():
+    run([
+        "ffmpeg", "-y",
+        "-i", NARRATION,
+        "-i", TANPURA,
+        "-filter_complex", "amix=inputs=2:duration=first:weights=1 0.3",
+        MIXED_AUDIO
+    ])
+
 # ================= VIDEO =================
-def create_video(images):
-    inputs = []
-    for img in images:
-        inputs += ["-loop", "1", "-i", img]
-
-    filter_complex = ""
-    for i in range(len(images)):
-        filter_complex += f"[{i}:v]scale=1280:720,setsar=1[v{i}];"
-
-    filter_complex += "".join(
-        f"[v{i}]" for i in range(len(images))
-    ) + f"concat=n={len(images)}:v=1:a=0[v]"
+def create_slideshow(images):
+    with open("images.txt", "w") as f:
+        for img in images:
+            f.write(f"file '{img}'\n")
+            f.write("duration 8\n")
 
     run([
         "ffmpeg", "-y",
-        *inputs,
-        "-i", NARRATION,
-        "-i", TANPURA,
-        "-filter_complex",
-        filter_complex + ";[1:a][2:a]amix=inputs=2:duration=first[a]",
-        "-map", "[v]",
-        "-map", "[a]",
-        "-c:v", "libx264",
-        "-pix_fmt", "yuv420p",
+        "-f", "concat", "-safe", "0",
+        "-i", "images.txt",
+        "-vf", "scale=1280:720,format=yuv420p",
+        "-r", "25",
+        SLIDESHOW
+    ])
+
+def mux_final():
+    run([
+        "ffmpeg", "-y",
+        "-i", SLIDESHOW,
+        "-i", MIXED_AUDIO,
+        "-c:v", "copy",
+        "-c:a", "aac",
         "-shortest",
         FINAL_VIDEO
     ])
@@ -107,7 +114,9 @@ def main():
 
     images = download_images()
     asyncio.run(generate_narration())
-    create_video(images)
+    mix_audio()
+    create_slideshow(images)
+    mux_final()
 
     print("✅ FINAL VIDEO READY:", FINAL_VIDEO)
 
