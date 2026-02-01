@@ -1,13 +1,10 @@
 import os
 import requests
 import asyncio
-from pathlib import Path
+import subprocess
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont
-import subprocess
 import edge_tts
-import random
-import time
 
 # ---------------- CONFIG ----------------
 CHANNEL_NAME = "Sanatan Gyan Dhara"
@@ -15,11 +12,12 @@ IMAGE_DIR = "images"
 AUDIO_DIR = "audio_blocks"
 VIDEO_DIR = "video_blocks"
 FINAL_VIDEO = "final_video.mp4"
-TANPURA_FILE = "audio/tanpura.mp3"  # light tanpura audio (create if not exists)
-FRONT_COVER = f"{IMAGE_DIR}/front_cover.jpg"
-BLOCKS = 5  # number of video blocks
+TANPURA_FILE = "audio/tanpura.mp3"
 
-# ---------------- CREATE FOLDERS ----------------
+BLOCKS = 5
+WIDTH, HEIGHT = 1280, 720
+
+# ---------------- SETUP ----------------
 os.makedirs(IMAGE_DIR, exist_ok=True)
 os.makedirs(AUDIO_DIR, exist_ok=True)
 os.makedirs(VIDEO_DIR, exist_ok=True)
@@ -31,158 +29,132 @@ def run(cmd):
     subprocess.run(cmd, check=True)
 
 def placeholder(path, text="ॐ नमो नारायणाय"):
-    img = Image.new("RGB", (1280, 720), (10, 5, 0))
-    d = ImageDraw.Draw(img)
+    img = Image.new("RGB", (WIDTH, HEIGHT), (12, 6, 2))
+    draw = ImageDraw.Draw(img)
     try:
-        font = ImageFont.truetype("arial.ttf", 48)
+        font = ImageFont.truetype("DejaVuSans.ttf", 56)
     except:
-        font = None
-    d.text((60, 330), text, fill=(255, 215, 0), font=font)
+        font = ImageFont.load_default()
+    draw.text((80, HEIGHT//2 - 30), text, fill=(255, 215, 0), font=font)
     img.save(path)
 
-# ---------------- AUDIO GENERATION ----------------
-async def generate_audio(text, index):
-    out = f"{AUDIO_DIR}/{index:03d}.mp3"
-    communicate = edge_tts.Communicate(text=text, voice="hi-IN-MadhurNeural")
-    await communicate.save(out)
+# ---------------- AUDIO ----------------
+async def tts(text, out):
+    voice = "hi-IN-MadhurNeural"
+    await edge_tts.Communicate(text, voice).save(out)
 
-def generate_audio_blocks(blocks):
+def generate_audio_blocks(texts):
     async def runner():
-        for i, text in enumerate(blocks):
-            if text.strip():
-                await generate_audio(text, i)
+        for i, t in enumerate(texts):
+            await tts(t, f"{AUDIO_DIR}/{i:03d}.mp3")
     asyncio.run(runner())
 
-# ---------------- TANPURA GENERATION ----------------
-def generate_tanpura(duration=180):
+# ---------------- TANPURA ----------------
+def generate_tanpura(duration=300):
     if not os.path.exists(TANPURA_FILE):
-        # simple sine wave as light tanpura
         run([
-            "ffmpeg", "-y", "-f", "lavfi",
-            f"-i", f"sine=frequency=110:duration={duration}",
-            "-af", "volume=0.18",
+            "ffmpeg", "-y",
+            "-f", "lavfi",
+            "-i", f"sine=frequency=110:duration={duration}",
+            "-af", "volume=0.15",
             TANPURA_FILE
         ])
 
-# ---------------- IMAGE FETCH ----------------
-def fetch_bhagwanpuja_images(query, count):
-    """
-    Scrapes devotional wallpapers from Bhagwan Puja
-    Returns list of local image paths
-    """
-    base_url = "https://www.bhagwanpuja.com/wallpapers/"
-    try:
-        res = requests.get(base_url, timeout=15)
-        soup = BeautifulSoup(res.text, "lxml")
-        imgs = [img["src"] for img in soup.find_all("img") if query.lower() in img.get("alt", "").lower()]
-        if not imgs:
-            print(f"❌ No {query} images found, using placeholders")
-            imgs = []
-        # download images
-        paths = []
-        for i, url in enumerate(imgs[:count]):
-            path = f"{IMAGE_DIR}/{i:03d}.jpg"
-            try:
-                r = requests.get(url, timeout=15)
-                if r.status_code == 200:
-                    with open(path, "wb") as f:
-                        f.write(r.content)
-                    paths.append(path)
-                else:
-                    placeholder(path)
-                    paths.append(path)
-            except:
-                placeholder(path)
-                paths.append(path)
-        return paths
-    except Exception as e:
-        print("⚠ Failed to fetch images:", e)
-        # create placeholders if fetching fails
-        paths = []
-        for i in range(count):
-            path = f"{IMAGE_DIR}/{i:03d}.jpg"
-            placeholder(path, text="Vishnu")
-            paths.append(path)
-        return paths
+# ---------------- IMAGE SOURCE ----------------
+def fetch_vishnu_images(count):
+    url = "https://www.bhagwanpuja.com/wallpapers/vishnu/"
+    images = []
 
-# ---------------- VIDEO CREATION ----------------
-def make_video_block(image_file, audio_file, index):
-    out = f"{VIDEO_DIR}/{index:03d}.mp4"
-    cmd = [
+    try:
+        html = requests.get(url, timeout=20).text
+        soup = BeautifulSoup(html, "lxml")
+        tags = soup.find_all("img")
+
+        for tag in tags:
+            src = tag.get("src")
+            if src and src.startswith("http"):
+                images.append(src)
+
+    except Exception as e:
+        print("⚠ Wallpaper fetch failed:", e)
+
+    images = list(dict.fromkeys(images))[:count]
+
+    paths = []
+    for i, img_url in enumerate(images):
+        path = f"{IMAGE_DIR}/{i:03d}.jpg"
+        try:
+            r = requests.get(img_url, timeout=15)
+            if r.status_code == 200:
+                with open(path, "wb") as f:
+                    f.write(r.content)
+            else:
+                placeholder(path)
+        except:
+            placeholder(path)
+        paths.append(path)
+
+    # fallback if site fails
+    while len(paths) < count:
+        p = f"{IMAGE_DIR}/{len(paths):03d}.jpg"
+        placeholder(p, "भगवान विष्णु")
+        paths.append(p)
+
+    return paths
+
+# ---------------- VIDEO ----------------
+def make_block(img, audio, idx):
+    out = f"{VIDEO_DIR}/{idx:03d}.mp4"
+    run([
         "ffmpeg", "-y",
-        "-loop", "1",
-        "-i", image_file,
-        "-i", audio_file,
+        "-loop", "1", "-i", img,
+        "-i", audio,
         "-i", TANPURA_FILE,
         "-filter_complex",
-        "[2:a]volume=0.2[a2];[1:a][a2]amix=inputs=2:duration=first[a];"
-        "[0:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720,zoompan=z='min(zoom+0.0005,1.06)':d=150:fps=25[v]",
-        "-map", "[v]",
-        "-map", "[a]",
+        "[2:a]volume=0.25[a2];[1:a][a2]amix=inputs=2[a];"
+        "[0:v]scale=1280:720:force_original_aspect_ratio=decrease,"
+        "pad=1280:720:(ow-iw)/2:(oh-ih)/2,"
+        "zoompan=z='min(zoom+0.0006,1.05)':d=150:fps=25[v]",
+        "-map", "[v]", "-map", "[a]",
         "-c:v", "libx264",
         "-pix_fmt", "yuv420p",
         "-shortest",
         out
-    ]
-    run(cmd)
+    ])
     return out
 
-def concat_videos(clips, output_file):
+def concat(clips):
     with open("list.txt", "w") as f:
         for c in clips:
             f.write(f"file '{c}'\n")
-    run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", "list.txt", "-c", "copy", output_file])
+    run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", "list.txt", "-c", "copy", FINAL_VIDEO])
 
 # ---------------- MAIN ----------------
 def main():
-    # ---------------- INTRO & OUTRO ----------------
-    intro_text = f"नमस्कार। स्वागत है आप सभी का {CHANNEL_NAME} श्रृंखला में। आज हम आपके लिए Vishnu Purana का पहला एपिसोड लाए हैं।"
-    outro_text = "🙏 अगर आपको यह वीडियो पसंद आया हो, तो कृपया लाइक, शेयर और सब्सक्राइब जरूर करें। हर दिन एक नया एपिसोड आएगा।"
+    print("🎨 Fetching devotional images...")
+    images = fetch_vishnu_images(BLOCKS)
 
-    # ---------------- IMAGES ----------------
-    images = []
+    intro = f"नमस्कार। आप देख रहे हैं {CHANNEL_NAME}। आज हम प्रारंभ कर रहे हैं विष्णु पुराण की दिव्य कथा।"
+    middle = "ॐ नमो नारायणाय"
+    outro = "यदि यह वीडियो आपको अच्छा लगा हो, तो कृपया लाइक, शेयर और सब्सक्राइब करें। जय श्री हरि।"
 
-    # 1️⃣ Front cover
-    if os.path.exists(FRONT_COVER):
-        images.append(FRONT_COVER)
-        print("✅ Using existing front cover image")
-    else:
-        print("⚠ Front cover not found, fetching Vishnu image instead")
-        front_image = fetch_bhagwanpuja_images("vishnu", 1)
-        if front_image:
-            images.append(front_image[0])
-        else:
-            placeholder_path = f"{IMAGE_DIR}/000.jpg"
-            placeholder(placeholder_path, text="Vishnu")
-            images.append(placeholder_path)
+    texts = [intro] + [middle]*(BLOCKS-2) + [outro]
 
-    # 2️⃣ Other devotional images
-    other_images = fetch_bhagwanpuja_images("vishnu", BLOCKS-1)
-    images.extend(other_images)
-
-    if not images:
-        raise Exception(f"No images found in {IMAGE_DIR}/")
-
-    # ---------------- AUDIO ----------------
     print("🔊 Generating narration...")
-    blocks_text = [intro_text] + ["ॐ नमो नारायणाय"]*(len(images)-2) + [outro_text]
-    generate_audio_blocks(blocks_text)
+    generate_audio_blocks(texts)
 
-    # ---------------- TANPURA ----------------
-    generate_tanpura(duration=180)
+    print("🎵 Creating tanpura...")
+    generate_tanpura()
 
-    # ---------------- VIDEO BLOCKS ----------------
-    print("🎞 Creating devotional video blocks...")
-    video_clips = []
-    for i, img in enumerate(images):
-        audio_file = f"{AUDIO_DIR}/{i:03d}.mp3"
-        clip = make_video_block(img, audio_file, i)
-        video_clips.append(clip)
+    print("🎞 Rendering video blocks...")
+    clips = []
+    for i in range(BLOCKS):
+        clips.append(make_block(images[i], f"{AUDIO_DIR}/{i:03d}.mp3", i))
 
-    # ---------------- CONCATENATE ----------------
-    print("🔗 Concatenating video blocks...")
-    concat_videos(video_clips, FINAL_VIDEO)
-    print("✅ FINAL VIDEO READY:", FINAL_VIDEO)
+    print("🔗 Finalizing video...")
+    concat(clips)
+
+    print("✅ DONE:", FINAL_VIDEO)
 
 if __name__ == "__main__":
     main()
