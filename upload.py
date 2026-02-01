@@ -1,161 +1,125 @@
 import os
 import requests
-import asyncio
 import subprocess
 from pathlib import Path
-from bs4 import BeautifulSoup
-from PIL import Image, ImageDraw, ImageFont
-import edge_tts
+from urllib.parse import quote
 import random
 import time
 
-# ---------------- CONFIG ----------------
-SCRIPT_FILE = "script.txt"
-IMAGE_DIR = "images"
-AUDIO_DIR = "audio_blocks"
-VIDEO_DIR = "video_blocks"
-FINAL_VIDEO = "final_video.mp4"
-TANPURA_FILE = "audio/tanpura.mp3"
+# ================= CONFIG =================
+PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY")  # set in your repo secrets
 HF_API_KEY = os.environ.get("HF_API_KEY")
-GOOGLE_SEARCH_URL = "https://www.google.com/search?q=vaikunth+vishnu+vishnu+avtara+lakshmi+narayan+wallpapers&tbm=isch"
+BLOCKS = 5  # number of video blocks
+TANPURA_AUDIO = "audio/tanpura.mp3"
+QUERY_LIST = [
+    "Vaikunth Vishnu",
+    "Vishnu Avatars",
+    "Lakshmi Narayan"
+]
 
-# ---------------- CREATE FOLDERS ----------------
-os.makedirs(IMAGE_DIR, exist_ok=True)
-os.makedirs(AUDIO_DIR, exist_ok=True)
-os.makedirs(VIDEO_DIR, exist_ok=True)
+# ================= FOLDERS =================
+IMAGES_DIR = Path("images")
+VIDEO_DIR = Path("video_blocks")
+AUDIO_BLOCKS_DIR = Path("audio_blocks")
+IMAGES_DIR.mkdir(exist_ok=True)
+VIDEO_DIR.mkdir(exist_ok=True)
 
-# ---------------- UTILS ----------------
+# ================= PIXABAY FETCH =================
+def fetch_pixabay_images(query, num_images):
+    print(f"🌐 Fetching images for query: {query}")
+    url = f"https://pixabay.com/api/?key={PIXABAY_API_KEY}&q={quote(query)}&image_type=photo&orientation=horizontal&per_page={num_images}"
+    res = requests.get(url).json()
+    images = []
+    for hit in res.get("hits", []):
+        img_url = hit.get("largeImageURL")
+        if img_url and img_url not in images:
+            images.append(img_url)
+    return images
+
+def download_image(url, path):
+    try:
+        r = requests.get(url, stream=True)
+        if r.status_code == 200:
+            with open(path, 'wb') as f:
+                for chunk in r:
+                    f.write(chunk)
+            return True
+    except:
+        pass
+    return False
+
+# ================= HUGGINGFACE FALLBACK =================
+def generate_ai_image(prompt, save_path):
+    print(f"🤖 Generating AI image for missing block: {prompt}")
+    HF_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2"
+    headers = {"Authorization": f"Bearer {HF_API_KEY}"}
+    payload = {"inputs": prompt}
+    response = requests.post(HF_URL, headers=headers, json=payload)
+    if response.status_code == 200:
+        with open(save_path, 'wb') as f:
+            f.write(response.content)
+        return True
+    else:
+        print("⚠ AI generation failed, retrying after 2s...")
+        time.sleep(2)
+        return generate_ai_image(prompt, save_path)
+
+# ================= VIDEO CREATION =================
 def run(cmd):
-    print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-def validate_image(path):
-    try:
-        with Image.open(path) as img:
-            img.verify()
-            if img.width < 400 or img.height < 300:
-                return False
-        return True
-    except:
-        return False
-
-def placeholder(path, text="ॐ नमो नारायणाय"):
-    img = Image.new("RGB", (1280, 720), (0, 0, 0))
-    d = ImageDraw.Draw(img)
-    try:
-        font = ImageFont.truetype("arial.ttf", 48)
-    except:
-        font = None
-    d.text((60, 330), text, fill=(255, 215, 0), font=font)
-    img.save(path)
-
-# ---------------- FETCH IMAGES ----------------
-def fetch_images_google(n):
-    print("🌐 Fetching images from Google...")
-    headers = {"User-Agent": "Mozilla/5.0"}
-    r = requests.get(GOOGLE_SEARCH_URL, headers=headers)
-    soup = BeautifulSoup(r.text, "lxml")
-    imgs = [img['src'] for img in soup.find_all("img") if 'src' in img.attrs]
-    imgs = list(dict.fromkeys(imgs))  # remove duplicates
-    downloaded = []
-
-    for i, url in enumerate(imgs):
-        if len(downloaded) >= n:
-            break
-        ext = "jpg"
-        out_path = f"{IMAGE_DIR}/{i:03d}.{ext}"
-        try:
-            img_data = requests.get(url, timeout=10).content
-            with open(out_path, "wb") as f:
-                f.write(img_data)
-            if validate_image(out_path):
-                downloaded.append(out_path)
-            else:
-                print(f"⚠️ Invalid image, skipping {url}")
-                placeholder(out_path)
-                downloaded.append(out_path)
-        except Exception as e:
-            print("⚠️ Failed to download image:", e)
-            placeholder(out_path)
-            downloaded.append(out_path)
-        time.sleep(0.5)  # avoid rate limit
-    return downloaded
-
-# ---------------- AUDIO GENERATION ----------------
-async def generate_single_audio(text, index):
-    out = f"{AUDIO_DIR}/{index:03d}.mp3"
-    communicate = edge_tts.Communicate(text=text, voice="hi-IN-MadhurNeural")
-    await communicate.save(out)
-
-def generate_audio(blocks):
-    async def runner():
-        for i, text in enumerate(blocks):
-            if text.strip():
-                await generate_single_audio(text, i)
-    asyncio.run(runner())
-
-# ---------------- VIDEO CREATION ----------------
-def create_video(num_blocks):
-    clips = []
-    for i in range(num_blocks):
-        img_file = f"{IMAGE_DIR}/{i:03d}.jpg"
-        audio_file = f"{AUDIO_DIR}/{i:03d}.mp3"
-        out_file = f"{VIDEO_DIR}/{i:03d}.mp4"
-
-        # fallback checks
-        if not os.path.exists(img_file) or not validate_image(img_file):
-            print(f"⚠️ Invalid image {img_file}, using placeholder")
-            placeholder(img_file)
-        if not os.path.exists(audio_file):
-            raise FileNotFoundError(f"❌ Missing audio: {audio_file}")
-        if not os.path.exists(TANPURA_FILE):
-            raise FileNotFoundError(f"❌ Missing tanpura audio: {TANPURA_FILE}")
-
+def create_video(images, audio_blocks, tanpura_audio):
+    for i, img_path in enumerate(images):
+        audio_path = audio_blocks[i]
+        out_path = VIDEO_DIR / f"{i:03}.mp4"
         cmd = [
             "ffmpeg", "-y",
-            "-loop", "1",
-            "-i", img_file,
-            "-i", audio_file,
-            "-i", TANPURA_FILE,
+            "-loop", "1", "-i", str(img_path),
+            "-i", str(audio_path),
+            "-i", str(tanpura_audio),
             "-filter_complex",
             "[2:a]volume=0.2[a2];[1:a][a2]amix=inputs=2:duration=first:dropout_transition=2[a]",
-            "-map", "0:v",
-            "-map", "[a]",
-            "-c:v", "libx264",
-            "-c:a", "aac",
-            "-shortest",
-            out_file
+            "-map", "0:v", "-map", "[a]",
+            "-c:v", "libx264", "-c:a", "aac", "-shortest",
+            str(out_path)
         ]
+        print(f"🎬 Creating video block {i+1}/{len(images)}...")
         run(cmd)
-        clips.append(out_file)
 
-    # concatenate
-    with open("list.txt", "w") as f:
-        for c in clips:
-            f.write(f"file '{c}'\n")
-    run([
-        "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", "list.txt",
-        "-c", "copy", FINAL_VIDEO
-    ])
-
-# ---------------- MAIN ----------------
+# ================= MAIN =================
 def main():
-    blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
-    intro = "नमस्कार। स्वागत है आप सभी का VishnuPriya श्रृंखला में। आज हम आपके लिए Vishnu Purana का पहला एपिसोड लाए हैं।"
-    outro = "\n\n🙏 अगर आपको यह वीडियो पसंद आया हो, तो कृपया लाइक, शेयर और सब्सक्राइब जरूर करें। हर दिन एक नया एपिसोड आएगा।"
-    blocks.insert(0, intro)
-    blocks.append(outro)
+    # Clear old images
+    for f in IMAGES_DIR.glob("*"): f.unlink()
+    images_urls = []
+    
+    # Fetch images from Pixabay
+    for query in QUERY_LIST:
+        urls = fetch_pixabay_images(query, BLOCKS)
+        images_urls.extend(urls)
+        if len(images_urls) >= BLOCKS:
+            break
+    images_urls = images_urls[:BLOCKS]
+    
+    # Download images or generate AI if missing
+    images_paths = []
+    for i in range(BLOCKS):
+        img_file = IMAGES_DIR / f"{i:03}.jpg"
+        if i < len(images_urls):
+            success = download_image(images_urls[i], img_file)
+            if not success:
+                generate_ai_image(random.choice(QUERY_LIST), img_file)
+        else:
+            generate_ai_image(random.choice(QUERY_LIST), img_file)
+        images_paths.append(img_file)
 
-    # Fetch high-res images
-    images = fetch_images_google(len(blocks))
+    # Ensure audio_blocks exist
+    audio_files = sorted(list(AUDIO_BLOCKS_DIR.glob("*.mp3")))
+    if len(audio_files) < BLOCKS:
+        raise Exception(f"⚠ Not enough audio blocks! Found {len(audio_files)}, needed {BLOCKS}")
 
-    # Generate narration audio
-    generate_audio(blocks)
-
-    # Create video
-    create_video(len(blocks))
-
-    print("✅ FINAL VIDEO READY:", FINAL_VIDEO)
+    # Create videos
+    create_video(images_paths, audio_files, TANPURA_AUDIO)
+    print("✅ Video blocks created successfully!")
 
 if __name__ == "__main__":
     main()
