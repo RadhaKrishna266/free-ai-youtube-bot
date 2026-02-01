@@ -3,7 +3,7 @@ import subprocess
 import requests
 import asyncio
 from pathlib import Path
-from PIL import Image
+from PIL import Image, ImageFilter
 import edge_tts
 import random
 
@@ -19,15 +19,16 @@ TANPURA_FILE = "audio/tanpura.mp3"
 
 PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY")
 
-TARGET_IMAGES = 6   # number of visual blocks
+TARGET_IMAGES = 6
 
 PEXELS_QUERIES = [
-    "lord vishnu painting",
-    "vishnu temple india",
-    "hindu temple art",
-    "vaikuntha art painting",
-    "hindu devotional art",
-    "narayana painting"
+    "lord vishnu painting illustration",
+    "vaikuntha vishnu art",
+    "lakshmi narayan painting",
+    "lord krishna vishnu avatar art",
+    "narayana devotional illustration",
+    "hindu god digital art",
+    "vishnu temple idol"
 ]
 
 # ================= SETUP =================
@@ -52,7 +53,6 @@ def fetch_pexels_images():
         if len(collected) >= TARGET_IMAGES:
             break
 
-        url = "https://api.pexels.com/v1/search"
         params = {
             "query": query,
             "per_page": 5,
@@ -60,15 +60,20 @@ def fetch_pexels_images():
         }
 
         try:
-            r = requests.get(url, headers=headers, params=params, timeout=20)
+            r = requests.get(
+                "https://api.pexels.com/v1/search",
+                headers=headers,
+                params=params,
+                timeout=20
+            )
             data = r.json()
             photos = data.get("photos", [])
-
             random.shuffle(photos)
+
             for p in photos:
-                img_url = p["src"]["large"]
-                if img_url not in collected:
-                    collected.append(img_url)
+                url = p["src"]["large"]
+                if url not in collected:
+                    collected.append(url)
                 if len(collected) >= TARGET_IMAGES:
                     break
 
@@ -81,27 +86,32 @@ def download_images(urls):
     paths = []
     for i, url in enumerate(urls):
         path = f"{IMAGE_DIR}/{i:03d}.jpg"
-        try:
-            r = requests.get(url, timeout=20)
-            if r.status_code == 200:
-                with open(path, "wb") as f:
-                    f.write(r.content)
-                paths.append(path)
-        except:
-            pass
+        r = requests.get(url, timeout=20)
+        if r.status_code == 200:
+            with open(path, "wb") as f:
+                f.write(r.content)
+            paths.append(path)
     return paths
 
+# ================= IMAGE PROCESS (FULLSCREEN + BLUR) =================
 def process_images(paths):
     final = []
     for p in paths:
         img = Image.open(p).convert("RGB")
-        img.thumbnail((1280, 720), Image.Resampling.LANCZOS)
 
-        bg = Image.new("RGB", (1280, 720), (0, 0, 0))
+        # background (blurred fill)
+        bg = img.resize((1280, 720), Image.Resampling.LANCZOS)
+        bg = bg.filter(ImageFilter.GaussianBlur(25))
+
+        # foreground (fit)
+        fg = img.copy()
+        fg.thumbnail((1100, 620), Image.Resampling.LANCZOS)
+
         bg.paste(
-            img,
-            ((1280 - img.width)//2, (720 - img.height)//2)
+            fg,
+            ((1280 - fg.width) // 2, (720 - fg.height) // 2)
         )
+
         bg.save(p)
         final.append(p)
 
@@ -123,7 +133,7 @@ def generate_audio(blocks):
                 await gen_audio(t, i)
     asyncio.run(runner())
 
-# ================= VIDEO =================
+# ================= VIDEO (ZOOM EFFECT) =================
 def create_video(images, blocks_count):
     clips = []
 
@@ -139,8 +149,14 @@ def create_video(images, blocks_count):
             "-i", aud,
             "-i", TANPURA_FILE,
             "-filter_complex",
-            "[2:a]volume=0.2[a2];[1:a][a2]amix=inputs=2:duration=first[a]",
-            "-map", "0:v",
+            (
+                "zoompan=z='min(zoom+0.0008,1.12)':d=125,"
+                "scale=1280:720,"
+                "[v];"
+                "[2:a]volume=0.2[a2];"
+                "[1:a][a2]amix=inputs=2:duration=first[a]"
+            ),
+            "-map", "[v]",
             "-map", "[a]",
             "-c:v", "libx264",
             "-pix_fmt", "yuv420p",
@@ -165,20 +181,19 @@ def create_video(images, blocks_count):
 
 # ================= MAIN =================
 def main():
-    print("🌐 Fetching devotional images from Pexels...")
+    print("🌐 Fetching Vishnu devotional images...")
     urls = fetch_pexels_images()
 
     if not urls:
         raise RuntimeError("No images fetched from Pexels")
 
-    images = download_images(urls)
-    images = process_images(images)
+    images = process_images(download_images(urls))
 
     blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
 
     intro = (
         "नमस्कार। आप देख रहे हैं Sanatan Gyan Dhara। "
-        "आज हम भगवान विष्णु के दिव्य स्वरूप और वैकुण्ठ धाम के रहस्यों के बारे में जानेंगे।"
+        "आज हम भगवान विष्णु के दिव्य स्वरूप, वैकुण्ठ धाम और उनके अवतारों के बारे में जानेंगे।"
     )
     outro = (
         "🙏 यदि यह वीडियो आपको पसंद आया हो, तो कृपया लाइक, शेयर और सब्सक्राइब करें। "
@@ -186,7 +201,6 @@ def main():
     )
 
     blocks = [intro] + blocks + [outro]
-
     final_count = min(len(images), len(blocks))
 
     print(f"✅ Using {final_count} blocks")
