@@ -33,7 +33,7 @@ jobs:
       # ================= RUN BOT =================
       - name: Run Sanatan Gyan Dhara Bot
         env:
-          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}  # ✅ Add this
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}   # ✅ FIXED
         run: |
           python upload.py
 
