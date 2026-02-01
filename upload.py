@@ -3,129 +3,159 @@ import requests
 import subprocess
 from pathlib import Path
 import random
-import math
 
 # ================= CONFIG =================
 PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY")
+
 WIDTH = 1280
 HEIGHT = 720
 FPS = 25
-IMAGE_DURATION = 5  # seconds per image
-TOTAL_IMAGES = 12
+IMAGE_DURATION = 6
+TOTAL_IMAGES = 10
 
-BASE_DIR = Path(".")
-IMG_DIR = BASE_DIR / "images"
-VID_DIR = BASE_DIR / "video_blocks"
+BASE = Path(".")
+IMG_DIR = BASE / "images"
+VID_DIR = BASE / "video_blocks"
+AUD_DIR = BASE / "audio"
 
 IMG_DIR.mkdir(exist_ok=True)
 VID_DIR.mkdir(exist_ok=True)
+AUD_DIR.mkdir(exist_ok=True)
 
-# ================= HELPERS =================
+# ================= UTILS =================
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-# ================= FETCH IMAGES =================
-def fetch_vishnu_images():
+# ================= IMAGE FETCH =================
+def fetch_images():
     headers = {"Authorization": PEXELS_API_KEY}
 
+    # 🎨 ART / ANIMATED STYLE QUERIES
     queries = [
-        "Vishnu Hindu god illustration",
-        "Vaikuntha Vishnu art",
-        "Lakshmi Narayan divine illustration",
-        "Vishnu avatars painting",
-        "Krishna Vishnu avatar art",
-        "Rama Vishnu avatar illustration",
-        "Hindu god Vishnu digital art",
-        "Hindu mythology illustration"
+        "Vaikuntha Vishnu digital art",
+        "Vishnu illustration Hindu god",
+        "Lakshmi Narayan digital painting",
+        "Vishnu avatars illustration",
+        "Hindu god Vishnu artwork",
+        "Krishna Vishnu avatar illustration",
+        "Rama Vishnu avatar painting"
     ]
 
-    images = []
+    urls = []
+
     for q in queries:
-        url = f"https://api.pexels.com/v1/search?query={q}&per_page=5"
+        print(f"🔍 Searching: {q}")
+        url = f"https://api.pexels.com/v1/search?query={q}&per_page=6&orientation=landscape"
         r = requests.get(url, headers=headers, timeout=20)
+
         if r.status_code == 200:
-            data = r.json()
-            for p in data.get("photos", []):
-                images.append(p["src"]["large2x"])
+            photos = r.json().get("photos", [])
+            for p in photos:
+                urls.append(p["src"]["large2x"])
 
-    if not images:
-        raise RuntimeError("❌ No images fetched from Pexels")
+    if not urls:
+        raise RuntimeError("❌ No animated / art Vishnu images found")
 
-    random.shuffle(images)
-    return images[:TOTAL_IMAGES]
+    random.shuffle(urls)
+    return urls[:TOTAL_IMAGES]
 
 def download_images(urls):
     paths = []
-    for i, url in enumerate(urls):
-        path = IMG_DIR / f"{i:03}.jpg"
-        r = requests.get(url, timeout=30)
-        path.write_bytes(r.content)
-        paths.append(path)
+    for i, u in enumerate(urls):
+        p = IMG_DIR / f"{i:03}.jpg"
+        p.write_bytes(requests.get(u, timeout=30).content)
+        paths.append(p)
     return paths
 
-# ================= VIDEO CREATION =================
-def create_video_blocks(images):
-    blocks = []
+# ================= AUDIO =================
+def create_audio():
+    audio = AUD_DIR / "bg.mp3"
+    if audio.exists():
+        return audio
 
+    print("🎵 Creating background tanpura tone")
+    run([
+        "ffmpeg", "-y",
+        "-f", "lavfi",
+        "-i", "sine=frequency=110:duration=180",
+        "-af", "volume=0.18",
+        str(audio)
+    ])
+    return audio
+
+# ================= VIDEO BLOCKS =================
+def make_blocks(images, audio):
+    blocks = []
     frames = IMAGE_DURATION * FPS
 
     for i, img in enumerate(images):
         out = VID_DIR / f"{i:03}.mp4"
 
-        zoom_filter = (
-            f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
-            f"crop={WIDTH}:{HEIGHT},"
-            f"zoompan=z='if(lte(zoom,1.0),1.0,zoom+0.0008)':"
-            f"d={frames}:fps={FPS}"
+        filter_complex = (
+            # background blur (fills screen)
+            f"[0:v]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
+            f"crop={WIDTH}:{HEIGHT},boxblur=25:1[bg];"
+            # foreground (NO CROP)
+            f"[0:v]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease,"
+            f"pad={WIDTH}:{HEIGHT}:(ow-iw)/2:(oh-ih)/2,"
+            f"zoompan=z='min(zoom+0.0005,1.06)':d={frames}:fps={FPS}[fg];"
+            f"[bg][fg]overlay=(W-w)/2:(H-h)/2"
         )
 
-        cmd = [
+        run([
             "ffmpeg", "-y",
             "-loop", "1",
             "-i", str(img),
-            "-vf", zoom_filter,
+            "-i", str(audio),
+            "-filter_complex", filter_complex,
+            "-map", "0:v",
+            "-map", "1:a",
             "-t", str(IMAGE_DURATION),
-            "-pix_fmt", "yuv420p",
             "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+            "-shortest",
             str(out)
-        ]
+        ])
 
-        run(cmd)
         blocks.append(out)
 
     return blocks
 
-def concat_videos(videos):
-    list_file = BASE_DIR / "list.txt"
-    with open(list_file, "w") as f:
-        for v in videos:
-            f.write(f"file '{v.resolve()}'\n")
+# ================= FINAL MERGE =================
+def concat(blocks):
+    lst = BASE / "list.txt"
+    with open(lst, "w") as f:
+        for b in blocks:
+            f.write(f"file '{b.resolve()}'\n")
 
     run([
         "ffmpeg", "-y",
         "-f", "concat",
         "-safe", "0",
-        "-i", str(list_file),
+        "-i", str(lst),
         "-c", "copy",
         "final_video.mp4"
     ])
 
 # ================= MAIN =================
 def main():
-    print("🌸 Fetching Vishnu images from Pexels...")
-    urls = fetch_vishnu_images()
+    print("🛕 Fetching animated / art style Vishnu images...")
+    urls = fetch_images()
 
     print("⬇ Downloading images...")
     images = download_images(urls)
 
-    print("🎞 Creating zoom videos (FULL SCREEN)...")
-    videos = create_video_blocks(images)
+    print("🔊 Preparing audio...")
+    audio = create_audio()
+
+    print("🎞 Creating devotional video...")
+    blocks = make_blocks(images, audio)
 
     print("🎬 Merging final video...")
-    concat_videos(videos)
+    concat(blocks)
 
-    print("✅ final_video.mp4 created successfully")
+    print("✅ final_video.mp4 CREATED SUCCESSFULLY")
 
 if __name__ == "__main__":
     main()
