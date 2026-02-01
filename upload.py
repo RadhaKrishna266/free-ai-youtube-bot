@@ -3,7 +3,7 @@ import requests
 import asyncio
 from pathlib import Path
 from bs4 import BeautifulSoup
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 import subprocess
 import edge_tts
 import random
@@ -23,6 +23,7 @@ BLOCKS = 5  # number of video blocks
 os.makedirs(IMAGE_DIR, exist_ok=True)
 os.makedirs(AUDIO_DIR, exist_ok=True)
 os.makedirs(VIDEO_DIR, exist_ok=True)
+os.makedirs("audio", exist_ok=True)
 
 # ---------------- UTILS ----------------
 def run(cmd):
@@ -33,7 +34,6 @@ def placeholder(path, text="ॐ नमो नारायणाय"):
     img = Image.new("RGB", (1280, 720), (10, 5, 0))
     d = ImageDraw.Draw(img)
     try:
-        from PIL import ImageFont, ImageDraw
         font = ImageFont.truetype("arial.ttf", 48)
     except:
         font = None
@@ -97,7 +97,13 @@ def fetch_bhagwanpuja_images(query, count):
         return paths
     except Exception as e:
         print("⚠ Failed to fetch images:", e)
-        return []
+        # create placeholders if fetching fails
+        paths = []
+        for i in range(count):
+            path = f"{IMAGE_DIR}/{i:03d}.jpg"
+            placeholder(path, text="Vishnu")
+            paths.append(path)
+        return paths
 
 # ---------------- VIDEO CREATION ----------------
 def make_video_block(image_file, audio_file, index):
