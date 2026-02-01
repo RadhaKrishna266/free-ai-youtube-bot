@@ -14,7 +14,7 @@ AUDIO_DIR = "audio_blocks"
 VIDEO_DIR = "video_blocks"
 FINAL_VIDEO = "final_video.mp4"
 
-TANPURA_FILE = "audio/tanpura.mp3"   # must exist
+TANPURA_FILE = "audio/tanpura.mp3"
 PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY")
 
 BLOCKS = 5
@@ -40,7 +40,7 @@ def placeholder(path, text="ॐ नमो नारायणाय"):
     d.text((60, 330), text, fill=(255, 215, 0), font=font)
     img.save(path)
 
-# ---------------- WIKIMEDIA COMMONS ----------------
+# ---------------- WIKIMEDIA IMAGES ----------------
 def fetch_commons_images(category, count):
     url = f"https://commons.wikimedia.org/wiki/Category:{category.replace(' ', '_')}"
     images = []
@@ -71,8 +71,8 @@ def fetch_pixabay_images(query, count):
         "orientation": "horizontal",
         "category": "religion",
         "editors_choice": "true",
-        "per_page": count * 3,
-        "safesearch": "true"
+        "safesearch": "true",
+        "per_page": count * 3
     }
 
     try:
@@ -91,7 +91,7 @@ def fetch_pixabay_images(query, count):
         print("⚠ Pixabay error:", e)
         return []
 
-# ---------------- IMAGE DOWNLOAD ----------------
+# ---------------- DOWNLOAD IMAGES ----------------
 def download_images(urls):
     paths = []
 
@@ -113,6 +113,8 @@ def download_images(urls):
 
 # ---------------- IMAGE PROCESS ----------------
 def process_images(image_paths):
+    processed = []
+
     for path in image_paths:
         img = Image.open(path).convert("RGB")
         img.thumbnail((1280, 720), Image.Resampling.LANCZOS)
@@ -125,7 +127,9 @@ def process_images(image_paths):
         bg.paste(img, ((w - img.width)//2, (h - img.height)//2))
         bg.save(path)
 
-    return image_paths
+        processed.append(path)
+
+    return processed
 
 # ---------------- AUDIO ----------------
 async def generate_single_audio(text, index):
@@ -148,6 +152,10 @@ def create_video(images, count):
         img = images[i]
         aud = f"{AUDIO_DIR}/{i:03d}.mp3"
         clip = f"{VIDEO_DIR}/{i:03d}.mp4"
+
+        if not os.path.exists(aud):
+            print(f"⚠ Missing audio {aud}, skipping")
+            continue
 
         cmd = [
             "ffmpeg", "-y",
@@ -188,13 +196,13 @@ def main():
     intro = (
         "नमस्कार। स्वागत है आप सभी का "
         "Sanatan Gyan Dhara चैनल पर। "
-        "आज हम आपके लिए विष्णु पुराण का प्रथम एपिसोड प्रस्तुत कर रहे हैं।"
+        "आज हम आपके लिए विष्णु पुराण का प्रथम अध्याय प्रस्तुत कर रहे हैं।"
     )
 
     outro = (
         "🙏 यदि आपको यह वीडियो पसंद आया हो, "
         "तो कृपया लाइक, शेयर और सब्सक्राइब अवश्य करें। "
-        "Sanatan Gyan Dhara पर प्रतिदिन नया ज्ञान।"
+        "Sanatan Gyan Dhara पर प्रतिदिन नया सनातन ज्ञान।"
     )
 
     blocks.insert(0, intro)
@@ -204,17 +212,23 @@ def main():
     urls = fetch_commons_images("Vishnu", BLOCKS)
 
     if len(urls) < BLOCKS:
-        print("⚠ Falling back to Pixabay...")
-        urls = fetch_pixabay_images(PIXABAY_QUERY, BLOCKS)
+        print("⚠ Wikimedia insufficient, using Pixabay...")
+        urls += fetch_pixabay_images(PIXABAY_QUERY, BLOCKS - len(urls))
 
-    image_files = download_images(urls)
-    image_files = process_images(image_files)
+    image_files = process_images(download_images(urls))
+
+    # 🔒 SYNC EVERYTHING
+    final_count = min(len(blocks), len(image_files), BLOCKS)
+    blocks = blocks[:final_count]
+    image_files = image_files[:final_count]
+
+    print(f"✅ Using {final_count} blocks")
 
     print("🔊 Generating audio...")
     generate_audio(blocks)
 
     print("🎬 Creating video...")
-    create_video(image_files, BLOCKS)
+    create_video(image_files, final_count)
 
     print("✅ FINAL VIDEO READY:", FINAL_VIDEO)
 
