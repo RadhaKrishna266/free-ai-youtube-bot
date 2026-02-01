@@ -1,214 +1,131 @@
 import os
-import subprocess
 import requests
-import asyncio
+import subprocess
 from pathlib import Path
-from PIL import Image, ImageFilter
-import edge_tts
 import random
+import math
 
 # ================= CONFIG =================
-SCRIPT_FILE = "script.txt"
-
-IMAGE_DIR = "images"
-AUDIO_DIR = "audio_blocks"
-VIDEO_DIR = "video_blocks"
-
-FINAL_VIDEO = "final_video.mp4"
-TANPURA_FILE = "audio/tanpura.mp3"
-
 PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY")
+WIDTH = 1280
+HEIGHT = 720
+FPS = 25
+IMAGE_DURATION = 5  # seconds per image
+TOTAL_IMAGES = 12
 
-TARGET_IMAGES = 6
+BASE_DIR = Path(".")
+IMG_DIR = BASE_DIR / "images"
+VID_DIR = BASE_DIR / "video_blocks"
 
-PEXELS_QUERIES = [
-    "lord vishnu painting illustration",
-    "vaikuntha vishnu art",
-    "lakshmi narayan painting",
-    "lord krishna vishnu avatar art",
-    "narayana devotional illustration",
-    "hindu god digital art",
-    "vishnu temple idol"
-]
+IMG_DIR.mkdir(exist_ok=True)
+VID_DIR.mkdir(exist_ok=True)
 
-# ================= SETUP =================
-os.makedirs(IMAGE_DIR, exist_ok=True)
-os.makedirs(AUDIO_DIR, exist_ok=True)
-os.makedirs(VIDEO_DIR, exist_ok=True)
-
-# ================= UTILS =================
+# ================= HELPERS =================
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-# ================= IMAGE FETCH =================
-def fetch_pexels_images():
-    if not PEXELS_API_KEY:
-        raise RuntimeError("PEXELS_API_KEY not set")
-
+# ================= FETCH IMAGES =================
+def fetch_vishnu_images():
     headers = {"Authorization": PEXELS_API_KEY}
-    collected = []
 
-    for query in PEXELS_QUERIES:
-        if len(collected) >= TARGET_IMAGES:
-            break
+    queries = [
+        "Vishnu Hindu god illustration",
+        "Vaikuntha Vishnu art",
+        "Lakshmi Narayan divine illustration",
+        "Vishnu avatars painting",
+        "Krishna Vishnu avatar art",
+        "Rama Vishnu avatar illustration",
+        "Hindu god Vishnu digital art",
+        "Hindu mythology illustration"
+    ]
 
-        params = {
-            "query": query,
-            "per_page": 5,
-            "orientation": "landscape"
-        }
-
-        try:
-            r = requests.get(
-                "https://api.pexels.com/v1/search",
-                headers=headers,
-                params=params,
-                timeout=20
-            )
+    images = []
+    for q in queries:
+        url = f"https://api.pexels.com/v1/search?query={q}&per_page=5"
+        r = requests.get(url, headers=headers, timeout=20)
+        if r.status_code == 200:
             data = r.json()
-            photos = data.get("photos", [])
-            random.shuffle(photos)
+            for p in data.get("photos", []):
+                images.append(p["src"]["large2x"])
 
-            for p in photos:
-                url = p["src"]["large"]
-                if url not in collected:
-                    collected.append(url)
-                if len(collected) >= TARGET_IMAGES:
-                    break
+    if not images:
+        raise RuntimeError("❌ No images fetched from Pexels")
 
-        except Exception as e:
-            print("⚠ Pexels error:", e)
-
-    return collected
+    random.shuffle(images)
+    return images[:TOTAL_IMAGES]
 
 def download_images(urls):
     paths = []
     for i, url in enumerate(urls):
-        path = f"{IMAGE_DIR}/{i:03d}.jpg"
-        r = requests.get(url, timeout=20)
-        if r.status_code == 200:
-            with open(path, "wb") as f:
-                f.write(r.content)
-            paths.append(path)
+        path = IMG_DIR / f"{i:03}.jpg"
+        r = requests.get(url, timeout=30)
+        path.write_bytes(r.content)
+        paths.append(path)
     return paths
 
-# ================= IMAGE PROCESS (FULLSCREEN + BLUR) =================
-def process_images(paths):
-    final = []
-    for p in paths:
-        img = Image.open(p).convert("RGB")
+# ================= VIDEO CREATION =================
+def create_video_blocks(images):
+    blocks = []
 
-        # background (blurred fill)
-        bg = img.resize((1280, 720), Image.Resampling.LANCZOS)
-        bg = bg.filter(ImageFilter.GaussianBlur(25))
+    frames = IMAGE_DURATION * FPS
 
-        # foreground (fit)
-        fg = img.copy()
-        fg.thumbnail((1100, 620), Image.Resampling.LANCZOS)
+    for i, img in enumerate(images):
+        out = VID_DIR / f"{i:03}.mp4"
 
-        bg.paste(
-            fg,
-            ((1280 - fg.width) // 2, (720 - fg.height) // 2)
+        zoom_filter = (
+            f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
+            f"crop={WIDTH}:{HEIGHT},"
+            f"zoompan=z='if(lte(zoom,1.0),1.0,zoom+0.0008)':"
+            f"d={frames}:fps={FPS}"
         )
-
-        bg.save(p)
-        final.append(p)
-
-    return final
-
-# ================= AUDIO =================
-async def gen_audio(text, idx):
-    out = f"{AUDIO_DIR}/{idx:03d}.mp3"
-    tts = edge_tts.Communicate(
-        text=text,
-        voice="hi-IN-MadhurNeural"
-    )
-    await tts.save(out)
-
-def generate_audio(blocks):
-    async def runner():
-        for i, t in enumerate(blocks):
-            if t.strip():
-                await gen_audio(t, i)
-    asyncio.run(runner())
-
-# ================= VIDEO (ZOOM EFFECT) =================
-def create_video(images, blocks_count):
-    clips = []
-
-    for i in range(blocks_count):
-        img = images[i]
-        aud = f"{AUDIO_DIR}/{i:03d}.mp3"
-        clip = f"{VIDEO_DIR}/{i:03d}.mp4"
 
         cmd = [
             "ffmpeg", "-y",
             "-loop", "1",
-            "-i", img,
-            "-i", aud,
-            "-i", TANPURA_FILE,
-            "-filter_complex",
-            (
-                "zoompan=z='min(zoom+0.0008,1.12)':d=125,"
-                "scale=1280:720,"
-                "[v];"
-                "[2:a]volume=0.2[a2];"
-                "[1:a][a2]amix=inputs=2:duration=first[a]"
-            ),
-            "-map", "[v]",
-            "-map", "[a]",
-            "-c:v", "libx264",
+            "-i", str(img),
+            "-vf", zoom_filter,
+            "-t", str(IMAGE_DURATION),
             "-pix_fmt", "yuv420p",
-            "-shortest",
-            clip
+            "-c:v", "libx264",
+            str(out)
         ]
-        run(cmd)
-        clips.append(clip)
 
-    with open("list.txt", "w") as f:
-        for c in clips:
-            f.write(f"file '{c}'\n")
+        run(cmd)
+        blocks.append(out)
+
+    return blocks
+
+def concat_videos(videos):
+    list_file = BASE_DIR / "list.txt"
+    with open(list_file, "w") as f:
+        for v in videos:
+            f.write(f"file '{v.resolve()}'\n")
 
     run([
         "ffmpeg", "-y",
         "-f", "concat",
         "-safe", "0",
-        "-i", "list.txt",
+        "-i", str(list_file),
         "-c", "copy",
-        FINAL_VIDEO
+        "final_video.mp4"
     ])
 
 # ================= MAIN =================
 def main():
-    print("🌐 Fetching Vishnu devotional images...")
-    urls = fetch_pexels_images()
+    print("🌸 Fetching Vishnu images from Pexels...")
+    urls = fetch_vishnu_images()
 
-    if not urls:
-        raise RuntimeError("No images fetched from Pexels")
+    print("⬇ Downloading images...")
+    images = download_images(urls)
 
-    images = process_images(download_images(urls))
+    print("🎞 Creating zoom videos (FULL SCREEN)...")
+    videos = create_video_blocks(images)
 
-    blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
+    print("🎬 Merging final video...")
+    concat_videos(videos)
 
-    intro = (
-        "नमस्कार। आप देख रहे हैं Sanatan Gyan Dhara। "
-        "आज हम भगवान विष्णु के दिव्य स्वरूप, वैकुण्ठ धाम और उनके अवतारों के बारे में जानेंगे।"
-    )
-    outro = (
-        "🙏 यदि यह वीडियो आपको पसंद आया हो, तो कृपया लाइक, शेयर और सब्सक्राइब करें। "
-        "Sanatan Gyan Dhara के साथ जुड़े रहें।"
-    )
-
-    blocks = [intro] + blocks + [outro]
-    final_count = min(len(images), len(blocks))
-
-    print(f"✅ Using {final_count} blocks")
-
-    generate_audio(blocks[:final_count])
-    create_video(images[:final_count], final_count)
-
-    print("🎉 FINAL VIDEO READY:", FINAL_VIDEO)
+    print("✅ final_video.mp4 created successfully")
 
 if __name__ == "__main__":
     main()
