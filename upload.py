@@ -1,9 +1,8 @@
 import os
 import subprocess
-import requests
 import asyncio
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import edge_tts
 
 # ================= CONFIG =================
@@ -14,10 +13,9 @@ VIDEO_DIR = "video_blocks"
 FINAL_VIDEO = "final_video.mp4"
 TANPURA_FILE = "audio/tanpura.mp3"
 
-WIDTH = 1280
-HEIGHT = 720
+W, H = 1280, 720
 
-# ================= CREATE FOLDERS =================
+# ================= FOLDERS =================
 os.makedirs(IMAGE_DIR, exist_ok=True)
 os.makedirs(AUDIO_DIR, exist_ok=True)
 os.makedirs(VIDEO_DIR, exist_ok=True)
@@ -27,64 +25,71 @@ def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-def placeholder(path, text="ॐ नमो नारायणाय"):
-    img = Image.new("RGB", (WIDTH, HEIGHT), (15, 5, 0))
+# ================= IMAGE CREATION =================
+def create_divine_image(text, out_path):
+    img = Image.new("RGB", (W, H), "#050200")
+
+    # Background glow
+    glow = Image.new("RGB", (W, H), "#1a0d00")
+    glow = glow.filter(ImageFilter.GaussianBlur(120))
+    img = Image.blend(img, glow, 0.6)
+
     draw = ImageDraw.Draw(img)
+
+    # Font
     try:
-        font = ImageFont.truetype("DejaVuSans.ttf", 60)
+        font = ImageFont.truetype("DejaVuSans.ttf", 52)
     except:
-        font = None
-    draw.text((100, HEIGHT//2 - 40), text, fill=(255, 215, 0), font=font)
-    img.save(path)
+        font = ImageFont.load_default()
 
-# ================= IMAGE GENERATION =================
-def generate_ai_image(prompt, out_path):
-    print(f"🖼 Generating image: {prompt[:60]}")
+    # Text wrap
+    lines = []
+    words = text.split()
+    line = ""
+    for w in words:
+        if len(line + w) < 26:
+            line += w + " "
+        else:
+            lines.append(line)
+            line = w + " "
+    lines.append(line)
 
-    safe_prompt = prompt.replace(" ", "%20")
-    url = (
-        f"https://image.pollinations.ai/prompt/"
-        f"{safe_prompt},%20lord%20vishnu,%20vaikuntha,%20divine,%20hindu%20art"
-        f"?width={WIDTH}&height={HEIGHT}&model=flux&seed=42"
-    )
+    y = H//2 - len(lines)*35
+    for l in lines:
+        draw.text(
+            (W//2, y),
+            l.strip(),
+            fill=(255, 215, 140),
+            font=font,
+            anchor="mm"
+        )
+        y += 70
 
-    try:
-        r = requests.get(url, timeout=60)
-        with open(out_path, "wb") as f:
-            f.write(r.content)
-
-        img = Image.open(out_path).convert("RGB")
-        if img.getextrema() == ((0,0),(0,0),(0,0)):
-            raise ValueError("Black image")
-
-    except Exception as e:
-        print("❌ Image failed, using placeholder:", e)
-        placeholder(out_path)
+    img.save(out_path)
 
 def prepare_images(blocks):
     for i, text in enumerate(blocks):
         out = f"{IMAGE_DIR}/{i:03d}.jpg"
-        prompt = f"Divine Vaikuntha scene, Lord Vishnu, celestial background, glowing, spiritual art, {text[:120]}"
-        generate_ai_image(prompt, out)
+        create_divine_image(text, out)
 
-# ================= AUDIO GENERATION =================
-async def generate_audio_block(text, index):
-    out = f"{AUDIO_DIR}/{index:03d}.mp3"
-    communicate = edge_tts.Communicate(
+# ================= AUDIO =================
+async def gen_audio(text, idx):
+    out = f"{AUDIO_DIR}/{idx:03d}.mp3"
+    tts = edge_tts.Communicate(
         text=text,
         voice="hi-IN-MadhurNeural",
         rate="-5%"
     )
-    await communicate.save(out)
+    await tts.save(out)
 
 def generate_audio(blocks):
     async def runner():
-        for i, text in enumerate(blocks):
-            if text.strip():
-                await generate_audio_block(text, i)
+        for i, t in enumerate(blocks):
+            if t.strip():
+                await gen_audio(t, i)
     asyncio.run(runner())
 
-# ================= VIDEO CREATION =================
+# ================= VIDEO =================
 def create_video(blocks):
     clips = []
 
@@ -100,12 +105,11 @@ def create_video(blocks):
             "-i", aud,
             "-i", TANPURA_FILE,
             "-filter_complex",
-            "[1:a][2:a]amix=inputs=2:weights=2 0.6[a]",
+            "[1:a][2:a]amix=inputs=2:weights=2 0.5[a]",
             "-map", "0:v",
             "-map", "[a]",
             "-c:v", "libx264",
             "-pix_fmt", "yuv420p",
-            "-c:a", "aac",
             "-shortest",
             out
         ])
@@ -127,25 +131,15 @@ def create_video(blocks):
 # ================= MAIN =================
 def main():
     if not Path(SCRIPT_FILE).exists():
-        raise FileNotFoundError("❌ script.txt not found")
+        raise FileNotFoundError("script.txt missing")
 
     if not Path(TANPURA_FILE).exists():
-        raise FileNotFoundError("❌ audio/tanpura.mp3 not found")
+        raise FileNotFoundError("tanpura.mp3 missing")
 
     blocks = Path(SCRIPT_FILE).read_text(encoding="utf-8").split("\n\n")
 
-    intro = (
-        "ॐ नमो नारायणाय।\n"
-        "Sanatan Gyan Dhara में आपका स्वागत है।\n"
-        "यह विष्णु पुराण की दिव्य श्रृंखला का प्रथम अध्याय है।"
-    )
-
-    outro = (
-        "यदि आपको यह दिव्य ज्ञान प्रिय लगा हो,\n"
-        "तो कृपया Like, Share और Subscribe करें।\n"
-        "हम प्रतिदिन विष्णु पुराण का एक नया अध्याय प्रस्तुत करेंगे।\n"
-        "ॐ नमो नारायणाय।"
-    )
+    intro = "ॐ नमो नारायणाय। विष्णु पुराण की दिव्य कथा में आपका स्वागत है।"
+    outro = "इस दिव्य ज्ञान को आगे बढ़ाएँ। Like, Share और Subscribe करें। ॐ नमो नारायणाय।"
 
     blocks.insert(0, intro)
     blocks.append(outro)
