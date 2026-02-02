@@ -6,40 +6,73 @@ import subprocess
 import asyncio
 import edge_tts
 
-# ===================== CONFIG =====================
+# ================= CONFIG =================
 IMAGE_DIR = "images"
 os.makedirs(IMAGE_DIR, exist_ok=True)
 SCRIPT_FILE = "script.txt"
 OUTPUT_VIDEO = "final_video.mp4"
 BACKGROUND_MUSIC = "tanpura.mp3"
-
-START_IMAGE = "start.png"      # Starting welcome image
-FRONT_COVER = "image.png"      # Front cover image
-END_IMAGE = "end.png"          # Ending image
-
+FIRST_IMAGE = "image1.png"  # Your front cover (for start)
+END_IMAGE = f"{IMAGE_DIR}/end_krishna.jpg"  # Krishna image for end
+PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY")
 PIXABAY_API = "https://pixabay.com/api/"
-PIXABAY_KEY = os.environ.get("PIXABAY_API_KEY")  # Pixabay free API key
+# Hindi text for start and end narration
+START_TEXT = "सनातन ज्ञान धारा में आपका स्वागत है।"
+END_TEXT = "धन्यवाद। कृपया सब्सक्राइब करें। ॐ नमो नारायणाय।"
+# ==========================================
 
-# ===================== UTILS =====================
+# ================= HELPER =================
 def run(cmd):
-    print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-def fetch_pixabay_images(query, count=5):
-    """Fetch images from Pixabay."""
+def download_pixabay_image(query, out_path):
     try:
         params = {
-            "key": PIXABAY_KEY,
+            "key": PIXABAY_API_KEY,
             "q": query,
             "image_type": "photo",
-            "per_page": count
+            "per_page": 3
         }
+        res = requests.get(PIXABAY_API, params=params, timeout=15).json()
+        hits = res.get('hits', [])
+        if not hits:
+            print("No Pixabay images found for", query)
+            return None
+        url = hits[0]['largeImageURL']
+        img_res = requests.get(url)
+        with open(out_path, "wb") as f:
+            f.write(img_res.content)
+        return out_path
+    except Exception as e:
+        print("Pixabay download failed:", e)
+        return None
+
+async def tts_save(text, out_file):
+    communicate = edge_tts.Communicate(text, "hi-IN-SwaraNeural")
+    await communicate.save(out_file)
+
+def make_video_block(img_path, duration, out_path):
+    run([
+        "ffmpeg", "-y", "-loop", "1", "-i", img_path,
+        "-t", str(duration),
+        "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:black",
+        out_path
+    ])
+
+def fetch_pixabay_images(query, count=10):
+    params = {
+        "key": PIXABAY_API_KEY,
+        "q": query,
+        "image_type": "photo",
+        "per_page": count
+    }
+    try:
         res = requests.get(PIXABAY_API, params=params, timeout=15).json()
         urls = [hit['largeImageURL'] for hit in res.get('hits', [])]
         paths = []
         for i, url in enumerate(urls):
-            img_res = requests.get(url)
             path = f"{IMAGE_DIR}/{i:03d}.jpg"
+            img_res = requests.get(url)
             with open(path, "wb") as f:
                 f.write(img_res.content)
             paths.append(path)
@@ -48,100 +81,74 @@ def fetch_pixabay_images(query, count=5):
         print("Pixabay fetch failed:", e)
         return []
 
-async def text_to_speech(text, out_file):
-    """Generate TTS narration."""
-    communicate = edge_tts.Communicate(text, "hi-IN-SwaraNeural")  # Hindi voice
-    await communicate.save(out_file)
-
-def make_video_block(image_path, duration, output_path):
-    """Create a video clip for a single image."""
-    cmd = [
-        "ffmpeg", "-y", "-loop", "1", "-i", image_path,
-        "-t", str(duration),
-        "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:black",
-        output_path
-    ]
-    run(cmd)
-
-# ===================== MAIN =====================
+# ================= MAIN =================
 async def main():
-    print("🚀 Starting Sanatan Gyan Dhara Bot")
+    # 1️⃣ Start block (FIRST_IMAGE with START_TEXT)
+    start_clip = f"{IMAGE_DIR}/clip_start.mp4"
+    make_video_block(FIRST_IMAGE, 5, start_clip)
+    await tts_save(START_TEXT, "start.mp3")
 
-    # 1️⃣ Start page (Hindi narration)
-    start_narration = "सनातन ज्ञान धारा में आपका स्वागत है। इस दिव्य ज्ञान के माध्यम से हम आज विष्णु पुराण का एक अध्याय समझेंगे।"
-    os.makedirs("tts", exist_ok=True)
-    start_audio = "tts/start.mp3"
-    await text_to_speech(start_narration, start_audio)
-    make_video_block(START_IMAGE, 5, f"{IMAGE_DIR}/clip_start.mp4")
+    # 2️⃣ Fetch other images for middle narration
+    middle_images = fetch_pixabay_images("lord vishnu krishna", 10)
 
-    # 2️⃣ Front cover page (Hindi narration)
-    front_narration = "ॐ नमो नारायणाय। विष्णु पुराण के इस अध्याय में हम भगवान विष्णु के चरित्र और दिव्य ज्ञान को समझेंगे।"
-    front_audio = "tts/front.mp3"
-    await text_to_speech(front_narration, front_audio)
-    make_video_block(FRONT_COVER, 5, f"{IMAGE_DIR}/clip_front.mp4")
-
-    # 3️⃣ Fetch main images from Pixabay
-    images = fetch_pixabay_images("lord krishna vishnu", count=10)
-    if not images:
-        print("❌ No images fetched from Pixabay. Exiting.")
-        return
-
-    # 4️⃣ Main script narration
+    # 3️⃣ Script narration
     with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
         lines = [line.strip() for line in f if line.strip()]
 
-    narration_files = []
+    os.makedirs("tts", exist_ok=True)
+    audio_list = []
     for idx, line in enumerate(lines):
-        tts_file = f"tts/narration_{idx:03d}.mp3"
-        print(f"🔊 Generating narration {idx+1}/{len(lines)}...")
-        await text_to_speech(line, tts_file)
-        narration_files.append(tts_file)
+        out_file = f"tts/narration_{idx:03d}.mp3"
+        await tts_save(line, out_file)
+        audio_list.append(out_file)
 
-    # Combine narration into single audio
-    with open("audio_list.txt", "w") as f:
-        for file in narration_files:
-            f.write(f"file '{os.path.abspath(file)}'\n")
+    # Combine audio
+    with open("audio_list.txt", "w", encoding="utf-8") as f:
+        for a in audio_list:
+            f.write(f"file '{a}'\n")
     run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", "audio_list.txt", "-c", "copy", "narration.mp3"])
+    final_audio = "narration.mp3"
 
-    # 5️⃣ Background music
-    final_audio = "final_audio.mp3"
+    # Add background music if exists
     if os.path.exists(BACKGROUND_MUSIC):
         run([
-            "ffmpeg", "-y", "-i", "narration.mp3", "-i", BACKGROUND_MUSIC,
-            "-filter_complex", "[1:a]volume=0.3[a1];[0:a][a1]amix=inputs=2:duration=first",
-            final_audio
+            "ffmpeg", "-y", "-i", final_audio, "-i", BACKGROUND_MUSIC,
+            "-filter_complex", "[1:a]volume=0.3[a1];[0:a][a1]amix=inputs=2:duration=longest",
+            "final_audio.mp3"
         ])
-    else:
-        run(["cp", "narration.mp3", final_audio])
+        final_audio = "final_audio.mp3"
 
-    # 6️⃣ Create video clips for main images
+    # 4️⃣ Create video clips for middle images
     clip_files = []
-    # Add start and front cover
-    clip_files.append(f"{IMAGE_DIR}/clip_start.mp4")
-    clip_files.append(f"{IMAGE_DIR}/clip_front.mp4")
+    duration_per_image = max(3, float(final_audio) / len(middle_images))  # safe minimum 3s
+    for i, img in enumerate(middle_images):
+        clip_path = f"{IMAGE_DIR}/clip_{i:03d}.mp4"
+        make_video_block(img, duration_per_image, clip_path)
+        clip_files.append(clip_path)
 
-    duration_per_image = max(3, sum([AudioFileClip(f).duration for f in narration_files]) / len(images))
-    for idx, img in enumerate(images):
-        clip_file = f"{IMAGE_DIR}/clip_{idx:03d}.mp4"
-        make_video_block(img, duration_per_image, clip_file)
-        clip_files.append(clip_file)
+    # 5️⃣ End block (Krishna image with END_TEXT)
+    end_img_path = END_IMAGE
+    if not os.path.exists(end_img_path):
+        download_pixabay_image("lord krishna", end_img_path)
+    end_clip = f"{IMAGE_DIR}/clip_end.mp4"
+    make_video_block(end_img_path, 5, end_clip)
+    await tts_save(END_TEXT, "end.mp3")
+    run([
+        "ffmpeg", "-y", "-i", final_audio, "-i", "end.mp3",
+        "-filter_complex", "[0:a][1:a]concat=n=2:v=0:a=1[outa]", "-map", "[outa]", "final_audio_end.mp3"
+    ])
+    final_audio = "final_audio_end.mp3"
+    clip_files.append(end_clip)
 
-    # 7️⃣ End page (Hindi narration)
-    end_narration = "धन्यवाद। यदि आपको यह वीडियो पसंद आया हो, तो कृपया सब्सक्राइब करें और इस ज्ञान को अन्य भक्तों के साथ साझा करें। ॐ नमो नारायणाय।"
-    end_audio = "tts/end.mp3"
-    await text_to_speech(end_narration, end_audio)
-    make_video_block(END_IMAGE, 5, f"{IMAGE_DIR}/clip_end.mp4")
-    clip_files.append(f"{IMAGE_DIR}/clip_end.mp4")
-
-    # 8️⃣ Concatenate all video clips
-    with open("clip_list.txt", "w") as f:
-        for clip in clip_files:
-            f.write(f"file '{os.path.abspath(clip)}'\n")
+    # 6️⃣ Combine all clips
+    with open("clip_list.txt", "w", encoding="utf-8") as f:
+        for clip in [start_clip] + clip_files:
+            f.write(f"file '{clip}'\n")
     run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", "clip_list.txt", "-i", final_audio,
          "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", OUTPUT_VIDEO])
 
-    print(f"✅ Video created successfully: {OUTPUT_VIDEO}")
+    print("✅ Video created:", OUTPUT_VIDEO)
 
-# ===================== RUN =====================
+# ================= RUN =================
 if __name__ == "__main__":
     asyncio.run(main())
