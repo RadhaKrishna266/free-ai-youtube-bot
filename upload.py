@@ -1,129 +1,159 @@
 import os
 import requests
+from PIL import Image
+from io import BytesIO
 import asyncio
-from PIL import Image, ImageDraw, ImageFont
 import edge_tts
 import subprocess
 
-# ================= CONFIG =================
+# ---------------- CONFIG ----------------
 IMAGE_DIR = "images"
-TTS_DIR = "tts"
+os.makedirs(IMAGE_DIR, exist_ok=True)
+
+SCRIPT_FILE = "script.txt"
 OUTPUT_VIDEO = "final_video.mp4"
 BACKGROUND_MUSIC = "tanpura.mp3"
-FIRST_PAGE = "image.png"
-SCRIPT_FILE = "script.txt"
-PIXABAY_KEY = os.environ.get("PIXABAY_API_KEY")
+FIRST_PAGE = "image.png"  # front cover
+PIXABAY_KEY = os.getenv("PIXABAY_API_KEY")
 PIXABAY_API = "https://pixabay.com/api/"
-IMAGE_COUNT = 10
 
-os.makedirs(IMAGE_DIR, exist_ok=True)
-os.makedirs(TTS_DIR, exist_ok=True)
+# video clip duration minimum
+MIN_DURATION_PER_IMAGE = 3
 
-# ============== UTIL =================
+# ---------------- UTILS ----------------
 def run(cmd):
     print("▶", " ".join(cmd))
     subprocess.run(cmd, check=True)
 
-def fetch_pixabay_images(query, count=10):
-    params = {
-        "key": PIXABAY_KEY,
-        "q": query,
-        "image_type": "photo",
-        "per_page": count
-    }
+def ensure_jpg(path):
     try:
+        im = Image.open(path).convert("RGB")
+        im = im.resize((1280, 720))
+        im.save(path, "JPEG")
+    except Exception as e:
+        print(f"❌ Failed to process {path}:", e)
+
+# ---------------- PIXABAY IMAGE FETCH ----------------
+def fetch_pixabay_images(query, count=10):
+    urls = []
+    try:
+        params = {"key": PIXABAY_KEY, "q": query, "image_type": "photo", "per_page": count}
         res = requests.get(PIXABAY_API, params=params, timeout=15).json()
-        urls = [hit['largeImageURL'] for hit in res.get('hits', [])]
-        paths = []
-        for i, url in enumerate(urls):
-            img_res = requests.get(url, timeout=15)
+        hits = res.get("hits", [])
+        for hit in hits:
+            urls.append(hit.get("largeImageURL"))
+    except Exception as e:
+        print("⚠ Pixabay fetch failed:", e)
+    paths = []
+    for i, url in enumerate(urls[:count]):
+        try:
+            r = requests.get(url, timeout=15)
             path = f"{IMAGE_DIR}/{i:03d}.jpg"
             with open(path, "wb") as f:
-                f.write(img_res.content)
+                f.write(r.content)
+            ensure_jpg(path)
             paths.append(path)
-        return paths
-    except Exception as e:
-        print("❌ Pixabay fetch failed:", e)
-        return []
+        except Exception as e:
+            print(f"❌ Failed to download {url}: {e}")
+    return paths
 
+# ---------------- TTS ----------------
 async def text_to_speech(text, out_file):
-    communicate = edge_tts.Communicate(text, voice="hi-IN-MadhurNeural")
+    communicate = edge_tts.Communicate(text, "hi-IN-MadhurNeural")
     await communicate.save(out_file)
 
-# ============== MAIN =================
+# ---------------- AUDIO CONCAT ----------------
+def concat_audios(audio_files, output_file):
+    with open("audio_list.txt", "w") as f:
+        for a in audio_files:
+            f.write(f"file '{a}'\n")
+    run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", "audio_list.txt", "-c", "copy", output_file])
+    run(["cp", output_file, "final_audio.mp3"])
+
+# ---------------- VIDEO BLOCKS ----------------
+def make_video_block(image_file, duration, output_file):
+    cmd = [
+        "ffmpeg", "-y",
+        "-loop", "1",
+        "-i", image_file,
+        "-t", str(duration),
+        "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:black",
+        output_file
+    ]
+    run(cmd)
+
+# ---------------- MAIN ----------------
 async def main():
-    print("🚀 Starting video generation...")
+    print("🚀 Starting Sanatan Gyan Dhara bot")
 
     # 1️⃣ Fetch images
-    print("🌐 Fetching Vishnu/Krishna images from Pixabay...")
-    images = fetch_pixabay_images("lord krishna vishnu", IMAGE_COUNT)
-    if os.path.exists(FIRST_PAGE):
-        images = [FIRST_PAGE] + images
+    images = fetch_pixabay_images("lord krishna vishnu", count=15)
     if not images:
-        print("❌ No images found. Exiting.")
-        return
+        raise Exception("❌ No images fetched from Pixabay!")
+
+    # Add front cover
+    if os.path.exists(FIRST_PAGE):
+        ensure_jpg(FIRST_PAGE)
+        images = [FIRST_PAGE] + images
 
     # 2️⃣ Read script
     with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
         lines = [line.strip() for line in f if line.strip()]
 
     # Add start & end text
-    start_text = "नमस्कार। स्वागत है आप सभी का Sanatan Gyan Dhara श्रृंखला में। आज हम Vishnu Purana का पहला एपिसोड लाए हैं।"
-    end_text = "🙏 अगर आपको यह वीडियो पसंद आया हो, तो कृपया लाइक, शेयर और सब्सक्राइब जरूर करें। यह केवल एक वीडियो नहीं, बल्कि आध्यात्मिक यात्रा है।"
-    lines = [start_text] + lines + [end_text]
+    lines = ["नमस्कार। स्वागत है आप सभी का Sanatan Gyan Dhara श्रृंखला में।"] + lines + ["धन्यवाद! कृपया लाइक, शेयर और सब्सक्राइब करें।"]
 
-    # 3️⃣ Generate TTS audio files
+    # 3️⃣ Generate narration
+    os.makedirs("audio", exist_ok=True)
     audio_files = []
+    print(f"🔊 Generating narration {len(lines)} lines...")
     for idx, line in enumerate(lines):
-        tts_path = f"{TTS_DIR}/tts_{idx:03d}.mp3"
-        print(f"🔊 Generating narration {idx+1}/{len(lines)}...")
-        await text_to_speech(line, tts_path)
-        audio_files.append(tts_path)
+        out_file = f"audio/{idx:03d}.mp3"
+        await text_to_speech(line, out_file)
+        audio_files.append(out_file)
+        print(f"🔊 Line {idx+1}/{len(lines)} done")
 
-    # 4️⃣ Concatenate narration audio
-    with open("audio_list.txt", "w") as f:
-        for af in audio_files:
-            f.write(f"file '{af}'\n")
-    run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", "audio_list.txt", "-c", "copy", "narration.mp3"])
+    # 4️⃣ Concatenate narration
+    concat_audios(audio_files, "narration.mp3")
 
-    # 5️⃣ Add tanpura music if exists
+    # 5️⃣ Add background music if exists
     if os.path.exists(BACKGROUND_MUSIC):
         run([
-            "ffmpeg", "-y", "-i", "narration.mp3", "-i", BACKGROUND_MUSIC,
+            "ffmpeg", "-y",
+            "-i", "narration.mp3",
+            "-i", BACKGROUND_MUSIC,
             "-filter_complex", "[1:a]volume=0.2[a1];[0:a][a1]amix=inputs=2:duration=first[aout]",
-            "-map", "[aout]", "final_audio.mp3"
+            "-map", "[aout]",
+            "final_audio.mp3"
         ])
-    else:
-        run(["cp", "narration.mp3", "final_audio.mp3"])
 
-    # 6️⃣ Create video from images
+    # 6️⃣ Create video blocks
+    duration_per_image = max(len(lines)*2 / len(images), MIN_DURATION_PER_IMAGE)
+    clip_files = []
     for idx, img in enumerate(images):
-        duration = 3  # minimum duration per image
-        run([
-            "ffmpeg", "-y", "-loop", "1", "-i", img,
-            "-t", str(duration), "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:black",
-            f"{IMAGE_DIR}/clip_{idx:03d}.mp4"
-        ])
+        clip_file = f"images/clip_{idx:03d}.mp4"
+        make_video_block(img, duration_per_image, clip_file)
+        clip_files.append(clip_file)
 
-    # 7️⃣ Concatenate video clips
-    with open("video_list.txt", "w") as f:
-        for idx in range(len(images)):
-            f.write(f"file '{IMAGE_DIR}/clip_{idx:03d}.mp4'\n")
-    run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", "video_list.txt", "-c", "copy", "video_temp.mp4"])
-
-    # 8️⃣ Merge video + audio
+    # 7️⃣ Concatenate video blocks with audio
+    with open("clips_list.txt", "w") as f:
+        for c in clip_files:
+            f.write(f"file '{c}'\n")
     run([
-        "ffmpeg", "-y", "-i", "video_temp.mp4", "-i", "final_audio.mp3",
-        "-c:v", "copy", "-c:a", "aac", "-shortest", OUTPUT_VIDEO
+        "ffmpeg", "-y",
+        "-f", "concat",
+        "-safe", "0",
+        "-i", "clips_list.txt",
+        "-i", "final_audio.mp3",
+        "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-shortest",
+        OUTPUT_VIDEO
     ])
 
-    # 9️⃣ Done
-    print("\n✅ ✅ ✅")
-    print("🎉 FINAL VIDEO GENERATED SUCCESSFULLY!")
-    print(f"📂 Saved as: {OUTPUT_VIDEO}")
-    print("🙏 धन्यवाद! आपका आध्यात्मिक वीडियो तैयार है।")
-    print("✅ ✅ ✅\n")
+    print("✅ FINAL VIDEO READY:", OUTPUT_VIDEO)
 
-# ============== RUN =================
+# ---------------- RUN ----------------
 if __name__ == "__main__":
     asyncio.run(main())
