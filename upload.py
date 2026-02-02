@@ -1,11 +1,8 @@
 import os
 import requests
-from PIL import Image
-from io import BytesIO
-import imageio
-import imageio_ffmpeg as ffmpeg
-import edge_tts
 from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips, CompositeAudioClip
+import edge_tts
+import asyncio
 
 # ===================== CONFIG =====================
 IMAGE_DIR = "images"
@@ -15,88 +12,102 @@ OUTPUT_VIDEO = "final_video.mp4"
 BACKGROUND_MUSIC = "tanpura.mp3"
 FIRST_PAGE = "image.png"  # Front cover image
 PIXABAY_API = "https://pixabay.com/api/"
-PIXABAY_KEY = "YOUR_PIXABAY_API_KEY"  # Replace with free Pixabay API key
+PIXABAY_KEY = os.environ.get("PIXABAY_API_KEY")  # Set in GitHub Secrets
+# Intro & outro text
+INTRO_TEXT = "नमस्कार। स्वागत है आप सभी का Sanatan Gyan Dhara श्रृंखला में।"
+OUTRO_TEXT = "यदि आपको यह वीडियो पसंद आया हो, तो कृपया लाइक, शेयर और सब्सक्राइब जरूर करें।"
 # ===================================================
 
 # ===================== PIXABAY IMAGES =====================
-def fetch_pixabay_images(query, count=5):
+def fetch_pixabay_images(query, count=10):
     params = {
         "key": PIXABAY_KEY,
         "q": query,
         "image_type": "photo",
-        "per_page": count
+        "per_page": count,
+        "safesearch": True
     }
     try:
         res = requests.get(PIXABAY_API, params=params, timeout=15).json()
-        urls = [hit['largeImageURL'] for hit in res.get('hits', [])]
+        hits = res.get("hits", [])
         paths = []
-        for i, url in enumerate(urls):
-            img_res = requests.get(url)
+        for i, hit in enumerate(hits):
+            img_url = hit["largeImageURL"]
             path = f"{IMAGE_DIR}/{i:03d}.jpg"
-            with open(path, "wb") as f:
-                f.write(img_res.content)
-            paths.append(path)
+            r = requests.get(img_url, timeout=15)
+            if r.status_code == 200:
+                with open(path, "wb") as f:
+                    f.write(r.content)
+                paths.append(path)
         return paths
     except Exception as e:
-        print("Pixabay fetch failed:", e)
+        print("⚠ Failed to fetch images:", e)
         return []
 
-# ===================== TEXT TO SPEECH =====================
+# ===================== EDGE-TTS AUDIO =====================
 async def text_to_speech(text, out_file):
-    communicate = edge_tts.Communicate(text, "en-US-JennyNeural")
+    communicate = edge_tts.Communicate(text, "hi-IN-MadhurNeural")
     await communicate.save(out_file)
 
-# ===================== MAIN VIDEO =====================
-import asyncio
+async def generate_narration(script_lines):
+    os.makedirs("tts", exist_ok=True)
+    audio_files = []
+    for idx, line in enumerate(script_lines):
+        out_file = f"tts/narration_{idx:03d}.mp3"
+        await text_to_speech(line, out_file)
+        audio_files.append(out_file)
+    return audio_files
 
+# ===================== VIDEO CREATION =====================
+def create_video(images, audio_files):
+    clips = []
+
+    # If images < audio, repeat last image
+    while len(images) < len(audio_files):
+        images.append(images[-1])
+
+    # Create video clip for each image with audio
+    for img_path, aud_path in zip(images, audio_files):
+        audio_clip = AudioFileClip(aud_path)
+        # Add tanpura if available
+        if os.path.exists(BACKGROUND_MUSIC):
+            tanpura_clip = AudioFileClip(BACKGROUND_MUSIC).volumex(0.2).set_duration(audio_clip.duration)
+            final_audio = CompositeAudioClip([audio_clip, tanpura_clip])
+        else:
+            final_audio = audio_clip
+        clip = ImageClip(img_path).set_duration(audio_clip.duration)
+        clip = clip.set_audio(final_audio)
+        clips.append(clip)
+
+    final_clip = concatenate_videoclips(clips, method="compose")
+    final_clip.write_videofile(OUTPUT_VIDEO, fps=24, codec="libx264", audio_codec="aac")
+    print("✅ Video ready:", OUTPUT_VIDEO)
+
+# ===================== MAIN =====================
 async def main():
+    print("🚀 Starting video creation...")
+
     # 1️⃣ Fetch images
     images = fetch_pixabay_images("lord krishna vishnu", count=10)
-    if not images:
-        print("No images fetched from Pixabay. Exiting.")
-        return
-
-    # Add first page/front cover
     if os.path.exists(FIRST_PAGE):
         images = [FIRST_PAGE] + images
 
     # 2️⃣ Read script
+    if not os.path.exists(SCRIPT_FILE):
+        raise Exception(f"❌ {SCRIPT_FILE} not found")
     with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
-        lines = [line.strip() for line in f if line.strip()]
+        script_lines = [line.strip() for line in f if line.strip()]
 
-    # 3️⃣ Generate narration files
-    os.makedirs("tts", exist_ok=True)
-    narration_clips = []
-    for idx, line in enumerate(lines):
-        tts_file = f"tts/narration_{idx:03d}.mp3"
-        await text_to_speech(line, tts_file)
-        narration_clips.append(AudioFileClip(tts_file))
+    # Add intro and outro to script
+    script_lines = [INTRO_TEXT] + script_lines + [OUTRO_TEXT]
 
-    # Combine narration into one audio
-    narration_audio = concatenate_videoclips([clip.set_duration(clip.duration) for clip in narration_clips], method="compose")
-    narration_audio.write_audiofile("narration_final.mp3")
-    narration_clip = AudioFileClip("narration_final.mp3")
+    # 3️⃣ Generate narration
+    print("🔊 Generating narration...")
+    audio_files = await generate_narration(script_lines)
 
-    # 4️⃣ Combine with background music
-    if os.path.exists(BACKGROUND_MUSIC):
-        bg_music = AudioFileClip(BACKGROUND_MUSIC)
-        # Adjust volume of music
-        bg_music = bg_music.volumex(0.3)
-        final_audio = CompositeAudioClip([narration_clip, bg_music.set_duration(narration_clip.duration)])
-    else:
-        final_audio = narration_clip
+    # 4️⃣ Create video
+    print("🎞 Creating video...")
+    create_video(images, audio_files)
 
-    # 5️⃣ Create video clips for each image
-    duration_per_image = max(final_audio.duration / len(images), 3)  # At least 3s per image
-    clips = []
-    for img_path in images:
-        clip = ImageClip(img_path).set_duration(duration_per_image)
-        clips.append(clip)
-
-    final_clip = concatenate_videoclips(clips, method="compose")
-    final_clip = final_clip.set_audio(final_audio)
-    final_clip.write_videofile(OUTPUT_VIDEO, fps=24)
-
-# ===================== RUN =====================
 if __name__ == "__main__":
     asyncio.run(main())
