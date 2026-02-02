@@ -2,18 +2,10 @@ import os
 import requests
 import asyncio
 from pathlib import Path
-from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont
 import subprocess
 import edge_tts
-import random
-import time
-
-# Optional OpenAI for front cover
-try:
-    import openai
-except:
-    openai = None
+import math
 
 # ---------------- CONFIG ----------------
 CHANNEL_NAME = "Sanatan Gyan Dhara"
@@ -21,10 +13,10 @@ IMAGE_DIR = "images"
 AUDIO_DIR = "audio_blocks"
 VIDEO_DIR = "video_blocks"
 FINAL_VIDEO = "final_video.mp4"
-TANPURA_FILE = "audio/tanpura.mp3"
-FRONT_COVER = f"{IMAGE_DIR}/0.jpg"
-BLOCKS = 5  # number of video blocks
-SCRIPT_FILE = "script.txt"  # narration script
+TANPURA_FILE = "audio/tanpura.mp3"  # your tanpura.mp3
+SCRIPT_FILE = "script.txt"
+IMAGE_DISPLAY_TIME = 12  # seconds per image approx
+FRONT_COVER = f"{IMAGE_DIR}/front_cover.jpg"
 
 # ---------------- CREATE FOLDERS ----------------
 os.makedirs(IMAGE_DIR, exist_ok=True)
@@ -48,100 +40,84 @@ def placeholder(path, text="ॐ नमो नारायणाय"):
     img.save(path)
 
 # ---------------- AUDIO GENERATION ----------------
-async def generate_audio(text, index):
-    out = f"{AUDIO_DIR}/{index:03d}.mp3"
+async def generate_audio(text, out_path):
     communicate = edge_tts.Communicate(text=text, voice="hi-IN-MadhurNeural")
-    await communicate.save(out)
+    await communicate.save(out_path)
 
-def generate_audio_blocks(blocks):
-    async def runner():
-        for i, text in enumerate(blocks):
-            if text.strip():
-                await generate_audio(text, i)
-    asyncio.run(runner())
+def generate_narration(text, out_path):
+    asyncio.run(generate_audio(text, out_path))
+    return out_path
 
-# ---------------- TANPURA GENERATION ----------------
-def generate_tanpura(duration=180):
+# ---------------- TANPURA CHECK ----------------
+def check_tanpura():
     if not os.path.exists(TANPURA_FILE):
         run([
             "ffmpeg", "-y", "-f", "lavfi",
-            f"-i", f"sine=frequency=110:duration={duration}",
+            "-i", "sine=frequency=110:duration=180",
             "-af", "volume=0.18",
             TANPURA_FILE
         ])
 
-# ---------------- IMAGE FETCH ----------------
-def fetch_wallpapers(query, count):
-    """
-    Scrapes wallpapers from Bhagwan Puja
-    """
-    base_url = "https://www.bhagwanpuja.com/wallpapers/"
-    try:
-        res = requests.get(base_url, timeout=15)
-        soup = BeautifulSoup(res.text, "lxml")
-        imgs = [img["src"] for img in soup.find_all("img") if query.lower() in img.get("alt", "").lower()]
-        paths = []
-        for i, url in enumerate(imgs[:count]):
-            path = f"{IMAGE_DIR}/{i+1:03d}.jpg"  # start from 1 since 0 is front cover
-            try:
-                r = requests.get(url, timeout=15)
-                if r.status_code == 200:
-                    with open(path, "wb") as f:
-                        f.write(r.content)
-                    paths.append(path)
-                else:
-                    placeholder(path)
-                    paths.append(path)
-            except:
-                placeholder(path)
-                paths.append(path)
-        return paths
-    except Exception as e:
-        print("⚠ Failed to fetch images:", e)
-        paths = []
-        for i in range(count):
-            path = f"{IMAGE_DIR}/{i+1:03d}.jpg"
-            placeholder(path)
-            paths.append(path)
-        return paths
+# ---------------- PIXABAY IMAGE FETCH ----------------
+PIXABAY_KEY = os.getenv("PIXABAY_API_KEY")
+PIXABAY_URL = "https://pixabay.com/api/"
 
-# ---------------- FRONT COVER ----------------
-def generate_front_cover():
-    if os.path.exists(FRONT_COVER):
-        print("✅ Using existing front cover")
-        return FRONT_COVER
-
-    if openai and os.getenv("OPENAI_API_KEY"):
+def fetch_pixabay_images(query, count):
+    print(f"🌐 Fetching {count} images for '{query}' from Pixabay...")
+    images = []
+    page = 1
+    while len(images) < count:
+        params = {
+            "key": PIXABAY_KEY,
+            "q": query,
+            "image_type": "photo",
+            "orientation": "horizontal",
+            "safesearch": "true",
+            "per_page": min(50, count),
+            "page": page
+        }
         try:
-            print("🌟 Generating front cover via OpenAI...")
-            prompt = "Vishnu Purana book front cover, divine Hindu style, vibrant, highly detailed, 1280x720"
-            openai.api_key = os.getenv("OPENAI_API_KEY")
-            resp = openai.Image.create(prompt=prompt, n=1, size="1280x720")
-            img_url = resp["data"][0]["url"]
-            r = requests.get(img_url, timeout=20)
-            if r.status_code == 200:
-                with open(FRONT_COVER, "wb") as f:
-                    f.write(r.content)
-                return FRONT_COVER
+            res = requests.get(PIXABAY_URL, params=params, timeout=15).json()
+            hits = res.get("hits", [])
+            if not hits:
+                break
+            for hit in hits:
+                url = hit["largeImageURL"]
+                path = f"{IMAGE_DIR}/{len(images):03d}.jpg"
+                try:
+                    r = requests.get(url, timeout=15)
+                    if r.status_code == 200:
+                        with open(path, "wb") as f:
+                            f.write(r.content)
+                        images.append(path)
+                        if len(images) >= count:
+                            break
+                except:
+                    placeholder(path)
+                    images.append(path)
+            page += 1
         except Exception as e:
-            print("⚠ Failed to generate front cover:", e)
-    
-    print("⚠ Using placeholder for front cover")
-    placeholder(FRONT_COVER, text="Vishnu Purana")
-    return FRONT_COVER
+            print("⚠ Failed to fetch images:", e)
+            break
+    while len(images) < count:
+        path = f"{IMAGE_DIR}/{len(images):03d}.jpg"
+        placeholder(path, text="Vishnu")
+        images.append(path)
+    return images
 
-# ---------------- VIDEO CREATION ----------------
-def make_video_block(image_file, audio_file, index):
+# ---------------- VIDEO BLOCKS ----------------
+def make_video_block(image_file, audio_file, index, duration):
     out = f"{VIDEO_DIR}/{index:03d}.mp4"
     cmd = [
         "ffmpeg", "-y",
         "-loop", "1",
+        "-t", str(duration),
         "-i", image_file,
         "-i", audio_file,
         "-i", TANPURA_FILE,
         "-filter_complex",
         "[2:a]volume=0.2[a2];[1:a][a2]amix=inputs=2:duration=first[a];"
-        "[0:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720,zoompan=z='min(zoom+0.0005,1.06)':d=150:fps=25[v]",
+        "[0:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720[v]",
         "-map", "[v]",
         "-map", "[a]",
         "-c:v", "libx264",
@@ -162,34 +138,62 @@ def concat_videos(clips, output_file):
 def main():
     print("🚀 Starting Sanatan Gyan Dhara bot")
 
-    # ---------------- SCRIPT ----------------
-    if not os.path.exists(SCRIPT_FILE):
-        raise Exception("❌ script.txt not found!")
-    with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
-        script_lines = [line.strip() for line in f if line.strip()]
-
-    # ---------------- IMAGES ----------------
-    images = [generate_front_cover()]
-    images += fetch_wallpapers("vishnu", BLOCKS-1)
-
-    # ---------------- AUDIO ----------------
-    print("🔊 Generating narration...")
-    generate_audio_blocks(script_lines)
-
     # ---------------- TANPURA ----------------
-    generate_tanpura(duration=300)
+    check_tanpura()
+
+    # ---------------- INTRO ----------------
+    intro_text = f"नमस्कार। स्वागत है आप सभी का {CHANNEL_NAME} श्रृंखला में। आज हम आपके लिए Vishnu Purana का पहला एपिसोड लाए हैं।"
+    intro_audio = "audio/000_intro.mp3"
+    generate_narration(intro_text, intro_audio)
+    intro_img = f"{IMAGE_DIR}/intro.jpg"
+    placeholder(intro_img, text=intro_text)
+
+    # ---------------- NARRATION SCRIPT ----------------
+    with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
+        script_text = f.read()
+    narration_file = "audio/narration.mp3"
+    generate_narration(script_text, narration_file)
+
+    # ---------------- OUTRO ----------------
+    outro_text = f"🙏 अगर आपको यह वीडियो पसंद आया हो, तो कृपया लाइक, शेयर और सब्सक्राइब जरूर करें। हर दिन एक नया एपिसोड आएगा।"
+    outro_audio = "audio/999_outro.mp3"
+    generate_narration(outro_text, outro_audio)
+    outro_img = f"{IMAGE_DIR}/outro.jpg"
+    placeholder(outro_img, text=outro_text)
+
+    # ---------------- IMAGE COUNT ----------------
+    # get narration duration using ffprobe
+    result = subprocess.run(
+        ["ffprobe", "-i", narration_file, "-show_entries", "format=duration", "-v", "quiet", "-of", "csv=p=0"],
+        capture_output=True, text=True
+    )
+    duration = float(result.stdout.strip())
+    num_images = max(5, math.ceil(duration / 12))
+    print(f"ℹ Narration duration: {duration:.2f}s, using {num_images} images (~{duration/num_images:.2f}s per image)")
+
+    # ---------------- FETCH IMAGES ----------------
+    front_image = fetch_pixabay_images("lord krishna", 1)
+    other_images = fetch_pixabay_images("lord vishnu", num_images - 1)
+    middle_images = front_image + other_images
 
     # ---------------- VIDEO BLOCKS ----------------
-    print("🎞 Creating devotional video blocks...")
-    video_clips = []
-    for i, img in enumerate(images):
-        audio_file = f"{AUDIO_DIR}/{i:03d}.mp3" if i < len(script_lines) else TANPURA_FILE
-        clip = make_video_block(img, audio_file, i)
-        video_clips.append(clip)
+    print("🎞 Creating video blocks...")
+    clips = []
+
+    # intro
+    clips.append(make_video_block(intro_img, intro_audio, 0, 8))
+
+    # main images
+    img_duration = duration / len(middle_images)
+    for i, img in enumerate(middle_images, start=1):
+        clips.append(make_video_block(img, narration_file, i, img_duration))
+
+    # outro
+    clips.append(make_video_block(outro_img, outro_audio, len(middle_images)+1, 8))
 
     # ---------------- CONCATENATE ----------------
-    print("🔗 Concatenating video blocks...")
-    concat_videos(video_clips, FINAL_VIDEO)
+    print("🔗 Concatenating all blocks...")
+    concat_videos(clips, FINAL_VIDEO)
     print("✅ FINAL VIDEO READY:", FINAL_VIDEO)
 
 if __name__ == "__main__":
