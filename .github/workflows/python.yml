@@ -34,9 +34,9 @@ jobs:
       - name: Run Sanatan Gyan Dhara Bot
         env:
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}   # Optional for AI front cover
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          python -m pip show moviepy   # ✅ check moviepy installed
+          python -m pip show moviepy
           python upload.py
 
       # ================= VERIFY VIDEO =================
@@ -44,15 +44,12 @@ jobs:
         run: |
           echo "📂 Workspace files:"
           ls -R
-          if [ ! -f final_video.mp4 ]; then
-            echo "❌ Video NOT FOUND"
-            exit 1
-          fi
+          ls final_video_episode_*.mp4 || exit 1
           echo "✅ Video FOUND"
 
       # ================= UPLOAD ARTIFACT =================
       - name: Upload final video
         uses: actions/upload-artifact@v4
         with:
-          name: sanatan-gyan-dhara-episode-1
-          path: final_video.mp4
+          name: sanatan-gyan-dhara-episode
+          path: final_video_episode_*.mp4
