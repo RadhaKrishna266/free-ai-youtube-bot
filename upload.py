@@ -2,95 +2,93 @@ import os
 import requests
 import subprocess
 import asyncio
-import edge_tts
 from pathlib import Path
+import edge_tts
 
-# ================= CONFIG =================
+# ===================== CONFIG =====================
 IMAGE_DIR = "images"
 CLIP_DIR = "clips"
 TTS_DIR = "tts"
 
 SCRIPT_FILE = "script.txt"
 OUTPUT_VIDEO = "final_video.mp4"
-BACKGROUND_MUSIC = "tanpura.mp3"
 
-START_IMAGE = "Image1.png"   # <-- CASE MATCHES YOUR REPO
-PIXABAY_API = "https://pixabay.com/api/"
+START_IMAGE = "Image1.png"          # EXACT filename from repo
+BACKGROUND_MUSIC = "tanpura.mp3"    # Must exist in repo root
+
 PIXABAY_KEY = os.environ.get("PIXABAY_API_KEY")
-
-VOICE = "hi-IN-SwaraNeural"
+PIXABAY_API = "https://pixabay.com/api/"
 
 os.makedirs(IMAGE_DIR, exist_ok=True)
 os.makedirs(CLIP_DIR, exist_ok=True)
 os.makedirs(TTS_DIR, exist_ok=True)
 
-# ================= UTILS =================
-def run(cmd):
-    subprocess.run(cmd, check=True)
-
+# ===================== UTILS =====================
 def log(msg):
     print(f"▶ {msg}")
 
-# ================= TTS =================
-async def tts(text, out):
-    c = edge_tts.Communicate(text, VOICE)
-    await c.save(out)
-    log(f"✅ TTS saved: {out}")
+def run(cmd):
+    subprocess.run(cmd, check=True)
 
-# ================= PIXABAY =================
-def fetch_images(query, count=8):
-    log("📸 Fetching Vishnu images from Pixabay...")
+def fetch_pixabay_images(query, count=8):
+    log(f"Fetching images for '{query}' from Pixabay...")
     r = requests.get(
         PIXABAY_API,
-        params={"key": PIXABAY_KEY, "q": query, "image_type": "photo", "per_page": count},
+        params={
+            "key": PIXABAY_KEY,
+            "q": query,
+            "image_type": "photo",
+            "per_page": count,
+            "safesearch": "true"
+        },
         timeout=20
     ).json()
 
     paths = []
     for i, hit in enumerate(r.get("hits", [])):
-        img = requests.get(hit["largeImageURL"], timeout=20).content
-        p = f"{IMAGE_DIR}/{i:03d}.jpg"
-        with open(p, "wb") as f:
+        url = hit["largeImageURL"]
+        path = f"{IMAGE_DIR}/{i:03d}.jpg"
+        img = requests.get(url, timeout=20).content
+        with open(path, "wb") as f:
             f.write(img)
-        paths.append(p)
+        paths.append(path)
+        log(f"✅ Image saved: {path}")
     return paths
 
-# ================= VIDEO BLOCK =================
-def make_clip(img, dur, out):
+async def tts(text, out_file):
+    voice = "hi-IN-SwaraNeural"
+    communicate = edge_tts.Communicate(text, voice)
+    await communicate.save(out_file)
+    log(f"✅ TTS saved: {out_file}")
+
+def make_clip(image, duration, out):
     run([
         "ffmpeg", "-y",
         "-loop", "1",
-        "-framerate", "1",
-        "-i", img,
-        "-t", str(dur),
-        "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:black",
+        "-i", image,
+        "-t", str(duration),
+        "-vf",
+        "scale=1280:720:force_original_aspect_ratio=decrease,"
+        "pad=1280:720:(ow-iw)/2:(oh-ih)/2",
         "-pix_fmt", "yuv420p",
-        "-r", "24",
         out
     ])
 
-# ================= MAIN =================
+# ===================== MAIN =====================
 async def main():
     log("🚀 Vishnu Purana Daily Bot Started")
 
     # ---------- READ SCRIPT ----------
-    lines = [l.strip() for l in open(SCRIPT_FILE, encoding="utf-8") if l.strip()]
-
-    # ---------- START / END TEXT ----------
-    start_text = (
-        "सनातन ज्ञान धारा में आपका स्वागत है। "
-        "आज हम आरंभ कर रहे हैं विष्णु पुराण की पावन कथा।"
-    )
-
-    end_text = (
-        "आज के इस विष्णु पुराण अध्याय का यही समापन है। "
-        "कल हम अगला अध्याय लेकर आएंगे। "
-        "ॐ नमो नारायणाय।"
-    )
+    with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
+        lines = [l.strip() for l in f if l.strip()]
 
     # ---------- TTS ----------
     tts_files = []
 
+    start_text = (
+        "सनातन ज्ञान धारा में आपका हार्दिक स्वागत है। "
+        "आज हम प्रारंभ कर रहे हैं विष्णु पुराण की पावन कथा।"
+    )
     await tts(start_text, f"{TTS_DIR}/start.mp3")
     tts_files.append(f"{TTS_DIR}/start.mp3")
 
@@ -99,46 +97,62 @@ async def main():
         await tts(line, out)
         tts_files.append(out)
 
+    end_text = (
+        "आज के विष्णु पुराण अध्याय का यहीं समापन होता है। "
+        "कल फिर मिलेंगे एक नए अध्याय के साथ। हरि ओम।"
+    )
     await tts(end_text, f"{TTS_DIR}/end.mp3")
     tts_files.append(f"{TTS_DIR}/end.mp3")
 
-    # ---------- MERGE VOICE ----------
+    # ---------- COMBINE VOICE ----------
     with open("voice_list.txt", "w") as f:
-        for a in tts_files:
-            f.write(f"file '{a}'\n")
+        for t in tts_files:
+            f.write(f"file '{t}'\n")
 
-    run(["ffmpeg", "-y", "-f", "concat", "-safe", "0",
-         "-i", "voice_list.txt", "-c", "copy", "voice.mp3"])
-
-    # ---------- ADD TANPURA ----------
     run([
         "ffmpeg", "-y",
-        "-i", "voice.mp3",
+        "-f", "concat", "-safe", "0",
+        "-i", "voice_list.txt",
+        "-c", "copy",
+        "voice.mp3"
+    ])
+
+    # ---------- MIX TANPURA (FIXED) ----------
+    run([
+        "ffmpeg", "-y",
+        "-stream_loop", "-1",
         "-i", BACKGROUND_MUSIC,
-        "-filter_complex", "amix=inputs=2:weights=1 0.3",
+        "-i", "voice.mp3",
+        "-filter_complex",
+        "amix=inputs=2:weights=1|0.3:dropout_transition=2",
+        "-shortest",
         "-c:a", "mp3",
         "final_audio.mp3"
     ])
 
     # ---------- IMAGES ----------
-    images = fetch_images("lord vishnu statue painting", 8)
-    images = [START_IMAGE] + images + [images[-1]]  # end uses Vishnu image
+    images = fetch_pixabay_images("lord vishnu painting", 8)
 
-    # ---------- DURATION ----------
-    dur = float(subprocess.check_output([
+    if Path(START_IMAGE).exists():
+        images.insert(0, START_IMAGE)
+    else:
+        raise FileNotFoundError("❌ Image1.png NOT FOUND")
+
+    # ---------- VIDEO CLIPS ----------
+    total_duration = float(subprocess.check_output([
         "ffprobe", "-v", "error",
         "-show_entries", "format=duration",
         "-of", "default=nokey=1:noprint_wrappers=1",
         "final_audio.mp3"
     ]))
-    per = max(dur / len(images), 5)
 
-    # ---------- CLIPS ----------
+    per_image = max(total_duration / len(images), 4)
+
     clips = []
     for i, img in enumerate(images):
-        c = f"{CLIP_DIR}/c_{i:03d}.mp4"
-        make_clip(img, per, c)
-        clips.append(c)
+        clip = f"{CLIP_DIR}/clip_{i:03d}.mp4"
+        make_clip(img, per_image, clip)
+        clips.append(clip)
 
     with open("clips.txt", "w") as f:
         for c in clips:
@@ -150,15 +164,14 @@ async def main():
         "-f", "concat", "-safe", "0",
         "-i", "clips.txt",
         "-i", "final_audio.mp3",
-        "-map", "0:v",
-        "-map", "1:a",
         "-c:v", "libx264",
         "-c:a", "aac",
-        "-shortest",
+        "-pix_fmt", "yuv420p",
         OUTPUT_VIDEO
     ])
 
-    log("🎉 FINAL VIDEO CREATED SUCCESSFULLY")
+    log(f"✅ FINAL VIDEO CREATED: {OUTPUT_VIDEO}")
 
+# =====================
 if __name__ == "__main__":
     asyncio.run(main())
