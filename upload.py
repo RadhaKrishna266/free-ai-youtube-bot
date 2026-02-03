@@ -8,123 +8,115 @@ from pathlib import Path
 # ================= CONFIG =================
 PIXABAY_KEY = os.getenv("PIXABAY_API_KEY")
 IMAGE_QUERY = "Vishnu Krishna"
-VIDEO_SIZE = "1280:720"
 FPS = "25"
 
 START_IMAGE = "image1.png"
 SCRIPT_FILE = "script.txt"
 
-# folders
 Path("tts").mkdir(exist_ok=True)
 Path("images").mkdir(exist_ok=True)
 Path("clips").mkdir(exist_ok=True)
 
-# ---------------- DAILY EPISODE NUMBER ----------------
-EPISODE_NUMBER_FILE = "episode_number.txt"
-if Path(EPISODE_NUMBER_FILE).exists():
-    EPISODE_NUMBER = int(Path(EPISODE_NUMBER_FILE).read_text())
-else:
-    EPISODE_NUMBER = 1
-Path(EPISODE_NUMBER_FILE).write_text(str(EPISODE_NUMBER + 1))
+# ================= EPISODE NUMBER =================
+ep_file = Path("episode_number.txt")
+EP = int(ep_file.read_text()) if ep_file.exists() else 1
+ep_file.write_text(str(EP + 1))
 
-# ================= HELPERS =================
+# ================= UTILS =================
 def run(cmd, cwd=None):
     subprocess.run(cmd, check=True, cwd=cwd)
 
 async def tts(text, out):
-    communicate = edge_tts.Communicate(text, "hi-IN-MadhurNeural")
-    await communicate.save(out)
+    t = edge_tts.Communicate(text, "hi-IN-MadhurNeural")
+    await t.save(out)
     print(f"▶ TTS saved: {out}")
-
-def fetch_images():
-    print("▶ Fetching images from Pixabay...")
-    url = "https://pixabay.com/api/"
-    params = {
-        "key": PIXABAY_KEY,
-        "q": IMAGE_QUERY,
-        "image_type": "photo",
-        "safesearch": "true",
-        "per_page": 12
-    }
-    r = requests.get(url, params=params).json()
-    for i, hit in enumerate(r["hits"]):
-        img = requests.get(hit["largeImageURL"]).content
-        with open(f"images/{i:03}.jpg", "wb") as f:
-            f.write(img)
-
-def make_clip(img, duration, out):
-    run([
-        "ffmpeg", "-y",
-        "-loop", "1",
-        "-i", img,
-        "-t", str(duration),
-        "-vf",
-        "scale=1280:720:force_original_aspect_ratio=decrease,"
-        "pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black",
-        "-r", FPS,
-        "-pix_fmt", "yuv420p",
-        out
-    ])
 
 # ================= MAIN =================
 async def main():
-    print(f"🚀 Vishnu Purana Daily Bot Started - Episode {EPISODE_NUMBER}")
+    print(f"🚀 Vishnu Purana Daily – Episode {EP}")
 
-    # ---------- READ STORY ----------
-    story = Path(SCRIPT_FILE).read_text(encoding="utf-8").strip().split("\n")
+    story = Path(SCRIPT_FILE).read_text(encoding="utf-8").splitlines()
     story = [s.strip() for s in story if s.strip()]
 
     # ---------- TTS ----------
-    await tts("सनातन ज्ञान धारा में आपका स्वागत है। आज हम विष्णु पुराण की कथा प्रारंभ कर रहे हैं।", "tts/start.mp3")
+    await tts(
+        "सनातन ज्ञान धारा में आपका स्वागत है। आज हम विष्णु पुराण की कथा प्रारंभ कर रहे हैं।",
+        "tts/start.mp3"
+    )
 
-    audio_files = ["tts/start.mp3"]
+    audio = ["start.mp3"]
 
     for i, line in enumerate(story):
-        f = f"tts/n_{i:03}.mp3"
-        await tts(line, f)
-        audio_files.append(f)
+        name = f"n_{i:03}.mp3"
+        await tts(line, f"tts/{name}")
+        audio.append(name)
 
-    await tts("यह था आज का विष्णु पुराण अध्याय। अगले भाग में पुनः मिलेंगे। हरि ॐ।", "tts/end.mp3")
-    audio_files.append("tts/end.mp3")
+    await tts(
+        "यह था आज का विष्णु पुराण अध्याय। अगले भाग में पुनः मिलेंगे। हरि ॐ।",
+        "tts/end.mp3"
+    )
+    audio.append("end.mp3")
 
-    # ---------- AUDIO CONCAT (FIXED) ----------
+    # ---------- AUDIO CONCAT (FIXED FOREVER) ----------
     with open("tts/list.txt", "w") as f:
-        for a in audio_files:
+        for a in audio:
             f.write(f"file '{a}'\n")
 
-    # Re-encode while concatenating to avoid ffmpeg copy error
     run([
         "ffmpeg", "-y",
         "-f", "concat", "-safe", "0",
-        "-i", "tts/list.txt",
+        "-i", "list.txt",
         "-c:a", "mp3",
         "-b:a", "192k",
         "voice.mp3"
-    ])
+    ], cwd="tts")
 
-    # ---------- IMAGES ----------
+    run(["mv", "tts/voice.mp3", "voice.mp3"])
+
+    # ---------- IMAGE CHECK ----------
     if not Path(START_IMAGE).exists():
-        raise FileNotFoundError(f"{START_IMAGE} NOT FOUND in repo")
+        raise FileNotFoundError("image1.png NOT FOUND")
 
-    fetch_images()
+    # ---------- PIXABAY ----------
+    print("▶ Fetching images from Pixabay")
+    r = requests.get(
+        "https://pixabay.com/api/",
+        params={
+            "key": PIXABAY_KEY,
+            "q": IMAGE_QUERY,
+            "image_type": "photo",
+            "safesearch": "true",
+            "per_page": 10
+        }
+    ).json()
+
+    for i, h in enumerate(r["hits"]):
+        img = requests.get(h["largeImageURL"]).content
+        Path(f"images/{i:03}.jpg").write_bytes(img)
 
     # ---------- VIDEO CLIPS ----------
-    duration = 8
-    clips = []
+    def clip(img, out):
+        run([
+            "ffmpeg", "-y",
+            "-loop", "1",
+            "-i", img,
+            "-t", "8",
+            "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,"
+                   "pad=1280:720:(ow-iw)/2:(oh-ih)/2",
+            "-r", FPS,
+            "-pix_fmt", "yuv420p",
+            out
+        ])
 
-    make_clip(START_IMAGE, duration, "clips/000.mp4")
-    clips.append("000.mp4")
+    clip(START_IMAGE, "clips/000.mp4")
 
     imgs = sorted(Path("images").glob("*.jpg"))
     for i, img in enumerate(imgs, start=1):
-        out = f"{i:03}.mp4"
-        make_clip(str(img), duration, f"clips/{out}")
-        clips.append(out)
+        clip(str(img), f"clips/{i:03}.mp4")
 
-    # ---------- CONCAT VIDEO ----------
     with open("clips/list.txt", "w") as f:
-        for c in clips:
-            f.write(f"file '{c}'\n")
+        for c in sorted(Path("clips").glob("*.mp4")):
+            f.write(f"file '{c.name}'\n")
 
     run([
         "ffmpeg", "-y",
@@ -134,11 +126,10 @@ async def main():
         "-c:v", "copy",
         "-c:a", "aac",
         "-shortest",
-        f"../final_video_episode_{EPISODE_NUMBER}.mp4"
+        f"../final_video_episode_{EP}.mp4"
     ], cwd="clips")
 
-    print(f"✅ FINAL VIDEO CREATED: final_video_episode_{EPISODE_NUMBER}.mp4")
+    print(f"✅ FINAL VIDEO READY: final_video_episode_{EP}.mp4")
 
 # ================= RUN =================
-if __name__ == "__main__":
-    asyncio.run(main())
+asyncio.run(main())
