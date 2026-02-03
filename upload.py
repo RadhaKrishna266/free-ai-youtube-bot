@@ -4,6 +4,7 @@ import requests
 import asyncio
 import edge_tts
 from pathlib import Path
+from datetime import date
 
 # ================= CONFIG =================
 PIXABAY_KEY = os.getenv("PIXABAY_API_KEY")
@@ -11,14 +12,16 @@ IMAGE_QUERY = "Vishnu Krishna"
 VIDEO_SIZE = "1280:720"
 FPS = "25"
 
+START_IMAGE = "Image1.png"  # make sure this exists in repo
 SCRIPT_FILE = "script.txt"
 
-# find start image (case-insensitive)
-start_image_candidates = list(Path(".").glob("Image*.png")) + list(Path(".").glob("image*.png"))
-if not start_image_candidates:
-    raise FileNotFoundError("No start image found in repo (expected Image1.png or image1.png)")
-START_IMAGE = str(start_image_candidates[0])
-print(f"▶ Using start image: {START_IMAGE}")
+# ================= DAILY EPISODE =================
+EPISODE_FILE = "episode_number.txt"
+if Path(EPISODE_FILE).exists():
+    episode_number = int(Path(EPISODE_FILE).read_text().strip()) + 1
+else:
+    episode_number = 1
+Path(EPISODE_FILE).write_text(str(episode_number))
 
 # folders
 Path("tts").mkdir(exist_ok=True)
@@ -45,7 +48,7 @@ def fetch_images():
         "per_page": 12
     }
     r = requests.get(url, params=params).json()
-    for i, hit in enumerate(r.get("hits", [])):
+    for i, hit in enumerate(r["hits"]):
         img = requests.get(hit["largeImageURL"]).content
         with open(f"images/{i:03}.jpg", "wb") as f:
             f.write(img)
@@ -57,8 +60,8 @@ def make_clip(img, duration, out):
         "-i", img,
         "-t", str(duration),
         "-vf",
-        "scale=1280:720:force_original_aspect_ratio=decrease,"
-        "pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black",
+        f"scale={VIDEO_SIZE}:force_original_aspect_ratio=decrease,"
+        f"pad={VIDEO_SIZE}:(ow-iw)/2:(oh-ih)/2:color=black",
         "-r", FPS,
         "-pix_fmt", "yuv420p",
         out
@@ -66,16 +69,15 @@ def make_clip(img, duration, out):
 
 # ================= MAIN =================
 async def main():
-    # Daily episode numbering from environment or default
-    EPISODE = os.getenv("DAILY_EPISODE", "1")
-    print(f"🚀 Vishnu Purana Daily Bot Started - Episode {EPISODE}")
+    print(f"🚀 Vishnu Purana Daily Bot Started - Episode {episode_number}")
 
     # ---------- READ STORY ----------
     story = Path(SCRIPT_FILE).read_text(encoding="utf-8").strip().split("\n")
     story = [s.strip() for s in story if s.strip()]
 
     # ---------- TTS ----------
-    await tts(f"सनातन ज्ञान धारा में आपका स्वागत है। आज हम विष्णु पुराण की कथा प्रारंभ कर रहे हैं। यह एपिसोड संख्या {EPISODE} है।", "tts/start.mp3")
+    await tts("सनातन ज्ञान धारा में आपका स्वागत है। आज हम विष्णु पुराण की कथा प्रारंभ कर रहे हैं।", "tts/start.mp3")
+
     audio_files = ["tts/start.mp3"]
 
     for i, line in enumerate(story):
@@ -87,9 +89,9 @@ async def main():
     audio_files.append("tts/end.mp3")
 
     # ---------- AUDIO CONCAT ----------
-    with open("tts/list.txt", "w") as f:
+    with open("tts/list.txt", "w", encoding="utf-8") as f:
         for a in audio_files:
-            f.write(f"file '{a}'\n")
+            f.write(f"file '{Path(a).resolve()}'\n")  # use absolute paths
 
     run([
         "ffmpeg", "-y",
@@ -100,13 +102,15 @@ async def main():
     ])
 
     # ---------- IMAGES ----------
+    if not Path(START_IMAGE).exists():
+        raise FileNotFoundError(f"{START_IMAGE} NOT FOUND in repo")
+
     fetch_images()
 
     # ---------- VIDEO CLIPS ----------
     duration = 8
     clips = []
 
-    # Start image clip
     make_clip(START_IMAGE, duration, "clips/000.mp4")
     clips.append("000.mp4")
 
@@ -117,22 +121,22 @@ async def main():
         clips.append(out)
 
     # ---------- CONCAT VIDEO ----------
-    with open("clips/list.txt", "w") as f:
+    with open("clips/list.txt", "w", encoding="utf-8") as f:
         for c in clips:
-            f.write(f"file '{c}'\n")
+            f.write(f"file '{Path('clips') / c}'\n")  # absolute or relative inside clips
 
     run([
         "ffmpeg", "-y",
         "-f", "concat", "-safe", "0",
-        "-i", "list.txt",
-        "-i", "../voice.mp3",
+        "-i", "clips/list.txt",
+        "-i", "voice.mp3",
         "-c:v", "copy",
         "-c:a", "aac",
         "-shortest",
-        f"../final_video_episode_{EPISODE}.mp4"
-    ], cwd="clips")
+        f"final_video_episode_{episode_number}.mp4"
+    ])
 
-    print(f"✅ FINAL VIDEO CREATED: final_video_episode_{EPISODE}.mp4")
+    print(f"✅ FINAL VIDEO CREATED: final_video_episode_{episode_number}.mp4")
 
 # ================= RUN =================
 if __name__ == "__main__":
