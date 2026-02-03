@@ -7,11 +7,14 @@ from pathlib import Path
 
 # ================= CONFIG =================
 PIXABAY_KEY = os.getenv("PIXABAY_API_KEY")
-IMAGE_QUERY = "Vishnu Krishna"
+
+# STRICT FILTER — ONLY KRISHNA / VISHNU
+IMAGE_QUERY = "Lord Krishna Vishnu illustration"
 FPS = "25"
 
-START_IMAGE = "Image1.png"   # ✅ FIXED (case-sensitive)
+START_IMAGE = "Image1.png"
 SCRIPT_FILE = "script.txt"
+TANPURA = "audio/tanpura.mp3"
 
 Path("tts").mkdir(exist_ok=True)
 Path("images").mkdir(exist_ok=True)
@@ -27,7 +30,12 @@ def run(cmd, cwd=None):
     subprocess.run(cmd, check=True, cwd=cwd)
 
 async def tts(text, out):
-    t = edge_tts.Communicate(text, "hi-IN-MadhurNeural")
+    t = edge_tts.Communicate(
+        text=text,
+        voice="hi-IN-MadhurNeural",
+        rate="+0%",
+        pitch="+0Hz"
+    )
     await t.save(out)
     print(f"▶ TTS saved: {out}")
 
@@ -35,31 +43,33 @@ async def tts(text, out):
 async def main():
     print(f"🚀 Vishnu Purana Daily – Episode {EP}")
 
-    story = Path(SCRIPT_FILE).read_text(encoding="utf-8").splitlines()
-    story = [s.strip() for s in story if s.strip()]
+    # ---------- READ FULL SCRIPT ----------
+    story = Path(SCRIPT_FILE).read_text(encoding="utf-8")
+    lines = [l.strip() for l in story.splitlines() if l.strip()]
 
     # ---------- TTS ----------
+    audio_files = []
+
     await tts(
-        "सनातन ज्ञान धारा में आपका स्वागत है। आज हम विष्णु पुराण की कथा प्रारंभ कर रहे हैं।",
+        "सनातन ज्ञान धारा में आपका स्वागत है। आज हम विष्णु पुराण की पवित्र कथा का श्रवण करेंगे।",
         "tts/start.mp3"
     )
+    audio_files.append("start.mp3")
 
-    audio = ["start.mp3"]
-
-    for i, line in enumerate(story):
+    for i, line in enumerate(lines):
         name = f"n_{i:03}.mp3"
         await tts(line, f"tts/{name}")
-        audio.append(name)
+        audio_files.append(name)
 
     await tts(
         "यह था आज का विष्णु पुराण अध्याय। अगले भाग में पुनः मिलेंगे। हरि ॐ।",
         "tts/end.mp3"
     )
-    audio.append("end.mp3")
+    audio_files.append("end.mp3")
 
-    # ---------- AUDIO CONCAT ----------
+    # ---------- CONCAT VOICE ----------
     with open("tts/list.txt", "w") as f:
-        for a in audio:
+        for a in audio_files:
             f.write(f"file '{a}'\n")
 
     run([
@@ -68,33 +78,43 @@ async def main():
         "-i", "list.txt",
         "-c:a", "mp3",
         "-b:a", "192k",
-        "voice.mp3"
+        "voice_raw.mp3"
     ], cwd="tts")
 
-    run(["mv", "tts/voice.mp3", "voice.mp3"])
+    # ---------- MIX TANPURA (LOW VOLUME) ----------
+    run([
+        "ffmpeg", "-y",
+        "-i", "tts/voice_raw.mp3",
+        "-i", TANPURA,
+        "-filter_complex",
+        "[1:a]volume=0.04[a1];[0:a][a1]amix=inputs=2:dropout_transition=2",
+        "-c:a", "mp3",
+        "voice.mp3"
+    ])
 
     # ---------- IMAGE CHECK ----------
     if not Path(START_IMAGE).exists():
         raise FileNotFoundError("Image1.png NOT FOUND")
 
-    # ---------- PIXABAY ----------
-    print("▶ Fetching images from Pixabay")
+    # ---------- PIXABAY (STRICT FILTER) ----------
+    print("▶ Fetching Krishna/Vishnu images only")
     r = requests.get(
         "https://pixabay.com/api/",
         params={
             "key": PIXABAY_KEY,
             "q": IMAGE_QUERY,
-            "image_type": "photo",
+            "image_type": "illustration",
+            "category": "religion",
             "safesearch": "true",
-            "per_page": 10
+            "per_page": 12
         }
     ).json()
 
-    for i, h in enumerate(r["hits"]):
+    for i, h in enumerate(r.get("hits", [])):
         img = requests.get(h["largeImageURL"]).content
         Path(f"images/{i:03}.jpg").write_bytes(img)
 
-    # ---------- VIDEO CLIPS ----------
+    # ---------- VIDEO CLIPS (NO CROP) ----------
     def clip(img, out):
         run([
             "ffmpeg", "-y",
@@ -119,6 +139,7 @@ async def main():
         for c in sorted(Path("clips").glob("*.mp4")):
             f.write(f"file '{c.name}'\n")
 
+    # ---------- FINAL VIDEO ----------
     run([
         "ffmpeg", "-y",
         "-f", "concat", "-safe", "0",
