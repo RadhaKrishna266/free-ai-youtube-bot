@@ -4,12 +4,14 @@ import requests
 import asyncio
 import edge_tts
 from pathlib import Path
+from PIL import Image
+from io import BytesIO
 
 # ================= CONFIG =================
 PIXABAY_KEY = os.getenv("PIXABAY_API_KEY")
 
-# STRICT FILTER — ONLY KRISHNA / VISHNU
-IMAGE_QUERY = "Lord Krishna Vishnu illustration"
+# STRICT KRISHNA / VISHNU – ILLUSTRATION ONLY
+IMAGE_QUERY = "Lord Krishna Vishnu cosmic illustration"
 FPS = "25"
 
 START_IMAGE = "Image1.png"
@@ -67,7 +69,7 @@ async def main():
     )
     audio_files.append("end.mp3")
 
-    # ---------- CONCAT VOICE ----------
+    # ---------- CONCAT VOICE (FIXED) ----------
     with open("tts/list.txt", "w") as f:
         for a in audio_files:
             f.write(f"file '{a}'\n")
@@ -81,13 +83,13 @@ async def main():
         "voice_raw.mp3"
     ], cwd="tts")
 
-    # ---------- MIX TANPURA (LOW VOLUME) ----------
+    # ---------- MIX TANPURA (LOW, DEVOTIONAL) ----------
     run([
         "ffmpeg", "-y",
         "-i", "tts/voice_raw.mp3",
         "-i", TANPURA,
         "-filter_complex",
-        "[1:a]volume=0.04[a1];[0:a][a1]amix=inputs=2:dropout_transition=2",
+        "[1:a]volume=0.035[a1];[0:a][a1]amix=inputs=2:dropout_transition=3",
         "-c:a", "mp3",
         "voice.mp3"
     ])
@@ -96,23 +98,45 @@ async def main():
     if not Path(START_IMAGE).exists():
         raise FileNotFoundError("Image1.png NOT FOUND")
 
-    # ---------- PIXABAY (STRICT FILTER) ----------
-    print("▶ Fetching Krishna/Vishnu images only")
+    # ---------- PIXABAY (STRICT WIDE FILTER) ----------
+    print("▶ Fetching WIDE Krishna / Vishnu illustrations")
+
     r = requests.get(
         "https://pixabay.com/api/",
         params={
             "key": PIXABAY_KEY,
             "q": IMAGE_QUERY,
             "image_type": "illustration",
+            "orientation": "horizontal",
             "category": "religion",
             "safesearch": "true",
-            "per_page": 12
+            "per_page": 30
         }
     ).json()
 
-    for i, h in enumerate(r.get("hits", [])):
-        img = requests.get(h["largeImageURL"]).content
-        Path(f"images/{i:03}.jpg").write_bytes(img)
+    saved = 0
+    MAX_IMAGES = 10
+
+    for h in r.get("hits", []):
+        if saved >= MAX_IMAGES:
+            break
+
+        img_data = requests.get(h["largeImageURL"]).content
+        img = Image.open(BytesIO(img_data))
+
+        w, hgt = img.size
+
+        # 🔒 HARD RULE — MUST BE CINEMATIC WIDE
+        if w < hgt or w < 1200:
+            continue
+
+        img.convert("RGB").save(f"images/{saved:03}.jpg", "JPEG", quality=95)
+        saved += 1
+
+    if saved == 0:
+        raise RuntimeError("❌ No suitable wide Krishna/Vishnu images found")
+
+    print(f"✅ Saved {saved} wide divine images")
 
     # ---------- VIDEO CLIPS (NO CROP) ----------
     def clip(img, out):
