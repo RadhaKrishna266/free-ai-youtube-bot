@@ -10,7 +10,7 @@ PIXABAY_KEY = os.getenv("PIXABAY_API_KEY")
 IMAGE_QUERY = "Vishnu Krishna"
 FPS = "25"
 
-START_IMAGE = "image1.png"
+START_IMAGE = "Image1.png"   # ✅ FIXED (case-sensitive)
 SCRIPT_FILE = "script.txt"
 
 Path("tts").mkdir(exist_ok=True)
@@ -57,7 +57,7 @@ async def main():
     )
     audio.append("end.mp3")
 
-    # ---------- AUDIO CONCAT (FIXED FOREVER) ----------
+    # ---------- AUDIO CONCAT ----------
     with open("tts/list.txt", "w") as f:
         for a in audio:
             f.write(f"file '{a}'\n")
@@ -75,7 +75,7 @@ async def main():
 
     # ---------- IMAGE CHECK ----------
     if not Path(START_IMAGE).exists():
-        raise FileNotFoundError("image1.png NOT FOUND")
+        raise FileNotFoundError("Image1.png NOT FOUND")
 
     # ---------- PIXABAY ----------
     print("▶ Fetching images from Pixabay")
@@ -101,8 +101,9 @@ async def main():
             "-loop", "1",
             "-i", img,
             "-t", "8",
-            "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,"
-                   "pad=1280:720:(ow-iw)/2:(oh-ih)/2",
+            "-vf",
+            "scale=1280:720:force_original_aspect_ratio=decrease,"
+            "pad=1280:720:(ow-iw)/2:(oh-ih)/2",
             "-r", FPS,
             "-pix_fmt", "yuv420p",
             out
