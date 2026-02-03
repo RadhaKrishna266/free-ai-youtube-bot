@@ -10,10 +10,17 @@ from io import BytesIO
 # ================= CONFIG =================
 PIXABAY_KEY = os.getenv("PIXABAY_API_KEY")
 
-# STRICT KRISHNA / VISHNU – ILLUSTRATION ONLY
-IMAGE_QUERY = "Lord Krishna Vishnu cosmic illustration"
-FPS = "25"
+# VERY STRICT QUERY
+IMAGE_QUERY = "Lord Krishna Vishnu cosmic divine illustration"
+EXCLUDE_TERMS = [
+    "shiva", "shankar", "mahadev",
+    "goddess", "durga", "parvati", "lakshmi",
+    "jesus", "christ", "church",
+    "temple", "idol", "statue",
+    "child", "baby", "kid"
+]
 
+FPS = "25"
 START_IMAGE = "Image1.png"
 SCRIPT_FILE = "script.txt"
 TANPURA = "audio/tanpura.mp3"
@@ -39,13 +46,12 @@ async def tts(text, out):
         pitch="+0Hz"
     )
     await t.save(out)
-    print(f"▶ TTS saved: {out}")
 
 # ================= MAIN =================
 async def main():
-    print(f"🚀 Vishnu Purana Daily – Episode {EP}")
+    print(f"🚀 Vishnu Purana – Episode {EP}")
 
-    # ---------- READ FULL SCRIPT ----------
+    # ---------- READ SCRIPT ----------
     story = Path(SCRIPT_FILE).read_text(encoding="utf-8")
     lines = [l.strip() for l in story.splitlines() if l.strip()]
 
@@ -69,7 +75,7 @@ async def main():
     )
     audio_files.append("end.mp3")
 
-    # ---------- CONCAT VOICE (FIXED) ----------
+    # ---------- CONCAT VOICE ----------
     with open("tts/list.txt", "w") as f:
         for a in audio_files:
             f.write(f"file '{a}'\n")
@@ -83,23 +89,19 @@ async def main():
         "voice_raw.mp3"
     ], cwd="tts")
 
-    # ---------- MIX TANPURA (LOW, DEVOTIONAL) ----------
+    # ---------- MIX TANPURA ----------
     run([
         "ffmpeg", "-y",
         "-i", "tts/voice_raw.mp3",
         "-i", TANPURA,
         "-filter_complex",
-        "[1:a]volume=0.035[a1];[0:a][a1]amix=inputs=2:dropout_transition=3",
+        "[1:a]volume=0.035[a1];[0:a][a1]amix=inputs=2",
         "-c:a", "mp3",
         "voice.mp3"
     ])
 
-    # ---------- IMAGE CHECK ----------
-    if not Path(START_IMAGE).exists():
-        raise FileNotFoundError("Image1.png NOT FOUND")
-
-    # ---------- PIXABAY (STRICT WIDE FILTER) ----------
-    print("▶ Fetching WIDE Krishna / Vishnu illustrations")
+    # ---------- PIXABAY FETCH (ULTRA STRICT) ----------
+    print("▶ Fetching ONLY Krishna / Vishnu images")
 
     r = requests.get(
         "https://pixabay.com/api/",
@@ -110,7 +112,7 @@ async def main():
             "orientation": "horizontal",
             "category": "religion",
             "safesearch": "true",
-            "per_page": 30
+            "per_page": 40
         }
     ).json()
 
@@ -121,24 +123,28 @@ async def main():
         if saved >= MAX_IMAGES:
             break
 
+        text_blob = (h.get("tags", "") + h.get("user", "")).lower()
+
+        # ❌ HARD EXCLUSION
+        if any(bad in text_blob for bad in EXCLUDE_TERMS):
+            continue
+
         img_data = requests.get(h["largeImageURL"]).content
         img = Image.open(BytesIO(img_data))
 
         w, hgt = img.size
-
-        # 🔒 HARD RULE — MUST BE CINEMATIC WIDE
-        if w < hgt or w < 1200:
+        if w < 1200 or w < hgt:
             continue
 
         img.convert("RGB").save(f"images/{saved:03}.jpg", "JPEG", quality=95)
         saved += 1
 
     if saved == 0:
-        raise RuntimeError("❌ No suitable wide Krishna/Vishnu images found")
+        raise RuntimeError("❌ No PURE Krishna/Vishnu images found")
 
-    print(f"✅ Saved {saved} wide divine images")
+    print(f"✅ {saved} pure divine images saved")
 
-    # ---------- VIDEO CLIPS (NO CROP) ----------
+    # ---------- VIDEO CLIPS ----------
     def clip(img, out):
         run([
             "ffmpeg", "-y",
@@ -155,15 +161,14 @@ async def main():
 
     clip(START_IMAGE, "clips/000.mp4")
 
-    imgs = sorted(Path("images").glob("*.jpg"))
-    for i, img in enumerate(imgs, start=1):
+    for i, img in enumerate(sorted(Path("images").glob("*.jpg")), start=1):
         clip(str(img), f"clips/{i:03}.mp4")
 
     with open("clips/list.txt", "w") as f:
         for c in sorted(Path("clips").glob("*.mp4")):
             f.write(f"file '{c.name}'\n")
 
-    # ---------- FINAL VIDEO ----------
+    # ---------- FINAL ----------
     run([
         "ffmpeg", "-y",
         "-f", "concat", "-safe", "0",
