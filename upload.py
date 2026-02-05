@@ -1,67 +1,71 @@
 import os
 import asyncio
-from pathlib import Path
+from moviepy.editor import ImageClip, AudioFileClip, concatenate_audioclips, CompositeVideoClip
 from pydub import AudioSegment
 from gtts import gTTS
-from moviepy.editor import ImageClip, AudioFileClip
 
-# File paths
+# ================= CONFIG =================
 IMAGE_FILE = "Image1.png"
 SCRIPT_FILE = "script.txt"
-OUTPUT_VIDEO = "final_video.mp4"
-TANPURA_FILE = "tanpura.mp3"      # Light tanpura background
-BELL_FILE = "temple_bell.mp3"     # Starting temple bell
+FINAL_VIDEO = "final_video_episode_1.mp4"
+VIDEO_SIZE = (1280, 720)  # YouTube standard HD
 
-# Read main narration from script.txt
-with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
-    main_script = f.read().strip()
+TANPURA_FILE = "tanpura.mp3"       # Light tanpura background
+BELL_FILE = "temple_bell.mp3"      # Starting temple bell
 
-# Start and End narration text
-START_TEXT = "स्वागत है Sanatan Gyan Dhara में — यहाँ हम प्रतिदिन विष्णु पुराण की कहानियाँ अपलोड करते हैं।"
-END_TEXT = "धन्यवाद Sanatan Gyan Dhara देखने के लिए। अगले विष्णु पुराण अध्याय के लिए जुड़े रहें।"
+# ================= FUNCTIONS =================
+def load_script_text():
+    with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
+        return f.read()
 
-# Function to convert text to Hindi speech
-def text_to_speech(text, filename):
-    tts = gTTS(text=text, lang="hi")
+def create_narration_audio(text, filename):
+    """Convert Hindi text to speech and save as mp3."""
+    tts = gTTS(text=text, lang='hi')
     tts.save(filename)
+    return filename
 
-# Generate start, main, and end narration audios
-text_to_speech(START_TEXT, "start.mp3")
-text_to_speech(main_script, "main.mp3")
-text_to_speech(END_TEXT, "end.mp3")
+def combine_audio_clips(audio_files):
+    """Combine multiple audio clips using pydub."""
+    combined = AudioSegment.empty()
+    for file in audio_files:
+        combined += AudioSegment.from_file(file)
+    temp_file = "combined_audio.mp3"
+    combined.export(temp_file, format="mp3")
+    return temp_file
 
-# Combine audio tracks with fade-in/out
-def combine_audio():
-    # Load audio segments
-    tanpura = AudioSegment.from_file(TANPURA_FILE)
-    bell = AudioSegment.from_file(BELL_FILE)
-    start_narration = AudioSegment.from_file("start.mp3")
-    main_narration = AudioSegment.from_file("main.mp3")
-    end_narration = AudioSegment.from_file("end.mp3")
+async def main():
+    print("🔹 Loading script...")
+    script_text = load_script_text()
 
-    # Apply fade-in/out to bell and tanpura
-    bell = bell.fade_in(1000).fade_out(1000)  # 1 second fade
-    tanpura = tanpura.fade_in(2000).fade_out(2000)  # 2 second fade
+    # ================= AUDIO =================
+    print("🔹 Creating start narration...")
+    start_text = "नमस्ते! आपका स्वागत है Sanatan Gyan Dhara चैनल पर। हम रोज़ विष्णु पुराण की नई कथा प्रस्तुत करेंगे।"
+    start_audio_file = create_narration_audio(start_text, "start_narration.mp3")
 
-    # Calculate total duration of narration + bell
-    total_duration = len(bell) + len(start_narration) + len(main_narration) + len(end_narration)
+    print("🔹 Creating main narration...")
+    main_audio_file = create_narration_audio(script_text, "main_narration.mp3")
 
-    # Loop tanpura to match total duration
-    tanpura_looped = tanpura * ((total_duration // len(tanpura)) + 1)
-    tanpura_final = tanpura_looped[:total_duration]
+    print("🔹 Creating end narration...")
+    end_text = "आज का अध्याय समाप्त हुआ। Sanatan Gyan Dhara चैनल को सब्सक्राइब करें और रोज़ नई कथा देखें।"
+    end_audio_file = create_narration_audio(end_text, "end_narration.mp3")
 
-    # Overlay other audios
-    combined = tanpura_final.overlay(bell, position=0)
-    combined = combined.overlay(start_narration, position=len(bell))
-    combined = combined.overlay(main_narration, position=len(bell)+len(start_narration))
-    combined = combined.overlay(end_narration, position=len(bell)+len(start_narration)+len(main_narration))
-    
-    # Export final audio
-    combined.export("final_audio.mp3", format="mp3")
+    # Combine all audio: tanpura + bell + start + main + end
+    print("🔹 Combining audio clips...")
+    combined_audio_file = combine_audio_clips([TANPURA_FILE, BELL_FILE, start_audio_file, main_audio_file, end_audio_file])
 
-combine_audio()
+    # ================= VIDEO =================
+    print("🔹 Creating video...")
+    image_clip = ImageClip(IMAGE_FILE).set_duration(AudioSegment.from_file(combined_audio_file).duration_seconds)
+    image_clip = image_clip.resize(height=VIDEO_SIZE[1]).set_position("center")
 
-# Create video from image with audio
-audio_clip = AudioFileClip("final_audio.mp3")
-video_clip = ImageClip(IMAGE_FILE, duration=audio_clip.duration).set_audio(audio_clip)
-video_clip.write_videofile(OUTPUT_VIDEO, fps=1)  # fps=1 is enough for single image
+    audio_clip = AudioFileClip(combined_audio_file)
+    final_clip = image_clip.set_audio(audio_clip)
+
+    print("🔹 Writing final video...")
+    final_clip.write_videofile(FINAL_VIDEO, fps=25, codec="libx264", audio_codec="aac")
+
+    print(f"✅ Video created successfully: {FINAL_VIDEO}")
+
+# ================= RUN =================
+if __name__ == "__main__":
+    asyncio.run(main())
