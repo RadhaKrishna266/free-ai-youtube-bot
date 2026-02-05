@@ -1,92 +1,91 @@
 import os
-from moviepy.editor import (
-    ImageClip,
-    AudioFileClip,
-    CompositeAudioClip,
-    concatenate_videoclips
-)
-import edge_tts
+import subprocess
 import asyncio
+import edge_tts
+from pathlib import Path
 
 # ================= CONFIG =================
-IMAGE_PATH = "Image1.png"
-SCRIPT_PATH = "script.txt"
+IMAGE = "Image1.png"
+SCRIPT_FILE = "script.txt"
+
+BELL = "audio/temple_bell.mp3"
+TANPURA = "audio/tanpura.mp3"
 
 VOICE = "hi-IN-MadhurNeural"
-NARRATION_AUDIO = "narration.mp3"
-BELL_AUDIO = "bell.mp3"        # you must keep this file
-TANPURA_AUDIO = "tanpura.mp3"  # you must keep this file
+FPS = "25"
 
-FINAL_VIDEO = "final_video.mp4"
-FPS = 24
+MAX_FFMPEG_TIME = 300   # hard limit: 5 minutes per ffmpeg call
 
-# ================= TTS =================
-async def generate_tts(text):
-    communicate = edge_tts.Communicate(text, VOICE)
-    await communicate.save(NARRATION_AUDIO)
+Path("tts").mkdir(exist_ok=True)
 
-def clean_script(text):
-    lines = []
-    for line in text.splitlines():
-        if line.strip().startswith("["):
-            continue
-        lines.append(line)
-    return "\n".join(lines)
+# ================= UTILS =================
+def run(cmd, timeout=MAX_FFMPEG_TIME):
+    subprocess.run(cmd, check=True, timeout=timeout)
+
+async def tts(text, out):
+    communicate = edge_tts.Communicate(
+        text=text,
+        voice=VOICE,
+        rate="+0%",
+        pitch="+0Hz"
+    )
+    await communicate.save(out)
 
 # ================= MAIN =================
-def main():
-    if not os.path.exists(IMAGE_PATH):
-        raise FileNotFoundError("❌ Image1.png not found")
+async def main():
+    print("🔔 Starting devotional audiobook")
 
-    if not os.path.exists(SCRIPT_PATH):
-        raise FileNotFoundError("❌ script.txt not found")
+    # ---------- READ SCRIPT ----------
+    script = Path(SCRIPT_FILE).read_text(encoding="utf-8").strip()
+    if not script:
+        raise RuntimeError("script.txt is empty")
 
-    with open(SCRIPT_PATH, "r", encoding="utf-8") as f:
-        raw_script = f.read()
+    # ---------- TTS ----------
+    print("🗣 Generating narration...")
+    await tts(script, "tts/narration.mp3")
 
-    narration_text = clean_script(raw_script)
+    # ---------- BELL + VOICE ----------
+    print("🔔 Adding bell sound...")
+    run([
+        "ffmpeg", "-y",
+        "-i", BELL,
+        "-i", "tts/narration.mp3",
+        "-filter_complex",
+        "[0:a]atrim=0:3,afade=t=out:st=2:d=1[b];[b][1:a]concat=n=2:v=0:a=1",
+        "-c:a", "mp3",
+        "tts/voice_with_bell.mp3"
+    ])
 
-    print("🔊 Generating narration...")
-    asyncio.run(generate_tts(narration_text))
+    # ---------- ADD TANPURA ----------
+    print("🎶 Mixing tanpura...")
+    run([
+        "ffmpeg", "-y",
+        "-i", "tts/voice_with_bell.mp3",
+        "-i", TANPURA,
+        "-filter_complex",
+        "[1:a]volume=0.03[a1];[0:a][a1]amix=inputs=2:dropout_transition=2",
+        "-c:a", "mp3",
+        "tts/final_audio.mp3"
+    ])
 
-    narration = AudioFileClip(NARRATION_AUDIO)
+    # ---------- FINAL VIDEO ----------
+    print("🎥 Creating static-image video...")
+    run([
+        "ffmpeg", "-y",
+        "-loop", "1",
+        "-i", IMAGE,
+        "-i", "tts/final_audio.mp3",
+        "-c:v", "libx264",
+        "-tune", "stillimage",
+        "-vf", "scale=1280:720",
+        "-r", FPS,
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-shortest",
+        "final_video.mp4"
+    ], timeout=600)
 
-    audio_tracks = []
+    print("✅ FINAL VIDEO READY: final_video.mp4")
 
-    # Bell (start only)
-    if os.path.exists(BELL_AUDIO):
-        bell = AudioFileClip(BELL_AUDIO).volumex(1.0)
-        audio_tracks.append(bell)
-
-    # Tanpura (loop under narration)
-    if os.path.exists(TANPURA_AUDIO):
-        tanpura = AudioFileClip(TANPURA_AUDIO).volumex(0.15)
-        tanpura = tanpura.audio_loop(duration=narration.duration)
-        audio_tracks.append(tanpura)
-
-    audio_tracks.append(narration)
-
-    final_audio = CompositeAudioClip(audio_tracks)
-
-    print("🖼️ Creating single-image video...")
-    video = (
-        ImageClip(IMAGE_PATH)
-        .set_duration(narration.duration)
-        .resize(height=1080)
-        .set_audio(final_audio)
-    )
-
-    print("🎬 Rendering final video...")
-    video.write_videofile(
-        FINAL_VIDEO,
-        fps=FPS,
-        codec="libx264",
-        audio_codec="aac",
-        threads=2,
-        preset="medium"
-    )
-
-    print("✅ Video created:", FINAL_VIDEO)
-
-if __name__ == "__main__":
-    main()
+# ================= RUN =================
+asyncio.run(main())
