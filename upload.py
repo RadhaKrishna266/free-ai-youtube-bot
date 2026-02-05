@@ -1,116 +1,86 @@
-import os
 import subprocess
 import asyncio
 import edge_tts
 from pathlib import Path
 
 # ================= CONFIG =================
-FPS = 25
-START_IMAGE = "Image1.png"
 SCRIPT_FILE = "script.txt"
+IMAGE_FILE = "Image1.png"
+BELL = "audio/bell.mp3"
 TANPURA = "audio/tanpura.mp3"
-MAX_VIDEO_SECONDS = 900  # 15 minutes hard cap
-
-VOICE = "hi-IN-MadhurNeural"
+FPS = "25"
 
 Path("tts").mkdir(exist_ok=True)
 
-# ================= EPISODE NUMBER =================
-ep_file = Path("episode_number.txt")
-EP = int(ep_file.read_text()) if ep_file.exists() else 1
-ep_file.write_text(str(EP + 1))
+# ================= SAFE RUN =================
+def run(cmd, timeout=120):
+    subprocess.run(cmd, check=True, timeout=timeout)
 
-# ================= UTILS =================
-def run(cmd):
-    subprocess.run(cmd, check=True)
-
-async def tts(text, out):
-    communicate = edge_tts.Communicate(
+# ================= TTS =================
+async def generate_tts(text, out):
+    t = edge_tts.Communicate(
         text=text,
-        voice=VOICE,
+        voice="hi-IN-MadhurNeural",
         rate="+0%",
         pitch="+0Hz"
     )
-    await communicate.save(out)
+    await t.save(out)
 
 # ================= MAIN =================
 async def main():
-    print(f"🚀 Vishnu Purana Audio Episode {EP}")
+    print("🔔 Starting devotional audiobook")
 
-    if not Path(START_IMAGE).exists():
-        raise FileNotFoundError("❌ Image1.png NOT FOUND")
-
-    # ---------- READ SCRIPT (3 SHLOK ONLY) ----------
-    lines = Path(SCRIPT_FILE).read_text(encoding="utf-8").splitlines()
-    lines = [l.strip() for l in lines if l.strip()]
-
-    if len(lines) == 0:
+    # ---------- READ SCRIPT ----------
+    script = Path(SCRIPT_FILE).read_text(encoding="utf-8").strip()
+    if not script:
         raise RuntimeError("❌ script.txt is empty")
 
     # ---------- TTS ----------
-    audio_files = []
+    print("🗣 Generating narration...")
+    await generate_tts(script, "tts/narration.mp3")
 
-    await tts(
-        "सनातन ज्ञान धारा में आपका स्वागत है। आज हम विष्णु पुराण के तीन पवित्र श्लोकों का पाठ, अर्थ और भावार्थ सुनेंगे।",
-        "tts/start.mp3"
-    )
-    audio_files.append("start.mp3")
-
-    for i, line in enumerate(lines):
-        name = f"n_{i:02}.mp3"
-        await tts(line, f"tts/{name}")
-        audio_files.append(name)
-
-    await tts(
-        "यह था आज का विष्णु पुराण पाठ। अगले अध्याय में पुनः मिलेंगे। हरि ॐ।",
-        "tts/end.mp3"
-    )
-    audio_files.append("end.mp3")
-
-    # ---------- CONCAT VOICE ----------
-    with open("tts/list.txt", "w") as f:
-        for a in audio_files:
-            f.write(f"file '{a}'\n")
-
+    # ---------- BELL + NARRATION ----------
+    print("🔔 Adding bell sound...")
     run([
         "ffmpeg", "-y",
-        "-f", "concat", "-safe", "0",
-        "-i", "tts/list.txt",
+        "-i", BELL,
+        "-i", "tts/narration.mp3",
+        "-filter_complex",
+        "[0:a]atrim=0:3,afade=t=out:st=2:d=1[b];"
+        "[b][1:a]concat=n=2:v=0:a=1",
         "-c:a", "mp3",
-        "-b:a", "192k",
-        "voice_raw.mp3"
+        "tts/voice_with_bell.mp3"
     ])
 
-    # ---------- MIX TANPURA (LOW) ----------
+    # ---------- MIX TANPURA ----------
+    print("🎵 Mixing tanpura...")
     run([
         "ffmpeg", "-y",
-        "-i", "voice_raw.mp3",
+        "-i", "tts/voice_with_bell.mp3",
         "-i", TANPURA,
         "-filter_complex",
-        "[1:a]volume=0.035[a1];[0:a][a1]amix=inputs=2",
+        "[1:a]volume=0.04[a1];[0:a][a1]amix=inputs=2",
         "-c:a", "mp3",
         "voice.mp3"
     ])
 
-    # ---------- CREATE VIDEO FROM SINGLE IMAGE ----------
+    # ---------- FINAL VIDEO ----------
+    print("🎬 Rendering final video...")
     run([
         "ffmpeg", "-y",
         "-loop", "1",
-        "-i", START_IMAGE,
+        "-i", IMAGE_FILE,
         "-i", "voice.mp3",
-        "-t", str(MAX_VIDEO_SECONDS),
-        "-vf",
-        "scale=1280:720:force_original_aspect_ratio=decrease,"
-        "pad=1280:720:(ow-iw)/2:(oh-ih)/2",
-        "-r", str(FPS),
-        "-pix_fmt", "yuv420p",
         "-c:v", "libx264",
+        "-tune", "stillimage",
+        "-r", FPS,
+        "-pix_fmt", "yuv420p",
         "-c:a", "aac",
         "-shortest",
-        f"final_video_episode_{EP}.mp4"
-    ])
+        "final_video.mp4"
+    ], timeout=180)
 
-    print(f"✅ FINAL VIDEO READY: final_video_episode_{EP}.mp4")
+    print("✅ DONE: final_video.mp4 created")
 
 # ================= RUN =================
 asyncio.run(main())
