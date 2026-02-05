@@ -33,19 +33,24 @@ def get_script_text(file_path):
         return f.read().strip()
 
 # ================= MERGE AUDIO =================
-def merge_audio(start_tanpura_file, main_tts_files, end_tanpura_file, om_narayan_file, output_file):
+def merge_audio(start_tanpura_file, main_tts_files, om_file, end_tanpura_file, output_file):
     # Load and trim start/end tanpura
-    start_tanpura = AudioSegment.from_file(start_tanpura_file)[:100]  # 0.10 sec
-    end_tanpura = AudioSegment.from_file(end_tanpura_file)[:1000]     # 1 sec
+    start_tanpura = AudioSegment.from_file(start_tanpura_file)[:2000]  # 2 sec
+    end_tanpura = AudioSegment.from_file(end_tanpura_file)[:4000]      # 4 sec
 
     # Load main narration files
     final_audio = start_tanpura
     for file in main_tts_files:
         final_audio += AudioSegment.from_file(file)
-    # Add 1 sec end tanpura + om namo narayan
-    final_audio += end_tanpura + AudioSegment.from_file(om_narayan_file)
+
+    # Add om namo narayan
+    final_audio += AudioSegment.from_file(om_file)
+
+    # Add end tanpura
+    final_audio += end_tanpura
 
     final_audio.export(output_file, format="mp3")
+    print(f"✅ Audio merged: {output_file}")
     return output_file
 
 # ================= CREATE VIDEO =================
@@ -89,12 +94,12 @@ async def main():
     await generate_tts(end_narration_text, "tts/end.mp3")
     await generate_tts(om_narayan_text, "tts/om_narayan.mp3")
 
-    # 4️⃣ Merge all audio with short tanpura at start and end
+    # 4️⃣ Merge all audio
     final_audio_file = merge_audio(
         TANPURA_FILE,
         ["tts/start.mp3", "tts/main.mp3", "tts/end.mp3"],
-        TANPURA_FILE,
         "tts/om_narayan.mp3",
+        TANPURA_FILE,
         "final_audio.mp3"
     )
 
