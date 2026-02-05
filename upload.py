@@ -33,10 +33,17 @@ def get_script_text(file_path):
         return f.read().strip()
 
 # ================= MERGE AUDIO =================
-def merge_audio(audio_files, output_file):
-    final_audio = AudioSegment.silent(duration=0)
-    for file in audio_files:
+def merge_audio(start_tanpura_file, main_tts_files, end_tanpura_file, output_file):
+    # Load and trim tanpura files
+    start_tanpura = AudioSegment.from_file(start_tanpura_file)[:200]  # 0.2 sec = 200 ms
+    end_tanpura = AudioSegment.from_file(end_tanpura_file)[:100]      # 0.10 sec = 100 ms
+
+    # Load main narration files
+    final_audio = start_tanpura
+    for file in main_tts_files:
         final_audio += AudioSegment.from_file(file)
+    final_audio += end_tanpura
+
     final_audio.export(output_file, format="mp3")
     return output_file
 
@@ -79,14 +86,16 @@ async def main():
     await generate_tts(main_script_text, "tts/main.mp3")
     await generate_tts(end_narration_text, "tts/end.mp3")
 
-    # 4️⃣ Merge all audio: tanpura throughout
+    # 4️⃣ Merge all audio with short tanpura at start and end
     final_audio_file = merge_audio(
-        [TANPURA_FILE, "tts/start.mp3", "tts/main.mp3", "tts/end.mp3", TANPURA_FILE],
+        TANPURA_FILE,
+        ["tts/start.mp3", "tts/main.mp3", "tts/end.mp3"],
+        TANPURA_FILE,
         "final_audio.mp3"
     )
 
     # 5️⃣ Create final video
-    create_video(RESIZED_IMAGE, "final_audio.mp3", FINAL_VIDEO)
+    create_video(RESIZED_IMAGE, final_audio_file, FINAL_VIDEO)
 
 # ================= RUN =================
 if __name__ == "__main__":
