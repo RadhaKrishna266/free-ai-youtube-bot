@@ -3,6 +3,7 @@ import subprocess
 import requests
 import asyncio
 import edge_tts
+import time
 from pathlib import Path
 from PIL import Image
 from io import BytesIO
@@ -10,7 +11,6 @@ from io import BytesIO
 # ================= CONFIG =================
 PIXABAY_KEY = os.getenv("PIXABAY_API_KEY")
 
-# VERY STRICT QUERY
 IMAGE_QUERY = "Lord Krishna Vishnu cosmic divine illustration"
 EXCLUDE_TERMS = [
     "shiva", "shankar", "mahadev",
@@ -25,11 +25,15 @@ START_IMAGE = "Image1.png"
 SCRIPT_FILE = "script.txt"
 TANPURA = "audio/tanpura.mp3"
 
+MAX_IMAGES = 10
+MAX_SCAN = 80              # max images to inspect
+MAX_IMAGE_TIME = 300       # ⏱️ 5 minutes hard stop
+
 Path("tts").mkdir(exist_ok=True)
 Path("images").mkdir(exist_ok=True)
 Path("clips").mkdir(exist_ok=True)
 
-# ================= EPISODE NUMBER =================
+# ================= EPISODE =================
 ep_file = Path("episode_number.txt")
 EP = int(ep_file.read_text()) if ep_file.exists() else 1
 ep_file.write_text(str(EP + 1))
@@ -39,69 +43,58 @@ def run(cmd, cwd=None):
     subprocess.run(cmd, check=True, cwd=cwd)
 
 async def tts(text, out):
-    t = edge_tts.Communicate(
-        text=text,
-        voice="hi-IN-MadhurNeural",
-        rate="+0%",
-        pitch="+0Hz"
-    )
+    t = edge_tts.Communicate(text, "hi-IN-MadhurNeural")
     await t.save(out)
 
 # ================= MAIN =================
 async def main():
     print(f"🚀 Vishnu Purana – Episode {EP}")
 
-    # ---------- READ SCRIPT ----------
-    story = Path(SCRIPT_FILE).read_text(encoding="utf-8")
-    lines = [l.strip() for l in story.splitlines() if l.strip()]
+    # ---------- SCRIPT ----------
+    lines = [
+        l.strip()
+        for l in Path(SCRIPT_FILE).read_text(encoding="utf-8").splitlines()
+        if l.strip()
+    ]
 
     # ---------- TTS ----------
-    audio_files = []
+    audio = []
 
-    await tts(
-        "सनातन ज्ञान धारा में आपका स्वागत है। आज हम विष्णु पुराण की पवित्र कथा का श्रवण करेंगे।",
-        "tts/start.mp3"
-    )
-    audio_files.append("start.mp3")
+    await tts("सनातन ज्ञान धारा में आपका स्वागत है। आज हम विष्णु पुराण की कथा सुनेंगे।", "tts/start.mp3")
+    audio.append("start.mp3")
 
     for i, line in enumerate(lines):
-        name = f"n_{i:03}.mp3"
-        await tts(line, f"tts/{name}")
-        audio_files.append(name)
+        f = f"n_{i:03}.mp3"
+        await tts(line, f"tts/{f}")
+        audio.append(f)
 
-    await tts(
-        "यह था आज का विष्णु पुराण अध्याय। अगले भाग में पुनः मिलेंगे। हरि ॐ।",
-        "tts/end.mp3"
-    )
-    audio_files.append("end.mp3")
+    await tts("यह था आज का विष्णु पुराण अध्याय। हरि ॐ।", "tts/end.mp3")
+    audio.append("end.mp3")
 
-    # ---------- CONCAT VOICE ----------
     with open("tts/list.txt", "w") as f:
-        for a in audio_files:
+        for a in audio:
             f.write(f"file '{a}'\n")
 
     run([
-        "ffmpeg", "-y",
-        "-f", "concat", "-safe", "0",
-        "-i", "list.txt",
-        "-c:a", "mp3",
-        "-b:a", "192k",
-        "voice_raw.mp3"
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+        "-i", "list.txt", "-c:a", "mp3", "voice_raw.mp3"
     ], cwd="tts")
 
-    # ---------- MIX TANPURA ----------
     run([
         "ffmpeg", "-y",
         "-i", "tts/voice_raw.mp3",
         "-i", TANPURA,
-        "-filter_complex",
-        "[1:a]volume=0.035[a1];[0:a][a1]amix=inputs=2",
+        "-filter_complex", "[1:a]volume=0.035[a1];[0:a][a1]amix=inputs=2",
         "-c:a", "mp3",
         "voice.mp3"
     ])
 
-    # ---------- PIXABAY FETCH (ULTRA STRICT) ----------
-    print("▶ Fetching ONLY Krishna / Vishnu images")
+    # ---------- IMAGE FETCH WITH HARD LIMIT ----------
+    print("🖼️ Fetching Krishna/Vishnu images (time-limited)")
+
+    start_time = time.time()
+    saved = 0
+    scanned = 0
 
     r = requests.get(
         "https://pixabay.com/api/",
@@ -112,51 +105,57 @@ async def main():
             "orientation": "horizontal",
             "category": "religion",
             "safesearch": "true",
-            "per_page": 40
-        }
+            "per_page": 80
+        },
+        timeout=15
     ).json()
-
-    saved = 0
-    MAX_IMAGES = 10
 
     for h in r.get("hits", []):
         if saved >= MAX_IMAGES:
             break
 
-        text_blob = (h.get("tags", "") + h.get("user", "")).lower()
+        if scanned >= MAX_SCAN:
+            print("⚠️ Max scan limit reached")
+            break
 
-        # ❌ HARD EXCLUSION
-        if any(bad in text_blob for bad in EXCLUDE_TERMS):
+        if time.time() - start_time > MAX_IMAGE_TIME:
+            print("⏱️ Image fetch time limit reached")
+            break
+
+        scanned += 1
+        tags = (h.get("tags", "") + h.get("user", "")).lower()
+
+        if any(bad in tags for bad in EXCLUDE_TERMS):
             continue
 
-        img_data = requests.get(h["largeImageURL"]).content
-        img = Image.open(BytesIO(img_data))
+        try:
+            img_data = requests.get(h["largeImageURL"], timeout=10).content
+            img = Image.open(BytesIO(img_data))
+            img.verify()
+            img = Image.open(BytesIO(img_data))
 
-        w, hgt = img.size
-        if w < 1200 or w < hgt:
+            w, hgt = img.size
+            if w < 1200 or w < hgt:
+                continue
+
+            img.convert("RGB").save(f"images/{saved:03}.jpg", "JPEG", quality=95)
+            saved += 1
+            print(f"✅ Image {saved}/{MAX_IMAGES}")
+
+        except Exception:
             continue
-
-        img.convert("RGB").save(f"images/{saved:03}.jpg", "JPEG", quality=95)
-        saved += 1
 
     if saved == 0:
-        raise RuntimeError("❌ No PURE Krishna/Vishnu images found")
+        raise RuntimeError("❌ No valid Krishna/Vishnu images found")
 
-    print(f"✅ {saved} pure divine images saved")
-
-    # ---------- VIDEO CLIPS ----------
+    # ---------- VIDEO ----------
     def clip(img, out):
         run([
-            "ffmpeg", "-y",
-            "-loop", "1",
-            "-i", img,
+            "ffmpeg", "-y", "-loop", "1", "-i", img,
             "-t", "8",
-            "-vf",
-            "scale=1280:720:force_original_aspect_ratio=decrease,"
-            "pad=1280:720:(ow-iw)/2:(oh-ih)/2",
-            "-r", FPS,
-            "-pix_fmt", "yuv420p",
-            out
+            "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,"
+                   "pad=1280:720:(ow-iw)/2:(oh-ih)/2",
+            "-r", FPS, "-pix_fmt", "yuv420p", out
         ])
 
     clip(START_IMAGE, "clips/000.mp4")
@@ -168,19 +167,13 @@ async def main():
         for c in sorted(Path("clips").glob("*.mp4")):
             f.write(f"file '{c.name}'\n")
 
-    # ---------- FINAL ----------
     run([
-        "ffmpeg", "-y",
-        "-f", "concat", "-safe", "0",
-        "-i", "list.txt",
-        "-i", "../voice.mp3",
-        "-c:v", "copy",
-        "-c:a", "aac",
-        "-shortest",
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+        "-i", "list.txt", "-i", "../voice.mp3",
+        "-c:v", "copy", "-c:a", "aac", "-shortest",
         f"../final_video_episode_{EP}.mp4"
     ], cwd="clips")
 
-    print(f"✅ FINAL VIDEO READY: final_video_episode_{EP}.mp4")
+    print("✅ FINAL VIDEO READY")
 
-# ================= RUN =================
 asyncio.run(main())
