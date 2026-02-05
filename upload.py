@@ -4,8 +4,6 @@ from pydub import AudioSegment
 import edge_tts
 import subprocess
 
-from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips
-
 # ================= FILE PATHS =================
 IMAGE_FILE = "Image1.png"
 RESIZED_IMAGE = "Image1_resized.png"
@@ -17,7 +15,6 @@ FINAL_VIDEO = "final_video_episode_1.mp4"
 
 # ================= RESIZE IMAGE =================
 def resize_image(input_file, output_file, width=1280, height=720):
-    # Use ffmpeg to resize
     subprocess.run([
         "ffmpeg", "-y", "-i", input_file,
         "-vf", f"scale={width}:{height}",
@@ -44,6 +41,24 @@ def get_script_text(file_path):
     with open(file_path, "r", encoding="utf-8") as f:
         return f.read().strip()
 
+# ================= CREATE VIDEO =================
+def create_video(image_file, audio_file, output_file):
+    # Use ffmpeg to create a video from a single image and audio
+    subprocess.run([
+        "ffmpeg", "-y",
+        "-loop", "1",
+        "-i", image_file,
+        "-i", audio_file,
+        "-c:v", "libx264",
+        "-tune", "stillimage",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-pix_fmt", "yuv420p",
+        "-shortest",
+        output_file
+    ], check=True)
+    print(f"✅ Final video created: {output_file}")
+
 # ================= MAIN =================
 async def main():
     # 1️⃣ Resize image
@@ -60,21 +75,14 @@ async def main():
     await generate_tts(main_script_text, "tts/main.mp3")
     await generate_tts(end_narration_text, "tts/end.mp3")
 
-    # 4️⃣ Merge intro audio: temple bell + tanpura + start narration
-    intro_audio_file = merge_audio([BELL_FILE, TANPURA_FILE, "tts/start.mp3"], "intro.mp3")
+    # 4️⃣ Merge all audio: temple bell + tanpura + start narration + main + end + tanpura
+    final_audio_file = merge_audio(
+        [BELL_FILE, TANPURA_FILE, "tts/start.mp3", "tts/main.mp3", "tts/end.mp3", TANPURA_FILE],
+        "final_audio.mp3"
+    )
 
-    # 5️⃣ Merge outro audio: end narration + tanpura
-    outro_audio_file = merge_audio(["tts/end.mp3", TANPURA_FILE], "outro.mp3")
-
-    # 6️⃣ Merge all audio: intro + main script + outro
-    final_audio_file = merge_audio([intro_audio_file, "tts/main.mp3", outro_audio_file], "final_audio.mp3")
-
-    # 7️⃣ Create video
-    image_clip = ImageClip(RESIZED_IMAGE).set_duration(AudioSegment.from_file(final_audio_file).duration_seconds)
-    audio_clip = AudioFileClip(final_audio_file)
-    video_clip = image_clip.set_audio(audio_clip)
-    video_clip.write_videofile(FINAL_VIDEO, fps=25)
-    print(f"✅ Final video created: {FINAL_VIDEO}")
+    # 5️⃣ Create final video
+    create_video(RESIZED_IMAGE, "final_audio.mp3", FINAL_VIDEO)
 
 # ================= RUN =================
 if __name__ == "__main__":
