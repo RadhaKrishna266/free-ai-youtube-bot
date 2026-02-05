@@ -1,3 +1,4 @@
+import os
 import subprocess
 import asyncio
 import edge_tts
@@ -6,40 +7,44 @@ from pathlib import Path
 # ================= CONFIG =================
 SCRIPT_FILE = "script.txt"
 IMAGE_FILE = "Image1.png"
-BELL = "audio/bell.mp3"
+
+BELL = "audio/temple_bell.mp3"
 TANPURA = "audio/tanpura.mp3"
+
 FPS = "25"
 
 Path("tts").mkdir(exist_ok=True)
 
-# ================= SAFE RUN =================
-def run(cmd, timeout=120):
-    subprocess.run(cmd, check=True, timeout=timeout)
+# ================= UTILS =================
+def run(cmd, timeout=300, cwd=None):
+    subprocess.run(cmd, check=True, timeout=timeout, cwd=cwd)
 
-# ================= TTS =================
-async def generate_tts(text, out):
-    t = edge_tts.Communicate(
+async def tts(text, out):
+    speaker = edge_tts.Communicate(
         text=text,
         voice="hi-IN-MadhurNeural",
         rate="+0%",
         pitch="+0Hz"
     )
-    await t.save(out)
+    await speaker.save(out)
 
 # ================= MAIN =================
 async def main():
     print("🔔 Starting devotional audiobook")
 
+    if not Path(SCRIPT_FILE).exists():
+        raise FileNotFoundError("script.txt not found")
+
+    if not Path(IMAGE_FILE).exists():
+        raise FileNotFoundError("Image1.png not found")
+
     # ---------- READ SCRIPT ----------
-    script = Path(SCRIPT_FILE).read_text(encoding="utf-8").strip()
-    if not script:
-        raise RuntimeError("❌ script.txt is empty")
+    text = Path(SCRIPT_FILE).read_text(encoding="utf-8").strip()
 
-    # ---------- TTS ----------
     print("🗣 Generating narration...")
-    await generate_tts(script, "tts/narration.mp3")
+    await tts(text, "tts/narration.mp3")
 
-    # ---------- BELL + NARRATION ----------
+    # ---------- ADD BELL AT START ----------
     print("🔔 Adding bell sound...")
     run([
         "ffmpeg", "-y",
@@ -50,21 +55,21 @@ async def main():
         "[b][1:a]concat=n=2:v=0:a=1",
         "-c:a", "mp3",
         "tts/voice_with_bell.mp3"
-    ])
+    ], timeout=120)
 
     # ---------- MIX TANPURA ----------
-    print("🎵 Mixing tanpura...")
+    print("🎶 Mixing tanpura background...")
     run([
         "ffmpeg", "-y",
         "-i", "tts/voice_with_bell.mp3",
         "-i", TANPURA,
         "-filter_complex",
-        "[1:a]volume=0.04[a1];[0:a][a1]amix=inputs=2",
+        "[1:a]volume=0.03[a1];[0:a][a1]amix=inputs=2:duration=first",
         "-c:a", "mp3",
         "voice.mp3"
-    ])
+    ], timeout=180)
 
-    # ---------- FINAL VIDEO ----------
+    # ---------- FINAL VIDEO (SINGLE IMAGE) ----------
     print("🎬 Rendering final video...")
     run([
         "ffmpeg", "-y",
@@ -73,14 +78,15 @@ async def main():
         "-i", "voice.mp3",
         "-c:v", "libx264",
         "-tune", "stillimage",
+        "-vf", "scale=1280:720",
         "-r", FPS,
         "-pix_fmt", "yuv420p",
         "-c:a", "aac",
         "-shortest",
         "final_video.mp4"
-    ], timeout=180)
+    ], timeout=300)
 
-    print("✅ DONE: final_video.mp4 created")
+    print("✅ FINAL VIDEO READY: final_video.mp4")
 
 # ================= RUN =================
 asyncio.run(main())
