@@ -1,75 +1,81 @@
 import os
 import asyncio
-import edge_tts
 from pydub import AudioSegment
+import edge_tts
 import subprocess
 
-# ---------- CONFIG ----------
-IMAGE_FILE = "Image1.png"
-TEMP_IMAGE_FILE = "Image1_resized.png"
-FINAL_VIDEO = "final_video_episode_1.mp4"
-SCRIPT_FILE = "script.txt"
-TANPURA_FILE = "light_tanpura.mp3"
-BELL_FILE = "temple_bell.mp3"
+from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips
 
-# ---------- FUNCTIONS ----------
-def fix_image():
-    # Resize safely using FFmpeg
+# ================= FILE PATHS =================
+IMAGE_FILE = "Image1.png"
+RESIZED_IMAGE = "Image1_resized.png"
+SCRIPT_FILE = "script.txt"
+
+BELL_FILE = "audio/temple_bell.mp3"
+TANPURA_FILE = "audio/tanpura.mp3"
+FINAL_VIDEO = "final_video_episode_1.mp4"
+
+# ================= RESIZE IMAGE =================
+def resize_image(input_file, output_file, width=1280, height=720):
+    # Use ffmpeg to resize
     subprocess.run([
-        "ffmpeg", "-y", "-i", IMAGE_FILE, "-vf", "scale=1280:720", TEMP_IMAGE_FILE
-    ])
-    os.replace(TEMP_IMAGE_FILE, IMAGE_FILE)
+        "ffmpeg", "-y", "-i", input_file,
+        "-vf", f"scale={width}:{height}",
+        output_file
+    ], check=True)
     print("✅ Image resized successfully")
 
-async def generate_tts(text, output_file):
-    communicate = edge_tts.Communicate(text, voice="hi-IN-SwaraNeural")
-    await communicate.save(output_file)
-
+# ================= MERGE AUDIO FILES =================
 def merge_audio(audio_files, output_file):
-    final_audio = AudioSegment.empty()
+    final_audio = AudioSegment.silent(duration=0)
     for file in audio_files:
         final_audio += AudioSegment.from_file(file)
     final_audio.export(output_file, format="mp3")
-    print(f"✅ Audio merged into {output_file}")
+    return output_file
 
-def create_video(image_file, audio_file, output_file):
-    subprocess.run([
-        "ffmpeg", "-y", "-loop", "1", "-i", image_file,
-        "-i", audio_file, "-c:v", "libx264",
-        "-tune", "stillimage", "-c:a", "aac",
-        "-b:a", "192k", "-pix_fmt", "yuv420p",
-        "-shortest", output_file
-    ])
-    print(f"✅ Final video created: {output_file}")
+# ================= GENERATE TTS =================
+async def generate_tts(text, output_file):
+    communicate = edge_tts.Communicate(text, "hi-IN-SwaraNeural")
+    await communicate.save(output_file)
+    print(f"🎤 TTS generated: {output_file}")
 
-# ---------- MAIN SCRIPT ----------
+# ================= READ SCRIPT =================
+def get_script_text(file_path):
+    with open(file_path, "r", encoding="utf-8") as f:
+        return f.read().strip()
+
+# ================= MAIN =================
 async def main():
-    fix_image()
+    # 1️⃣ Resize image
+    resize_image(IMAGE_FILE, RESIZED_IMAGE)
 
-    # Read main narration from script
-    with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
-        main_narration = f.read()
+    # 2️⃣ Prepare narrations
+    start_narration_text = "नमस्कार। आप देख रहे हैं सनातन ज्ञान धारा। हम प्रतिदिन विष्णु पुराण के वीडियो अपलोड करेंगे।"
+    end_narration_text = "धन्यवाद। आपने सनातन ज्ञान धारा देखा। हम प्रतिदिन विष्णु पुराण के वीडियो अपलोड करेंगे।"
+    main_script_text = get_script_text(SCRIPT_FILE)
 
-    # Define start and end narration
-    start_narration = ("नमस्कार! आप देख रहे हैं Sanatan Gyan Dhara। "
-                       "हम हर दिन विष्णु पुराण की एक नई कथा लेकर आते हैं।")
-    end_narration = ("यह कथा समाप्त हुई। Sanatan Gyan Dhara पर जुड़े रहें "
-                     "और हर दिन नई विष्णु पुराण की कथा देखें।")
+    # 3️⃣ Generate TTS files
+    os.makedirs("tts", exist_ok=True)
+    await generate_tts(start_narration_text, "tts/start.mp3")
+    await generate_tts(main_script_text, "tts/main.mp3")
+    await generate_tts(end_narration_text, "tts/end.mp3")
 
-    # Generate TTS in chunks to avoid errors
-    audio_files = []
-    for i, text in enumerate([start_narration, main_narration, end_narration]):
-        file_name = f"tts_{i}.mp3"
-        print(f"🎤 Generating TTS for part {i+1}...")
-        await generate_tts(text, file_name)
-        audio_files.append(file_name)
+    # 4️⃣ Merge intro audio: temple bell + tanpura + start narration
+    intro_audio_file = merge_audio([BELL_FILE, TANPURA_FILE, "tts/start.mp3"], "intro.mp3")
 
-    # Prepend temple bell + tanpura
-    intro_audio = merge_audio([BELL_FILE, TANPURA_FILE], "intro.mp3")
-    merge_audio(["intro.mp3"] + audio_files, "final_audio.mp3")
+    # 5️⃣ Merge outro audio: end narration + tanpura
+    outro_audio_file = merge_audio(["tts/end.mp3", TANPURA_FILE], "outro.mp3")
 
-    # Create final video
-    create_video(IMAGE_FILE, "final_audio.mp3", FINAL_VIDEO)
+    # 6️⃣ Merge all audio: intro + main script + outro
+    final_audio_file = merge_audio([intro_audio_file, "tts/main.mp3", outro_audio_file], "final_audio.mp3")
 
-# Run
-asyncio.run(main())
+    # 7️⃣ Create video
+    image_clip = ImageClip(RESIZED_IMAGE).set_duration(AudioSegment.from_file(final_audio_file).duration_seconds)
+    audio_clip = AudioFileClip(final_audio_file)
+    video_clip = image_clip.set_audio(audio_clip)
+    video_clip.write_videofile(FINAL_VIDEO, fps=25)
+    print(f"✅ Final video created: {FINAL_VIDEO}")
+
+# ================= RUN =================
+if __name__ == "__main__":
+    asyncio.run(main())
