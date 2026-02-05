@@ -33,16 +33,17 @@ def get_script_text(file_path):
         return f.read().strip()
 
 # ================= MERGE AUDIO =================
-def merge_audio(start_tanpura_file, main_tts_files, end_tanpura_file, output_file):
-    # Load and trim tanpura files
-    start_tanpura = AudioSegment.from_file(start_tanpura_file)[:200]  # 0.2 sec = 200 ms
-    end_tanpura = AudioSegment.from_file(end_tanpura_file)[:100]      # 0.10 sec = 100 ms
+def merge_audio(start_tanpura_file, main_tts_files, end_tanpura_file, om_narayan_file, output_file):
+    # Load and trim start/end tanpura
+    start_tanpura = AudioSegment.from_file(start_tanpura_file)[:100]  # 0.10 sec
+    end_tanpura = AudioSegment.from_file(end_tanpura_file)[:1000]     # 1 sec
 
     # Load main narration files
     final_audio = start_tanpura
     for file in main_tts_files:
         final_audio += AudioSegment.from_file(file)
-    final_audio += end_tanpura
+    # Add 1 sec end tanpura + om namo narayan
+    final_audio += end_tanpura + AudioSegment.from_file(om_narayan_file)
 
     final_audio.export(output_file, format="mp3")
     return output_file
@@ -74,23 +75,26 @@ async def main():
         "नमस्कार। आप देख रहे हैं सनातन ज्ञान धारा। "
         "हम प्रतिदिन विष्णु पुराण के वीडियो अपलोड करेंगे।"
     )
+    main_script_text = get_script_text(SCRIPT_FILE)
     end_narration_text = (
         "धन्यवाद। आपने सनातन ज्ञान धारा देखा। "
         "हम प्रतिदिन विष्णु पुराण के वीडियो अपलोड करेंगे।"
     )
-    main_script_text = get_script_text(SCRIPT_FILE)
+    om_narayan_text = "ॐ नमो नारायण"
 
     # 3️⃣ Generate TTS files
     os.makedirs("tts", exist_ok=True)
     await generate_tts(start_narration_text, "tts/start.mp3")
     await generate_tts(main_script_text, "tts/main.mp3")
     await generate_tts(end_narration_text, "tts/end.mp3")
+    await generate_tts(om_narayan_text, "tts/om_narayan.mp3")
 
     # 4️⃣ Merge all audio with short tanpura at start and end
     final_audio_file = merge_audio(
         TANPURA_FILE,
         ["tts/start.mp3", "tts/main.mp3", "tts/end.mp3"],
         TANPURA_FILE,
+        "tts/om_narayan.mp3",
         "final_audio.mp3"
     )
 
