@@ -76,17 +76,15 @@ async def main():
     resize_image(IMAGE_FILE, RESIZED_IMAGE)
 
     # 2️⃣ Prepare narrations
-    start_narration_text = (
-        नमस्ते मित्रों!
+    start_narration_text = """नमस्ते मित्रों!
 
-अगर आप पहले वीडियो देख चुके हैं तो धन्यवाद 
-और अगर नहीं देख पाए, तो कृपया पहले देखें ताकि पूरी कथा समझ में आए।  )
+अगर आप पहले वीडियो देख चुके हैं तो धन्यवाद।  
+और अगर नहीं देख पाए, तो कृपया पहले देखें ताकि पूरी कथा समझ में आए।"""
 
     main_script_text = get_script_text(SCRIPT_FILE)
-    end_narration_text = (
-        "धन्यवाद। आपने सनातन ज्ञान धारा देखा। "
-        "हम प्रतिदिन विष्णु पुराण के वीडियो अपलोड करेंगे।"
-    )
+    end_narration_text = """धन्यवाद। आपने सनातन ज्ञान धारा देखा।  
+हम प्रतिदिन विष्णु पुराण के वीडियो अपलोड करेंगे।"""
+    
     om_narayan_text = "ॐ नमो नारायण"
 
     # 3️⃣ Generate TTS files
