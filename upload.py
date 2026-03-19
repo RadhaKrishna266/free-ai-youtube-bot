@@ -4,149 +4,124 @@ import asyncio
 import edge_tts
 from PIL import Image, ImageDraw, ImageFont
 
-FINAL_VIDEO = "jee_complete_solution.mp4"
+FINAL_VIDEO = "coaching_style_class.mp4"
 
-SLIDES = [
-    "JEE Main 2019 — 4 Marks\n\nFind the MAXIMUM value of:\nf(x) = -x² + 4x + 1",
-
-    "Step 1:\nFirst derivative nikaalte hain",
-
-    "f'(x) = -2x + 4\nMaximum ke liye f'(x) = 0",
-
-    "-2x + 4 = 0\nx = 2",
-
-    "Step 2:\nSecond derivative test",
-
-    "f''(x) = -2\nSince < 0 → Maximum",
-
-    "Step 3:\nFunction me x = 2 put karte hain",
-
-    "f(2) = -(2)² + 4(2) + 1 = 5",
-
-    "Final Answer:\nMaximum Value = 5",
-
-    "Thank you\nPractice more PYQs ✨"
+BOARD_TEXT = [
+"Topic: Maxima & Minima (Class 12)",
+"",
+"Maximum → Highest value of function",
+"Minimum → Lowest value",
+"",
+"Critical point when f'(x) = 0",
+"",
+"Second Derivative Test:",
+"f''(x) < 0 → Maximum",
+"f''(x) > 0 → Minimum",
+"",
+"Shortcut for ax² + bx + c:",
+"Vertex x = -b / 2a",
+"",
+"Example:",
+"f(x) = -x² + 4x + 1",
+"",
+"Step 1: f'(x) = -2x + 4",
+"Set = 0 → x = 2",
+"",
+"Step 2: f''(x) = -2 < 0",
+"Maximum point",
+"",
+"Step 3: f(2) = 5",
+"",
+"Final Answer:",
+"Maximum Value = 5",
+"",
+"JEE Main 2019 — 4 Marks"
 ]
 
-AUDIO_LINES = [
-    "JEE Main 2019 ka 4 marks ka question hai. Hume function ka maximum value find karna hai.",
-    "Sabse pehle first derivative nikaalte hain.",
-    "Maximum ya minimum point par first derivative zero hoti hai.",
-    "Equation solve karne par x ki value 2 aati hai.",
-    "Ab second derivative test lagate hain.",
-    "Second derivative negative hai, isliye yeh maximum point hai.",
-    "Ab function me x equal to 2 put karte hain.",
-    "Calculation karne par value 5 aati hai.",
-    "Isliye function ka maximum value 5 hai.",
-    "Dhanyavaad. Aise hi previous year questions practice karte rahiye."
-]
+VOICE_TEXT = """
+Namaste students. Aaj hum Class 12 Maths ka important topic Maxima aur Minima padhenge.
 
-os.makedirs("slides", exist_ok=True)
+Maximum function ka sabse bada value hota hai aur minimum sabse chhota.
+
+Critical point wahan milta hai jahan first derivative zero hoti hai.
+
+Second derivative test se pata chalta hai ki point maximum hai ya minimum.
+
+Quadratic function ke liye vertex formula minus b by 2a fastest method hai.
+
+Ab example solve karte hain.
+
+Derivative zero karne par x ki value 2 aati hai.
+
+Second derivative negative hone se yeh maximum point hai.
+
+Function me x equal to 2 put karne par value 5 aati hai.
+
+Isliye maximum value 5 hai.
+
+Yeh JEE Main 2019 ka 4 marks ka question tha.
+
+Dhanyavaad. Practice karte rahiye.
+"""
+
 os.makedirs("tts", exist_ok=True)
 
 
-# ---------- SAFE SLIDE ----------
+# ---------- CREATE BLACKBOARD IMAGE ----------
 
-def create_slide(text, i):
+def create_board():
 
     W, H = 720, 1280
-    img = Image.new("RGB", (W, H), (15, 40, 25))
+    img = Image.new("RGB", (W, H), (10, 50, 20))
     draw = ImageDraw.Draw(img)
 
     try:
-        font = ImageFont.truetype("DejaVuSans-Bold.ttf", 52)
+        font = ImageFont.truetype("DejaVuSans-Bold.ttf", 38)
     except:
         font = ImageFont.load_default()
 
-    margin = 50
-    max_width = W - 2 * margin
+    y = 40
+    for line in BOARD_TEXT:
+        draw.text((40, y), line, fill=(240, 240, 240), font=font)
+        y += 48
 
-    lines = []
-    for para in text.split("\n"):
-        words = para.split()
-        current = ""
-        for word in words:
-            test = current + " " + word if current else word
-            w, h = draw.textbbox((0, 0), test, font=font)[2:]
-            if w <= max_width:
-                current = test
-            else:
-                lines.append(current)
-                current = word
-        if current:
-            lines.append(current)
-        lines.append("")
-
-    y = (H - len(lines) * 70) // 2
-
-    for line in lines:
-        w, h = draw.textbbox((0, 0), line, font=font)[2:]
-        x = (W - w) // 2
-        draw.text((x, y), line, fill=(245, 245, 245), font=font)
-        y += 70
-
-    path = f"slides/slide_{i}.png"
-    img.save(path)
-    return path
+    img.save("board.png")
 
 
 # ---------- VOICE ----------
 
-async def generate_voice(text, file):
+async def generate_voice():
 
     tts = edge_tts.Communicate(
-        text,
+        VOICE_TEXT,
         "hi-IN-MadhurNeural",
-        rate="-10%"
+        rate="-8%"
     )
 
-    await tts.save(file)
+    await tts.save("tts/voice.mp3")
 
 
 # ---------- MAIN ----------
 
 async def main():
 
-    clips = []
-
-    for i in range(len(SLIDES)):
-
-        img = create_slide(SLIDES[i], i)
-
-        audio_file = f"tts/voice_{i}.mp3"
-        await generate_voice(AUDIO_LINES[i], audio_file)
-
-        clip = f"clip_{i}.mp4"
-
-        subprocess.run([
-            "ffmpeg", "-y",
-            "-loop", "1",
-            "-i", img,
-            "-i", audio_file,
-            "-c:v", "libx264",
-            "-tune", "stillimage",
-            "-c:a", "aac",
-            "-pix_fmt", "yuv420p",
-            "-shortest",
-            clip
-        ], check=True)
-
-        clips.append(clip)
-
-    with open("concat.txt", "w") as f:
-        for c in clips:
-            f.write(f"file '{c}'\n")
+    create_board()
+    await generate_voice()
 
     subprocess.run([
         "ffmpeg", "-y",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", "concat.txt",
-        "-c", "copy",
+        "-loop", "1",
+        "-i", "board.png",
+        "-i", "tts/voice.mp3",
+        "-c:v", "libx264",
+        "-tune", "stillimage",
+        "-c:a", "aac",
+        "-pix_fmt", "yuv420p",
+        "-shortest",
         FINAL_VIDEO
     ], check=True)
 
-    print("🎬 JEE solution video created:", FINAL_VIDEO)
+    print("🎬 Coaching style lecture created:", FINAL_VIDEO)
 
 
 if __name__ == "__main__":
