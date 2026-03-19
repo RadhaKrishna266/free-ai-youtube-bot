@@ -4,92 +4,79 @@ import asyncio
 import edge_tts
 from PIL import Image, ImageDraw, ImageFont
 
-FINAL_VIDEO = "jee_long_coaching_video.mp4"
+FINAL_VIDEO = "true_foundation_class.mp4"
 
 LINES = [
 
-    # ---------- TOPIC ----------
-    ("Topic: Maxima & Minima (Class 12)", 
-     "Aaj hum Class 12 Maths ka important topic Maxima aur Minima detail me padhenge."),
+    # ---------- INTRO ----------
+    ("Topic: Maxima & Minima (Basic Level)",
+     "Aaj hum bilkul basic level se Maxima aur Minima padhenge."),
 
-    ("Maximum → Highest value", 
-     "Maximum function ka sabse bada value hota hai."),
+    # ---------- FUNCTION ----------
+    ("Given: f(x) = -x² + 4x + 1",
+     "Is function ka maximum value nikalna hai."),
 
-    ("Minimum → Lowest value", 
-     "Minimum function ka sabse chhota value hota hai."),
+    # ---------- DERIVATIVE RULE ----------
+    ("Derivative Rule: d/dx(xⁿ) = n·xⁿ⁻¹",
+     "Sabse pehle power rule samajhte hain."),
 
-    ("Critical point jab f'(x) = 0", 
-     "Critical point wahan milta hai jahan first derivative zero hoti hai."),
+    ("x² → 2x",
+     "Power 2 neeche aata hai aur power ek kam ho jati hai."),
 
-    ("Second Derivative Test", 
-     "Second derivative se pata chalta hai maximum hai ya minimum."),
+    ("x → 1",
+     "x ki power 1 hoti hai isliye derivative 1 hota hai."),
 
-    ("f''(x) < 0 → Maximum", 
-     "Negative hone par point maximum hota hai."),
+    ("Constant → 0",
+     "Koi bhi constant number ka derivative zero hota hai."),
 
-    ("f''(x) > 0 → Minimum", 
-     "Positive hone par point minimum hota hai."),
+    # ---------- APPLY RULE ----------
+    ("Term 1: -x² → -2x",
+     "Power rule apply karne par minus x square ka derivative minus 2x aata hai."),
 
-    ("Shortcut: ax² + bx + c → x = -b / 2a", 
-     "Quadratic function ke liye vertex formula fastest method hai."),
+    ("Term 2: 4x → 4",
+     "4x ka derivative sirf 4 hota hai."),
 
-    # ---------- EXAMPLE ----------
-    ("Example: f(x) = -x² + 4x + 1", 
-     "Ab ek example solve karte hain."),
+    ("Term 3: 1 → 0",
+     "Constant 1 ka derivative zero hota hai."),
 
-    ("Step 1: f'(x) = -2x + 4", 
-     "Derivative nikaalte hain."),
+    ("So f'(x) = -2x + 4",
+     "Sab terms jodne par first derivative milta hai."),
 
-    ("Set = 0 → x = 2", 
-     "Derivative zero karne par x ki value 2 aati hai."),
+    # ---------- CRITICAL POINT ----------
+    ("For max/min: f'(x) = 0",
+     "Maximum ya minimum ke liye derivative zero karte hain."),
 
-    ("Step 2: f''(x) = -2 < 0", 
-     "Second derivative negative hai isliye maximum point hai."),
+    ("-2x + 4 = 0",
+     "Equation solve karte hain."),
 
-    ("Step 3: f(2) = 5", 
-     "Function me value put karte hain."),
+    ("-2x = -4 → x = 2",
+     "Dono side divide karne par x ki value 2 aati hai."),
 
-    ("Maximum Value = 5", 
-     "Isliye maximum value 5 hai."),
+    # ---------- SECOND DERIVATIVE ----------
+    ("Second derivative f''(x) = -2",
+     "Ab second derivative nikaalte hain."),
 
-    # ---------- JEE PYQ 1 ----------
-    ("JEE Main 2019 — 4 Marks", 
-     "Ab JEE Main 2019 ka previous year question dekhte hain."),
+    ("-2 < 0 ⇒ Maximum",
+     "Negative hone par yeh maximum point hota hai."),
 
-    ("Find MAXIMUM of f(x) = -x² + 4x + 1", 
-     "Hume maximum value find karna hai."),
+    # ---------- VALUE ----------
+    ("Put x = 2 in f(x)",
+     "Ab function me value put karte hain."),
 
-    ("Answer = 5", 
-     "Iska answer 5 hai."),
+    ("f(2) = -(2)² + 4(2) + 1",
+     "Substitution karte hain."),
 
-    # ---------- JEE PYQ 2 ----------
-    ("JEE Main 2021 — 4 Marks", 
-     "Ab JEE Main 2021 ka question dekhte hain."),
+    ("= -4 + 8 + 1",
+     "Calculation solve karte hain."),
 
-    ("Find MINIMUM of f(x) = x² - 6x + 10", 
-     "Isme minimum value nikalni hai."),
+    ("= 5",
+     "Final result milta hai."),
 
-    ("x = 3 → Minimum point", 
-     "Vertex formula se x ki value 3 aati hai."),
+    ("Maximum Value = 5",
+     "Isliye function ka maximum value 5 hai."),
 
-    ("Minimum Value = 1", 
-     "Final minimum value 1 hai."),
-
-    # ---------- JEE PYQ 3 ----------
-    ("JEE Main 2022 — 4 Marks", 
-     "Ab JEE Main 2022 ka question."),
-
-    ("Find maximum of f(x) = -x² + 6x - 5", 
-     "Maximum value nikalte hain."),
-
-    ("x = 3 → Maximum point", 
-     "Vertex se x ki value 3 aati hai."),
-
-    ("Maximum Value = 4", 
-     "Final answer 4 hai."),
-
-    ("Thank you — Practice PYQs ✨", 
-     "Dhanyavaad. Aur bhi previous year questions practice kariye.")
+    ("Thank you — Keep Learning ✨",
+     "Dhanyavaad. Practice karte rahiye.")
 ]
 
 os.makedirs("frames", exist_ok=True)
@@ -99,11 +86,11 @@ os.makedirs("tts", exist_ok=True)
 def create_frame(text, i):
 
     W, H = 720, 1280
-    img = Image.new("RGB", (W, H), (12, 45, 25))
+    img = Image.new("RGB", (W, H), (10, 40, 25))
     draw = ImageDraw.Draw(img)
 
     try:
-        font = ImageFont.truetype("DejaVuSans-Bold.ttf", 48)
+        font = ImageFont.truetype("DejaVuSans-Bold.ttf", 46)
     except:
         font = ImageFont.load_default()
 
@@ -124,13 +111,13 @@ def create_frame(text, i):
             current = w
     lines.append(current)
 
-    y = (H - len(lines) * 70) // 2
+    y = (H - len(lines) * 65) // 2
 
     for line in lines:
         bbox = draw.textbbox((0, 0), line, font=font)
         x = (W - bbox[2]) // 2
         draw.text((x, y), line, fill=(240, 240, 240), font=font)
-        y += 70
+        y += 65
 
     path = f"frames/frame_{i}.png"
     img.save(path)
@@ -184,7 +171,7 @@ async def main():
         FINAL_VIDEO
     ], check=True)
 
-    print("🎬 Long coaching video created:", FINAL_VIDEO)
+    print("🎬 True foundation video created:", FINAL_VIDEO)
 
 
 if __name__ == "__main__":
