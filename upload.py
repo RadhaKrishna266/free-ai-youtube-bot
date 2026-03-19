@@ -4,81 +4,93 @@ import asyncio
 import edge_tts
 from PIL import Image, ImageDraw, ImageFont
 
-FINAL_VIDEO = "jee_teaching_style.mp4"
-
-# -------- SCREEN TEXT (ONLY KEY POINTS) --------
+FINAL_VIDEO = "jee_complete_solution.mp4"
 
 SLIDES = [
-    "APPLICATION OF DERIVATIVES\nMaxima & Minima",
+    "JEE Main 2019 — 4 Marks\n\nFind the MAXIMUM value of:\nf(x) = -x² + 4x + 1",
 
-    "Maximum = Highest value\nMinimum = Lowest value",
+    "Step 1:\nFirst derivative nikaalte hain",
 
-    "Condition:\nf'(x) = 0",
+    "f'(x) = -2x + 4\nMaximum ke liye f'(x) = 0",
 
-    "Second Derivative Test:\nf''(x) < 0 → Maximum\nf''(x) > 0 → Minimum",
+    "-2x + 4 = 0\nx = 2",
 
-    "JEE Main 2019\n4 Marks Question",
+    "Step 2:\nSecond derivative test",
 
-    "f(x) = -x² + 4x + 1",
+    "f''(x) = -2\nSince < 0 → Maximum",
 
-    "Step 1:\nf'(x) = -2x + 4\nSet = 0 → x = 2",
+    "Step 3:\nFunction me x = 2 put karte hain",
 
-    "Step 2:\nf''(x) = -2 < 0\nMaximum point",
+    "f(2) = -(2)² + 4(2) + 1 = 5",
 
-    "Step 3:\nf(2) = 5",
+    "Final Answer:\nMaximum Value = 5",
 
-    "Maximum Value = 5"
+    "Thank you\nPractice more PYQs ✨"
 ]
 
-# -------- AUDIO SCRIPT (FULL EXPLANATION) --------
-
 AUDIO_LINES = [
-    "Aaj hum applications of derivatives me maxima aur minima samjhenge.",
-    "Maximum function ka highest value hota hai aur minimum lowest value hota hai.",
+    "JEE Main 2019 ka 4 marks ka question hai. Hume function ka maximum value find karna hai.",
+    "Sabse pehle first derivative nikaalte hain.",
     "Maximum ya minimum point par first derivative zero hoti hai.",
-    "Second derivative se pata chalta hai maximum hai ya minimum.",
-    "Ab JEE Main 2019 ka 4 marks ka question dekhte hain.",
-    "Function diya hai minus x square plus 4x plus 1.",
-    "Sabse pehle first derivative nikalte hain aur zero ke equal karte hain jisse x ki value 2 aati hai.",
-    "Second derivative negative hai isliye yeh maximum point hai.",
+    "Equation solve karne par x ki value 2 aati hai.",
+    "Ab second derivative test lagate hain.",
+    "Second derivative negative hai, isliye yeh maximum point hai.",
     "Ab function me x equal to 2 put karte hain.",
-    "Isliye function ka maximum value 5 hai."
+    "Calculation karne par value 5 aati hai.",
+    "Isliye function ka maximum value 5 hai.",
+    "Dhanyavaad. Aise hi previous year questions practice karte rahiye."
 ]
 
 os.makedirs("slides", exist_ok=True)
 os.makedirs("tts", exist_ok=True)
 
 
-# -------- CREATE TEACHING STYLE SLIDE --------
+# ---------- SAFE SLIDE ----------
 
 def create_slide(text, i):
 
-    width, height = 720, 1280
-    img = Image.new("RGB", (width, height), (15, 40, 25))
+    W, H = 720, 1280
+    img = Image.new("RGB", (W, H), (15, 40, 25))
     draw = ImageDraw.Draw(img)
 
     try:
-        title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 64)
-        body_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 52)
+        font = ImageFont.truetype("DejaVuSans-Bold.ttf", 52)
     except:
-        title_font = body_font = ImageFont.load_default()
+        font = ImageFont.load_default()
 
-    lines = text.split("\n")
+    margin = 50
+    max_width = W - 2 * margin
 
-    y = 300
-    for j, line in enumerate(lines):
-        font = title_font if i == 0 else body_font
+    lines = []
+    for para in text.split("\n"):
+        words = para.split()
+        current = ""
+        for word in words:
+            test = current + " " + word if current else word
+            w, h = draw.textbbox((0, 0), test, font=font)[2:]
+            if w <= max_width:
+                current = test
+            else:
+                lines.append(current)
+                current = word
+        if current:
+            lines.append(current)
+        lines.append("")
+
+    y = (H - len(lines) * 70) // 2
+
+    for line in lines:
         w, h = draw.textbbox((0, 0), line, font=font)[2:]
-        x = (width - w) // 2
+        x = (W - w) // 2
         draw.text((x, y), line, fill=(245, 245, 245), font=font)
-        y += 120
+        y += 70
 
     path = f"slides/slide_{i}.png"
     img.save(path)
     return path
 
 
-# -------- GENERATE VOICE --------
+# ---------- VOICE ----------
 
 async def generate_voice(text, file):
 
@@ -91,11 +103,11 @@ async def generate_voice(text, file):
     await tts.save(file)
 
 
-# -------- MAIN --------
+# ---------- MAIN ----------
 
 async def main():
 
-    videos = []
+    clips = []
 
     for i in range(len(SLIDES)):
 
@@ -104,9 +116,8 @@ async def main():
         audio_file = f"tts/voice_{i}.mp3"
         await generate_voice(AUDIO_LINES[i], audio_file)
 
-        output_clip = f"clip_{i}.mp4"
+        clip = f"clip_{i}.mp4"
 
-        # Create video clip synced with audio
         subprocess.run([
             "ffmpeg", "-y",
             "-loop", "1",
@@ -115,18 +126,16 @@ async def main():
             "-c:v", "libx264",
             "-tune", "stillimage",
             "-c:a", "aac",
-            "-b:a", "192k",
             "-pix_fmt", "yuv420p",
             "-shortest",
-            output_clip
+            clip
         ], check=True)
 
-        videos.append(output_clip)
+        clips.append(clip)
 
-    # Merge all clips
     with open("concat.txt", "w") as f:
-        for v in videos:
-            f.write(f"file '{v}'\n")
+        for c in clips:
+            f.write(f"file '{c}'\n")
 
     subprocess.run([
         "ffmpeg", "-y",
@@ -137,7 +146,7 @@ async def main():
         FINAL_VIDEO
     ], check=True)
 
-    print("🎬 Teaching-style video created:", FINAL_VIDEO)
+    print("🎬 JEE solution video created:", FINAL_VIDEO)
 
 
 if __name__ == "__main__":
