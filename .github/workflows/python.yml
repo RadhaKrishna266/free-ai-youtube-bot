@@ -8,42 +8,43 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Checkout repo
+      # ================= CHECKOUT =================
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Install system tools
+      # ================= INSTALL TOOLS =================
       - name: Install FFmpeg
         run: |
           sudo apt update
           sudo apt install -y ffmpeg
 
-      # Setup Python
+      # ================= SETUP PYTHON =================
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # Install dependencies
+      # ================= INSTALL PACKAGES =================
       - name: Install Python packages
         run: |
           python -m pip install --upgrade pip
           pip install requests edge-tts pydub
 
-      # Run bot
+      # ================= RUN BOT =================
       - name: Run video bot
         env:
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
         run: |
-          python main.py
+          python upload.py
 
-      # Check generated video
+      # ================= VERIFY VIDEO =================
       - name: Verify video exists
         run: |
+          echo "Files created:"
           ls -lh
           ls *.mp4
 
-      # Upload video artifact
+      # ================= UPLOAD ARTIFACT =================
       - name: Upload video
         uses: actions/upload-artifact@v4
         with:
