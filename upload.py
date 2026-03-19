@@ -4,76 +4,106 @@ import asyncio
 import edge_tts
 from PIL import Image, ImageDraw, ImageFont
 
-FINAL_VIDEO = "derivative_blackboard.mp4"
+FINAL_VIDEO = "maxima_minima_jee.mp4"
 
 LINES = [
-    "Namaste dosto, aaj hum derivative ka concept samjhenge",
+    "Namaste dosto, aaj hum applications of derivatives me maxima aur minima samjhenge",
 
-    "Derivative batata hai function kitni fast change ho raha hai",
+    "Maxima matlab function ka highest value aur minima matlab lowest value",
 
-    "Sabse important rule hai power rule",
+    "Maximum ya minimum point par derivative zero hoti hai",
 
-    "x ki power n ka derivative hota hai n guna x ki power n minus 1",
+    "Isliye sabse pehle first derivative ko zero ke equal karte hain",
 
-    "Example dekhte hain",
+    "Uske baad second derivative test se pata chalta hai maximum hai ya minimum",
 
-    "y barabar x cube plus 2x square plus 5",
+    "Second derivative negative ho to maximum aur positive ho to minimum",
 
-    "x cube ka derivative hota hai 3x square",
+    "Ab ek JEE Main 2019 ka question dekhte hain, 4 marks ka question",
 
-    "2x square ka derivative hota hai 4x",
+    "Function diya hai minus x square plus 4x plus 1",
 
-    "constant 5 ka derivative zero hota hai",
+    "Sabse pehle first derivative nikalte hain, jo hoti hai minus 2x plus 4",
 
-    "Final answer hota hai 3x square plus 4x",
+    "Isko zero ke equal karte hain, to x ki value aati hai 2",
 
-    "Isi tarah aap kisi bhi polynomial ka derivative nikal sakte hain"
+    "Ab second derivative nikalte hain, jo hoti hai minus 2",
+
+    "Ye negative hai, isliye yahan maximum milega",
+
+    "Ab function me x barabar 2 put karte hain",
+
+    "Answer aata hai 5",
+
+    "Isliye function ka maximum value 5 hai",
+
+    "Isi method se aap JEE ke maxima minima questions fast solve kar sakte hain"
 ]
 
 os.makedirs("slides", exist_ok=True)
 os.makedirs("tts", exist_ok=True)
 
 
-# ---------- BLACKBOARD SLIDE ----------
+# -------- BLACKBOARD STYLE --------
 
-def create_blackboard(text, i):
+def create_slide(text, i):
 
-    img = Image.new("RGB", (720, 1280), (15, 40, 25))  # dark green board
+    width, height = 720, 1280
+    img = Image.new("RGB", (width, height), (15, 40, 25))
     draw = ImageDraw.Draw(img)
 
     try:
-        font = ImageFont.truetype("DejaVuSans-Bold.ttf", 60)
+        font = ImageFont.truetype("DejaVuSans-Bold.ttf", 54)
     except:
         font = ImageFont.load_default()
 
-    draw.multiline_text(
-        (60, 350),
-        text,
-        fill=(245, 245, 245),  # chalk white
-        font=font,
-        align="center"
-    )
+    margin = 60
+    max_width = width - 2 * margin
+
+    words = text.split()
+    lines = []
+    current = ""
+
+    for word in words:
+        test = current + " " + word if current else word
+        w, h = draw.textbbox((0, 0), test, font=font)[2:]
+        if w <= max_width:
+            current = test
+        else:
+            lines.append(current)
+            current = word
+
+    if current:
+        lines.append(current)
+
+    total_height = len(lines) * 80
+    y = (height - total_height) // 2
+
+    for line in lines:
+        w, h = draw.textbbox((0, 0), line, font=font)[2:]
+        x = (width - w) // 2
+        draw.text((x, y), line, fill=(245, 245, 245), font=font)
+        y += 80
 
     path = f"slides/slide_{i}.png"
     img.save(path)
-
     return path
 
 
-# ---------- BETTER HINDI VOICE ----------
+# -------- VOICE --------
 
 async def generate_voice(text, file):
 
     tts = edge_tts.Communicate(
         text,
         "hi-IN-MadhurNeural",
-        rate="-10%"  # slower speech
+        rate="-12%"
     )
 
     await tts.save(file)
 
 
-# ---------- MAIN ----------
+# -------- MAIN --------
 
 async def main():
 
@@ -82,14 +112,13 @@ async def main():
 
     for i, line in enumerate(LINES):
 
-        img = create_blackboard(line, i)
+        img = create_slide(line, i)
         images.append(img)
 
         audio_file = f"tts/voice_{i}.mp3"
         await generate_voice(line, audio_file)
         audios.append(audio_file)
 
-    # Create video from slides
     with open("slides.txt", "w") as f:
         for img in images:
             f.write(f"file '{img}'\n")
@@ -104,7 +133,6 @@ async def main():
         "temp_video.mp4"
     ], check=True)
 
-    # Merge audio
     audio_list = "|".join(audios)
 
     subprocess.run([
@@ -114,7 +142,6 @@ async def main():
         "final_audio.mp3"
     ], check=True)
 
-    # Merge video + audio
     subprocess.run([
         "ffmpeg", "-y",
         "-i", "temp_video.mp4",
@@ -125,7 +152,7 @@ async def main():
         FINAL_VIDEO
     ], check=True)
 
-    print("🎬 Blackboard video created:", FINAL_VIDEO)
+    print("🎬 JEE maxima-minima video created:", FINAL_VIDEO)
 
 
 if __name__ == "__main__":
