@@ -24,7 +24,6 @@ LINES = [
     "This was caught on camera."
 ]
 
-
 # ================= DOWNLOAD + TRIM =================
 def download_clip(term, i):
 
@@ -45,6 +44,7 @@ def download_clip(term, i):
     with open(raw, "wb") as f:
         f.write(r.content)
 
+    # Trim + vertical format
     subprocess.run([
         "ffmpeg",
         "-y",
@@ -54,7 +54,7 @@ def download_clip(term, i):
         "-c:v", "libx264",
         "-c:a", "aac",
         clip
-    ])
+    ], check=True)
 
     return clip
 
@@ -88,17 +88,20 @@ def concat_videos(files):
         for clip in files:
             f.write(f"file '{os.path.abspath(clip)}'\n")
 
+    out = "temp_video.mp4"
+
     subprocess.run([
         "ffmpeg",
         "-y",
         "-f", "concat",
         "-safe", "0",
         "-i", listfile,
-        "-c", "copy",
-        "video.mp4"
-    ])
+        "-c:v", "libx264",
+        "-c:a", "aac",
+        out
+    ], check=True)
 
-    return "video.mp4"
+    return out
 
 
 # ================= MERGE VIDEO + AUDIO =================
@@ -109,13 +112,14 @@ def merge_video_audio(video, audio):
         "-y",
         "-i", video,
         "-i", audio,
-        "-map", "0:v",
-        "-map", "1:a",
+        "-map", "0:v:0",
+        "-map", "1:a:0",
         "-c:v", "libx264",
         "-c:a", "aac",
         "-shortest",
+        "-movflags", "+faststart",
         FINAL_VIDEO
-    ])
+    ], check=True)
 
 
 # ================= MAIN =================
@@ -132,9 +136,10 @@ async def main():
             clips.append(clip)
 
     if not clips:
-        print("No clips downloaded")
+        print("❌ No clips downloaded")
         return
 
+    # 🎤 Generate narration
     audio_files = []
 
     for i in range(len(clips)):
@@ -145,13 +150,16 @@ async def main():
 
         audio_files.append(file)
 
-    audio = merge_audio(audio_files, "tts/final.mp3")
+    final_audio = merge_audio(audio_files, "tts/final.mp3")
 
     video = concat_videos(clips)
 
-    merge_video_audio(video, audio)
+    merge_video_audio(video, final_audio)
 
-    print("✅ Video created:", FINAL_VIDEO)
+    # 🧹 Cleanup temp file
+    os.remove(video)
+
+    print("🎬 SUCCESS — Video created:", FINAL_VIDEO)
 
 
 if __name__ == "__main__":
