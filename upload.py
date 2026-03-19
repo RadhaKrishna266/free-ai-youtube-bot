@@ -4,78 +4,73 @@ import asyncio
 import edge_tts
 from PIL import Image, ImageDraw, ImageFont
 
-FINAL_VIDEO = "real_board_coaching.mp4"
+FINAL_VIDEO = "jee_coaching_video.mp4"
 
 STEPS = [
 
 ("Topic: Maxima & Minima",
- "Aaj hum Maxima aur Minima topic bilkul basic se padhenge."),
+ "Namaste. Aaj hum Maxima aur Minima concept bilkul aasaan tareeke se padhenge."),
 
-("Given: f(x) = -x² + 4x + 1",
+("Key Idea: f'(x) = 0 at extreme point",
+ "Maximum ya minimum point par derivative zero hota hai."),
+
+("Second derivative test:",
+ "Agar second derivative negative ho to maximum hota hai."),
+
+("Given Question (JEE Main 2019 — 4 marks)",
+ "Ab JEE Main 2019 ka question solve karte hain."),
+
+("f(x) = -x² + 4x + 1",
  "Is function ka maximum value nikalna hai."),
 
-("Derivative Rule: d/dx(xⁿ) = n·xⁿ⁻¹",
- "Sabse pehle power rule samajhte hain."),
-
-("d/dx(-x²) = -2x",
- "Minus x square ka derivative minus 2x hota hai."),
-
-("d/dx(4x) = 4",
- "4x ka derivative 4 hota hai."),
-
-("d/dx(1) = 0",
- "Constant ka derivative zero hota hai."),
+("Step 1: First derivative",
+ "Sabse pehle derivative nikaalte hain."),
 
 ("f'(x) = -2x + 4",
- "Sabko jodne par first derivative milta hai."),
+ "Power rule apply karne par derivative milta hai."),
 
-("For max/min: f'(x) = 0",
+("Step 2: Set f'(x) = 0",
  "Maximum ya minimum ke liye derivative zero karte hain."),
 
 ("-2x + 4 = 0",
  "Equation solve karte hain."),
 
-("-2x = -4",
- "4 ko dusri side le jaate hain."),
-
 ("x = 2",
- "Divide karne par x ki value 2 aati hai."),
+ "x ki value 2 milti hai."),
 
-("Second derivative f''(x) = -2",
+("Step 3: Second derivative",
  "Ab second derivative nikaalte hain."),
 
-("-2 < 0 ⇒ Maximum",
- "Negative hone par yeh maximum point hota hai."),
+("f''(x) = -2 < 0",
+ "Negative hone par yeh maximum point hai."),
 
-("Put x = 2 in f(x)",
- "Ab function me value put karte hain."),
+("Step 4: Find value",
+ "Ab x = 2 ko function me put karte hain."),
 
-("f(2) = -(2)² + 4(2) + 1",
- "Substitution karte hain."),
-
-("= -4 + 8 + 1",
- "Square aur multiplication solve karte hain."),
-
-("= 5",
- "Final calculation karte hain."),
+("f(2) = -4 + 8 + 1",
+ "Calculation karte hain."),
 
 ("Maximum Value = 5",
- "Isliye function ka maximum value 5 hai."),
+ "Is function ka maximum value 5 hai."),
+
+("Quick Trick:",
+ "Downward parabola ka vertex hi maximum hota hai."),
+
+("Practice Question:",
+ "Find maximum of f(x) = -x² + 6x"),
 
 ("Thank you",
- "Dhanyavaad. Practice karte rahiye.")
+ "Aise hi practice karte rahiye. Aap zarur succeed karenge.")
 ]
 
 os.makedirs("frames", exist_ok=True)
 os.makedirs("tts", exist_ok=True)
 
 
-# ---------- CREATE BOARD WITH ACCUMULATED TEXT ----------
-
-def create_frame(all_lines, i):
+def create_frame(lines, i):
 
     W, H = 720, 1280
-    img = Image.new("RGB", (W, H), (8, 50, 25))
+    img = Image.new("RGB", (W, H), (15, 60, 35))
     draw = ImageDraw.Draw(img)
 
     try:
@@ -84,43 +79,38 @@ def create_frame(all_lines, i):
         font = ImageFont.load_default()
 
     y = 60
-    line_height = 58
 
-    for line in all_lines:
-        draw.text((60, y), line, fill=(240, 240, 240), font=font)
-        y += line_height
+    for line in lines:
+        draw.text((60, y), line, fill=(245, 245, 245), font=font)
+        y += 55
 
     path = f"frames/frame_{i}.png"
     img.save(path)
     return path
 
 
-# ---------- VOICE ----------
-
 async def generate_voice(text, file):
 
     tts = edge_tts.Communicate(
         text,
-        "hi-IN-MadhurNeural",
-        rate="-20%",      # slower
-        pitch="-5%"       # deeper clearer tone
+        "hi-IN-SwaraNeural",
+        rate="-18%",
+        pitch="-2Hz"
     )
 
     await tts.save(file)
 
 
-# ---------- MAIN ----------
-
 async def main():
 
     clips = []
-    board_lines = []
+    board = []
 
     for i, (text, voice) in enumerate(STEPS):
 
-        board_lines.append(text)
+        board.append(text)
 
-        img = create_frame(board_lines, i)
+        img = create_frame(board, i)
         audio_file = f"tts/voice_{i}.mp3"
 
         await generate_voice(voice, audio_file)
@@ -155,7 +145,7 @@ async def main():
         FINAL_VIDEO
     ], check=True)
 
-    print("🎬 Real board coaching video created:", FINAL_VIDEO)
+    print("🎬 Coaching video created:", FINAL_VIDEO)
 
 
 if __name__ == "__main__":
