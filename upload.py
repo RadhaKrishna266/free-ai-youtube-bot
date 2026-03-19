@@ -1,133 +1,133 @@
 import os
 import requests
 import subprocess
-import random
 import asyncio
 import edge_tts
+from pydub import AudioSegment
 
 # ================= CONFIG =================
-PIXABAY_API_KEY = "YOUR_PIXABAY_API_KEY"  # Free account
-SEARCH_TERMS = ["funny", "animals", "nature", "amazing", "weird", "technology"]
-NUM_CLIPS = 5                # Number of clips per video
-CLIP_DURATION = 20            # Seconds per clip
-FINAL_VIDEO = "compilation_video.mp4"
-BACKGROUND_MUSIC = "background.mp3"  # Optional, put your own music here
+PIXABAY_API_KEY = "YOUR_PIXABAY_API_KEY"
+FINAL_VIDEO = "viral_space_video.mp4"
+BACKGROUND_MUSIC = "background.mp3"  # optional
+VOICE = "en-US-GuyNeural"  # cinematic voice
+
 os.makedirs("clips", exist_ok=True)
 os.makedirs("tts", exist_ok=True)
 
-# ================= STEP 1: Download Pixabay Clip =================
-def download_pixabay_clip(search_term, index):
+# ================= SCENE SCRIPT =================
+SCENES = [
+    ("If the Sun suddenly disappeared", "sun space"),
+    ("Earth wouldn’t notice immediately", "earth from space day"),
+    ("For 8 minutes everything would seem normal", "earth sunlight space"),
+    ("Then suddenly total darkness", "earth dark space"),
+    ("Temperatures would drop rapidly", "frozen landscape"),
+    ("Plants would stop producing oxygen", "dead plants"),
+    ("Within days the surface would freeze", "ice wasteland"),
+    ("Humanity would not survive long", "abandoned city"),
+    ("But the Sun would return", "sunrise earth space"),
+    ("And nothing would ever be the same again", "earth from space dramatic")
+]
+
+# ================= DOWNLOAD CLIP =================
+def download_clip(search_term, index):
     url = f"https://pixabay.com/api/videos/?key={PIXABAY_API_KEY}&q={search_term}&per_page=3"
-    response = requests.get(url).json()
-    hits = response.get("hits", [])
+    data = requests.get(url).json()
+    hits = data.get("hits", [])
     if not hits:
-        print(f"❌ No videos found for {search_term}")
+        print("No clip for", search_term)
         return None
+
     video_url = hits[0]["videos"]["medium"]["url"]
-    local_file = f"clips/clip_{index}.mp4"
-    with requests.get(video_url, stream=True) as r:
-        with open(local_file, "wb") as f:
-            for chunk in r.iter_content(1024*1024):
-                if chunk:
-                    f.write(chunk)
-    print(f"⬇️ Clip downloaded: {local_file}")
-    return local_file
+    filename = f"clips/clip_{index}.mp4"
 
-# ================= STEP 2: Generate TTS Caption =================
-async def generate_tts(text, output_file):
-    communicate = edge_tts.Communicate(text, "hi-IN-SwaraNeural")
-    await communicate.save(output_file)
-    print(f"🎤 TTS generated: {output_file}")
+    r = requests.get(video_url, stream=True)
+    with open(filename, "wb") as f:
+        for chunk in r.iter_content(1024 * 1024):
+            if chunk:
+                f.write(chunk)
 
-# ================= STEP 3: Merge Audio Clips =================
-def merge_audio_files(audio_files, output_file):
-    from pydub import AudioSegment
-    combined = AudioSegment.empty()
-    for file in audio_files:
-        combined += AudioSegment.from_file(file)
-    combined.export(output_file, format="mp3")
-    print(f"✅ Merged audio: {output_file}")
-    return output_file
+    return filename
 
-# ================= STEP 4: Concatenate Video Clips =================
-def concatenate_clips(clip_files, output_file="clips/concat.mp4"):
-    concat_list = "clips/concat_list.txt"
-    with open(concat_list, "w") as f:
-        for clip in clip_files:
-            f.write(f"file '{os.path.abspath(clip)}'\n")
+# ================= TTS =================
+async def generate_tts(text, output):
+    tts = edge_tts.Communicate(text, VOICE)
+    await tts.save(output)
+
+# ================= CONCAT VIDEO =================
+def concat_videos(video_list, output="clips/concat.mp4"):
+    list_file = "clips/list.txt"
+    with open(list_file, "w") as f:
+        for v in video_list:
+            f.write(f"file '{os.path.abspath(v)}'\n")
+
     subprocess.run([
         "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-        "-i", concat_list, "-c", "copy", output_file
+        "-i", list_file, "-c", "copy", output
     ], check=True)
-    print(f"✅ Clips concatenated: {output_file}")
-    return output_file
 
-# ================= STEP 5: Merge Video + Audio =================
-def merge_video_audio(video_file, audio_file, output_file):
-    command = [
+    return output
+
+# ================= MERGE AUDIO =================
+def merge_audio(audio_files, output):
+    combined = AudioSegment.empty()
+    for a in audio_files:
+        combined += AudioSegment.from_file(a)
+    combined.export(output, format="mp3")
+    return output
+
+# ================= FINAL MERGE =================
+def merge_video_audio(video, audio, output):
+    subprocess.run([
         "ffmpeg", "-y",
-        "-i", video_file,
-        "-i", audio_file,
+        "-i", video,
+        "-i", audio,
         "-c:v", "copy",
         "-c:a", "aac",
-        "-b:a", "192k",
         "-shortest",
-        output_file
-    ]
-    subprocess.run(command, check=True)
-    print(f"🎥 Final compilation video created: {output_file}")
+        output
+    ], check=True)
 
 # ================= MAIN =================
 async def main():
-    # 1️⃣ Download random clips
-    clip_files = []
-    for i in range(NUM_CLIPS):
-        term = random.choice(SEARCH_TERMS)
-        clip = download_pixabay_clip(term, i+1)
-        if clip:
-            clip_files.append(clip)
 
-    if not clip_files:
-        print("❌ No clips downloaded. Exiting.")
-        return
-
-    # 2️⃣ Generate random captions for each clip (optional)
-    captions = [
-        "देखिए ये अद्भुत दृश्य!",
-        "क्या आप ये देखकर हँसेंगे?",
-        "ये मजेदार है ना?",
-        "ये विज्ञान से भरा है!",
-        "अविश्वसनीय दृश्य!"
-    ]
+    video_files = []
     audio_files = []
-    for idx, _ in enumerate(clip_files, 1):
-        caption = random.choice(captions)
-        tts_file = f"tts/caption_{idx}.mp3"
-        await generate_tts(caption, tts_file)
+
+    for i, (text, term) in enumerate(SCENES, 1):
+
+        # Download matching clip
+        clip = download_clip(term, i)
+        if clip:
+            video_files.append(clip)
+
+        # Generate voice
+        tts_file = f"tts/scene_{i}.mp3"
+        await generate_tts(text, tts_file)
         audio_files.append(tts_file)
 
-    # 3️⃣ Merge all TTS audios into one
-    final_audio = "tts/final_audio.mp3"
-    merge_audio_files(audio_files, final_audio)
+    # Merge audio narration
+    narration = "tts/narration.mp3"
+    merge_audio(audio_files, narration)
 
-    # 4️⃣ Optionally merge background music
+    # Add background music (optional)
     if os.path.exists(BACKGROUND_MUSIC):
-        from pydub import AudioSegment
         bg = AudioSegment.from_file(BACKGROUND_MUSIC)
-        fg = AudioSegment.from_file(final_audio)
-        # Loop background music if shorter
+        fg = AudioSegment.from_file(narration)
+
         while len(bg) < len(fg):
             bg += bg
-        mixed = bg[:len(fg)].overlay(fg)
-        mixed.export(final_audio, format="mp3")
-        print("🎵 Background music added")
 
-    # 5️⃣ Concatenate clips
-    video_concat = concatenate_clips(clip_files)
+        mixed = bg[:len(fg)].overlay(fg - 5)
+        mixed.export(narration, format="mp3")
 
-    # 6️⃣ Merge final audio with video
-    merge_video_audio(video_concat, final_audio, FINAL_VIDEO)
+    # Concatenate video clips
+    video_concat = concat_videos(video_files)
 
-# ================= RUN SCRIPT =================
+    # Final merge
+    merge_video_audio(video_concat, narration, FINAL_VIDEO)
+
+    print("🎬 VIRAL VIDEO CREATED:", FINAL_VIDEO)
+
+# ================= RUN =================
 if __name__ == "__main__":
     asyncio.run(main())
