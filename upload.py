@@ -3,61 +3,42 @@ import subprocess
 import asyncio
 import edge_tts
 from PIL import Image, ImageDraw, ImageFont
-import random
 
-FINAL_VIDEO = "derivative_jee_complete.mp4"
+FINAL_VIDEO = "derivative_blackboard.mp4"
 
 LINES = [
-    "Namaste dosto, aaj hum derivative ka complete JEE concept samjhenge",
+    "Namaste dosto, aaj hum derivative ka concept samjhenge",
 
     "Derivative batata hai function kitni fast change ho raha hai",
-    "Graph par slope bhi derivative se hi milti hai",
 
     "Sabse important rule hai power rule",
+
     "x ki power n ka derivative hota hai n guna x ki power n minus 1",
 
-    "Trigonometry formulas bhi important hain",
-    "sin x ka derivative hota hai cos x",
-    "cos x ka derivative hota hai minus sin x",
-    "tan x ka derivative hota hai sec square x",
+    "Example dekhte hain",
 
-    "Exponential functions me e ki power x ka derivative e ki power x hota hai",
-    "ln x ka derivative hota hai 1 by x",
+    "y barabar x cube plus 2x square plus 5",
 
-    "Ab fast tricks dekhte hain",
-    "Power ko multiply karo aur power me se ek minus karo",
-    "Constant ka derivative hamesha zero hota hai",
-    "Polynomial me har term ko alag differentiate karo",
+    "x cube ka derivative hota hai 3x square",
 
-    "Ab JEE level example solve karte hain",
+    "2x square ka derivative hota hai 4x",
 
-    "y barabar x power 4 plus 3x cube minus 5x plus 7",
+    "constant 5 ka derivative zero hota hai",
 
-    "x power 4 ka derivative 4x cube",
-    "3x cube ka derivative 9x square",
-    "minus 5x ka derivative minus 5",
-    "constant 7 ka derivative zero",
+    "Final answer hota hai 3x square plus 4x",
 
-    "Final answer hota hai 4x cube plus 9x square minus 5",
-
-    "Isi method se aap JEE ke questions jaldi solve kar sakte hain",
-
-    "Video pasand aaye to like aur subscribe zaroor karein"
+    "Isi tarah aap kisi bhi polynomial ka derivative nikal sakte hain"
 ]
 
 os.makedirs("slides", exist_ok=True)
 os.makedirs("tts", exist_ok=True)
 
 
-def create_slide(text, i):
+# ---------- BLACKBOARD SLIDE ----------
 
-    bg = (
-        random.randint(70, 200),
-        random.randint(70, 200),
-        random.randint(70, 200),
-    )
+def create_blackboard(text, i):
 
-    img = Image.new("RGB", (720, 1280), bg)
+    img = Image.new("RGB", (720, 1280), (15, 40, 25))  # dark green board
     draw = ImageDraw.Draw(img)
 
     try:
@@ -65,7 +46,13 @@ def create_slide(text, i):
     except:
         font = ImageFont.load_default()
 
-    draw.multiline_text((60, 450), text, fill="white", font=font, align="center")
+    draw.multiline_text(
+        (60, 350),
+        text,
+        fill=(245, 245, 245),  # chalk white
+        font=font,
+        align="center"
+    )
 
     path = f"slides/slide_{i}.png"
     img.save(path)
@@ -73,11 +60,20 @@ def create_slide(text, i):
     return path
 
 
+# ---------- BETTER HINDI VOICE ----------
+
 async def generate_voice(text, file):
 
-    tts = edge_tts.Communicate(text, "hi-IN-MadhurNeural")
+    tts = edge_tts.Communicate(
+        text,
+        "hi-IN-MadhurNeural",
+        rate="-10%"  # slower speech
+    )
+
     await tts.save(file)
 
+
+# ---------- MAIN ----------
 
 async def main():
 
@@ -86,13 +82,14 @@ async def main():
 
     for i, line in enumerate(LINES):
 
-        img = create_slide(line, i)
+        img = create_blackboard(line, i)
         images.append(img)
 
         audio_file = f"tts/voice_{i}.mp3"
         await generate_voice(line, audio_file)
         audios.append(audio_file)
 
+    # Create video from slides
     with open("slides.txt", "w") as f:
         for img in images:
             f.write(f"file '{img}'\n")
@@ -103,11 +100,11 @@ async def main():
         "-f", "concat",
         "-safe", "0",
         "-i", "slides.txt",
-        "-vsync", "vfr",
         "-pix_fmt", "yuv420p",
         "temp_video.mp4"
     ], check=True)
 
+    # Merge audio
     audio_list = "|".join(audios)
 
     subprocess.run([
@@ -117,6 +114,7 @@ async def main():
         "final_audio.mp3"
     ], check=True)
 
+    # Merge video + audio
     subprocess.run([
         "ffmpeg", "-y",
         "-i", "temp_video.mp4",
@@ -127,7 +125,7 @@ async def main():
         FINAL_VIDEO
     ], check=True)
 
-    print("🎬 JEE derivative video created:", FINAL_VIDEO)
+    print("🎬 Blackboard video created:", FINAL_VIDEO)
 
 
 if __name__ == "__main__":
