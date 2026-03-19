@@ -6,155 +6,136 @@ import asyncio
 import edge_tts
 from pydub import AudioSegment
 
-# ================= CONFIG =================
 PIXABAY_API_KEY = os.getenv("PIXABAY_API_KEY")
 
-SEARCH_TERMS = ["temple", "meditation", "nature", "india", "spiritual"]
-NUM_CLIPS = 5
-CLIP_DURATION = 8   # ⭐ seconds per clip (viral length)
-FINAL_VIDEO = "final_video_episode_1.mp4"
+SEARCH_TERMS = [
+    "surprise", "explosion", "storm",
+    "wild animal", "accident", "lightning"
+]
+
+NUM_CLIPS = 4
+CLIP_DURATION = 6
+FINAL_VIDEO = "viral_shorts.mp4"
 
 os.makedirs("clips", exist_ok=True)
 os.makedirs("tts", exist_ok=True)
 
-# ================= STEP 1: Download + Trim Clip =================
-def download_clip(search_term, index):
-    url = f"https://pixabay.com/api/videos/?key={PIXABAY_API_KEY}&q={search_term}&per_page=5"
+# 🔥 Suspense narration
+LINES = [
+    "This moment shocked everyone.",
+    "Watch carefully what happens next.",
+    "Nobody expected this.",
+    "This was caught on camera."
+]
 
-    response = requests.get(url)
-    data = response.json()
+# ================= DOWNLOAD + TRIM =================
+def download_clip(term, i):
+    url = f"https://pixabay.com/api/videos/?key={PIXABAY_API_KEY}&q={term}&per_page=5"
+    data = requests.get(url).json()
     hits = data.get("hits", [])
 
     if not hits:
-        print("❌ No clips found")
         return None
 
     video_url = hits[0]["videos"]["medium"]["url"]
-    raw_file = f"clips/raw_{index}.mp4"
-    trimmed_file = f"clips/clip_{index}.mp4"
 
-    # Download
+    raw = f"clips/raw_{i}.mp4"
+    out = f"clips/clip_{i}.mp4"
+
     with requests.get(video_url, stream=True) as r:
-        with open(raw_file, "wb") as f:
+        with open(raw, "wb") as f:
             for chunk in r.iter_content(1024 * 1024):
                 f.write(chunk)
 
-    # Trim to fixed duration ⭐
+    # ⭐ Convert to vertical + trim
     subprocess.run([
         "ffmpeg", "-y",
-        "-i", raw_file,
+        "-i", raw,
         "-t", str(CLIP_DURATION),
+        "-vf", "scale=1080:1920,setsar=1",
         "-c:v", "libx264",
         "-c:a", "aac",
-        trimmed_file
+        out
     ], check=True)
 
-    print(f"⬇️ Clip ready: {trimmed_file}")
-    return trimmed_file
+    return out
 
 
-# ================= STEP 2: Generate TTS =================
-async def generate_tts(text, output_file):
-    communicate = edge_tts.Communicate(text, "hi-IN-SwaraNeural")
-    await communicate.save(output_file)
-    print(f"🎤 TTS created: {output_file}")
+# ================= TTS =================
+async def generate_tts(text, file):
+    tts = edge_tts.Communicate(text, "en-US-GuyNeural")
+    await tts.save(file)
 
 
-# ================= STEP 3: Merge Audio =================
-def merge_audio(audio_files, output_file):
+# ================= MERGE AUDIO =================
+def merge_audio(files, output):
     combined = AudioSegment.empty()
-
-    for file in audio_files:
-        combined += AudioSegment.from_file(file)
-
-    combined.export(output_file, format="mp3")
-    print("✅ Audio merged")
-    return output_file
+    for f in files:
+        combined += AudioSegment.from_file(f)
+    combined.export(output, format="mp3")
+    return output
 
 
-# ================= STEP 4: Concatenate Clips =================
-def concat_clips(clip_files, output_file="clips/concat.mp4"):
-    list_file = "clips/list.txt"
-
-    with open(list_file, "w") as f:
-        for clip in clip_files:
+# ================= CONCAT VIDEO =================
+def concat_clips(files, out="clips/concat.mp4"):
+    txt = "clips/list.txt"
+    with open(txt, "w") as f:
+        for clip in files:
             f.write(f"file '{os.path.abspath(clip)}'\n")
 
     subprocess.run([
         "ffmpeg", "-y",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", list_file,
+        "-f", "concat", "-safe", "0",
+        "-i", txt,
         "-c", "copy",
-        output_file
+        out
     ], check=True)
 
-    print("✅ Video clips combined")
-    return output_file
+    return out
 
 
-# ================= STEP 5: Merge Video + Audio (SYNCED) =================
-def merge_video_audio(video_file, audio_file, output_file):
+# ================= MERGE VIDEO + AUDIO =================
+def merge_video_audio(video, audio, out):
     subprocess.run([
         "ffmpeg", "-y",
-        "-i", video_file,
-        "-i", audio_file,
+        "-i", video,
+        "-i", audio,
         "-map", "0:v",
         "-map", "1:a",
         "-c:v", "libx264",
         "-c:a", "aac",
-        "-shortest",   # ⭐ IMPORTANT FIX
-        output_file
+        "-shortest",
+        out
     ], check=True)
-
-    print(f"🎬 Final video created: {output_file}")
 
 
 # ================= MAIN =================
 async def main():
 
-    # 1️⃣ Download clips
-    clip_files = []
+    clips = []
 
     for i in range(NUM_CLIPS):
         term = random.choice(SEARCH_TERMS)
-        clip = download_clip(term, i + 1)
+        c = download_clip(term, i)
+        if c:
+            clips.append(c)
 
-        if clip:
-            clip_files.append(clip)
-
-    if not clip_files:
-        print("❌ No clips downloaded")
+    if not clips:
         return
 
-    # 2️⃣ Create captions
-    captions = [
-        "भगवान की कृपा से सब संभव है",
-        "सकारात्मक ऊर्जा आपके साथ है",
-        "विश्वास रखिए, चमत्कार होगा",
-        "ध्यान से मन शांत होता है",
-        "ईश्वर हमेशा साथ हैं"
-    ]
-
+    # 🎤 Narration
     audio_files = []
+    for i in range(len(clips)):
+        text = LINES[i % len(LINES)]
+        f = f"tts/a{i}.mp3"
+        await generate_tts(text, f)
+        audio_files.append(f)
 
-    for i in range(len(clip_files)):
-        text = random.choice(captions)
-        file = f"tts/audio_{i}.mp3"
-        await generate_tts(text, file)
-        audio_files.append(file)
+    final_audio = merge_audio(audio_files, "tts/final.mp3")
+    video = concat_clips(clips)
 
-    # 3️⃣ Merge audio
-    final_audio = "tts/final_audio.mp3"
-    merge_audio(audio_files, final_audio)
-
-    # 4️⃣ Combine clips
-    video_concat = concat_clips(clip_files)
-
-    # 5️⃣ Merge video + audio (SYNCED)
-    merge_video_audio(video_concat, final_audio, FINAL_VIDEO)
+    merge_video_audio(video, final_audio, FINAL_VIDEO)
 
 
-# ================= RUN =================
 if __name__ == "__main__":
     asyncio.run(main())
