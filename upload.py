@@ -24,7 +24,7 @@ LINES = [
     "This was caught on camera."
 ]
 
-# ================= DOWNLOAD + TRIM =================
+# ================= DOWNLOAD + PROPER VERTICAL FORMAT =================
 def download_clip(term, i):
 
     url = f"https://pixabay.com/api/videos/?key={PIXABAY_API_KEY}&q={term}&per_page=3"
@@ -44,13 +44,14 @@ def download_clip(term, i):
     with open(raw, "wb") as f:
         f.write(r.content)
 
-    # Trim + vertical format
+    # ⭐ Proper landscape → vertical conversion
     subprocess.run([
         "ffmpeg",
         "-y",
         "-i", raw,
         "-t", str(CLIP_DURATION),
-        "-vf", "scale=720:1280",
+        "-vf",
+        "scale=720:-1,pad=720:1280:(ow-iw)/2:(oh-ih)/2",
         "-c:v", "libx264",
         "-c:a", "aac",
         clip
@@ -110,6 +111,7 @@ def merge_video_audio(video, audio):
     subprocess.run([
         "ffmpeg",
         "-y",
+        "-stream_loop", "-1",   # 🔥 loop video if audio longer
         "-i", video,
         "-i", audio,
         "-map", "0:v:0",
@@ -139,7 +141,6 @@ async def main():
         print("❌ No clips downloaded")
         return
 
-    # 🎤 Generate narration
     audio_files = []
 
     for i in range(len(clips)):
@@ -156,7 +157,6 @@ async def main():
 
     merge_video_audio(video, final_audio)
 
-    # 🧹 Cleanup temp file
     os.remove(video)
 
     print("🎬 SUCCESS — Video created:", FINAL_VIDEO)
