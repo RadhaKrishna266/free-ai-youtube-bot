@@ -1,4 +1,4 @@
-name: AI Viral Shorts Bot
+name: AI Viral Study Bot
 
 on:
   workflow_dispatch:
@@ -8,45 +8,44 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ================= CHECKOUT =================
+      # ✅ Checkout repo
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ================= INSTALL TOOLS =================
+      # ✅ Install system tools
       - name: Install FFmpeg
         run: |
           sudo apt update
           sudo apt install -y ffmpeg
 
-      # ================= SETUP PYTHON =================
+      # ✅ Setup Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # ================= INSTALL PACKAGES =================
+      # ✅ Install ALL required packages
       - name: Install Python packages
         run: |
           python -m pip install --upgrade pip
-          pip install requests edge-tts pydub
+          pip install pillow edge-tts pydub requests
 
-      # ================= RUN BOT =================
+      # ✅ Run your bot
       - name: Run video bot
         env:
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
         run: |
           python upload.py
 
-      # ================= VERIFY VIDEO =================
-      - name: Verify video exists
+      # ✅ Verify video
+      - name: Check video
         run: |
-          echo "Files created:"
           ls -lh
           ls *.mp4
 
-      # ================= UPLOAD ARTIFACT =================
+      # ✅ Upload artifact
       - name: Upload video
         uses: actions/upload-artifact@v4
         with:
-          name: viral-video
+          name: study-video
           path: "*.mp4"
