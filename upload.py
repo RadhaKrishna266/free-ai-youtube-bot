@@ -8,7 +8,7 @@ from pydub import AudioSegment
 
 PIXABAY_API_KEY = os.getenv("PIXABAY_API_KEY")
 
-SEARCH_TERMS = ["nature", "storm", "animal", "lightning", "ocean"]
+SEARCH_TERMS = ["nature", "ocean", "storm", "animal", "lightning"]
 
 NUM_CLIPS = 4
 CLIP_DURATION = 6
@@ -25,6 +25,7 @@ LINES = [
 ]
 
 
+# ================= DOWNLOAD + TRIM =================
 def download_clip(term, i):
 
     url = f"https://pixabay.com/api/videos/?key={PIXABAY_API_KEY}&q={term}&per_page=3"
@@ -58,12 +59,14 @@ def download_clip(term, i):
     return clip
 
 
+# ================= TTS =================
 async def generate_voice(text, file):
 
     tts = edge_tts.Communicate(text, "en-US-GuyNeural")
     await tts.save(file)
 
 
+# ================= MERGE AUDIO =================
 def merge_audio(files, output):
 
     combined = AudioSegment.empty()
@@ -76,6 +79,7 @@ def merge_audio(files, output):
     return output
 
 
+# ================= CONCAT VIDEO =================
 def concat_videos(files):
 
     listfile = "clips/list.txt"
@@ -97,6 +101,7 @@ def concat_videos(files):
     return "video.mp4"
 
 
+# ================= MERGE VIDEO + AUDIO =================
 def merge_video_audio(video, audio):
 
     subprocess.run([
@@ -113,6 +118,7 @@ def merge_video_audio(video, audio):
     ])
 
 
+# ================= MAIN =================
 async def main():
 
     clips = []
@@ -124,6 +130,10 @@ async def main():
 
         if clip:
             clips.append(clip)
+
+    if not clips:
+        print("No clips downloaded")
+        return
 
     audio_files = []
 
@@ -140,6 +150,8 @@ async def main():
     video = concat_videos(clips)
 
     merge_video_audio(video, audio)
+
+    print("✅ Video created:", FINAL_VIDEO)
 
 
 if __name__ == "__main__":
