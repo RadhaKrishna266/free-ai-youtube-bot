@@ -8,33 +8,42 @@ from pydub import AudioSegment
 
 PIXABAY_API_KEY = os.getenv("PIXABAY_API_KEY")
 
-SEARCH_TERMS = ["nature", "ocean", "storm", "animal", "lightning"]
+# ================= VIRAL TOPIC =================
+SEARCH_TERMS = [
+    "building collapse",
+    "bridge collapse",
+    "storm destruction",
+    "car crash slow motion",
+    "danger accident"
+]
+
+HOOK_TEXT = "MOMENTS BEFORE DISASTER 😱"
+
+LINES = [
+    "Everything looked normal just seconds before disaster",
+    "Nobody realized what was about to happen",
+    "One small moment changed everything instantly",
+    "This footage was captured just before impact"
+]
 
 NUM_CLIPS = 4
-CLIP_DURATION = 6
+CLIP_DURATION = 5
 FINAL_VIDEO = "viral_shorts.mp4"
 
 os.makedirs("clips", exist_ok=True)
 os.makedirs("tts", exist_ok=True)
 
-LINES = [
-    "This moment shocked everyone.",
-    "Watch carefully what happens next.",
-    "Nobody expected this.",
-    "This was caught on camera."
-]
 
-# ================= DOWNLOAD + PROPER VERTICAL FORMAT =================
+# ================= DOWNLOAD CLIP =================
 def download_clip(term, i):
 
     url = f"https://pixabay.com/api/videos/?key={PIXABAY_API_KEY}&q={term}&per_page=3"
     data = requests.get(url).json()
-    hits = data.get("hits", [])
 
-    if not hits:
+    if not data["hits"]:
         return None
 
-    video_url = hits[0]["videos"]["medium"]["url"]
+    video_url = data["hits"][0]["videos"]["medium"]["url"]
 
     raw = f"clips/raw_{i}.mp4"
     clip = f"clips/clip_{i}.mp4"
@@ -44,14 +53,12 @@ def download_clip(term, i):
     with open(raw, "wb") as f:
         f.write(r.content)
 
-    # ⭐ Proper landscape → vertical conversion
+    # Convert to vertical Shorts format
     subprocess.run([
-        "ffmpeg",
-        "-y",
+        "ffmpeg", "-y",
         "-i", raw,
         "-t", str(CLIP_DURATION),
-        "-vf",
-        "scale=720:-1,pad=720:1280:(ow-iw)/2:(oh-ih)/2",
+        "-vf", "scale=720:-1,pad=720:1280:(ow-iw)/2:(oh-ih)/2",
         "-c:v", "libx264",
         "-c:a", "aac",
         clip
@@ -60,7 +67,7 @@ def download_clip(term, i):
     return clip
 
 
-# ================= TTS =================
+# ================= TEXT TO SPEECH =================
 async def generate_voice(text, file):
 
     tts = edge_tts.Communicate(text, "en-US-GuyNeural")
@@ -80,7 +87,7 @@ def merge_audio(files, output):
     return output
 
 
-# ================= CONCAT VIDEO =================
+# ================= CONCAT VIDEOS =================
 def concat_videos(files):
 
     listfile = "clips/list.txt"
@@ -92,8 +99,7 @@ def concat_videos(files):
     out = "temp_video.mp4"
 
     subprocess.run([
-        "ffmpeg",
-        "-y",
+        "ffmpeg", "-y",
         "-f", "concat",
         "-safe", "0",
         "-i", listfile,
@@ -105,13 +111,36 @@ def concat_videos(files):
     return out
 
 
+# ================= ADD HOOK TEXT =================
+def add_text_overlay(video):
+
+    out = "text_video.mp4"
+
+    draw = (
+        "drawtext=text='{}':"
+        "fontcolor=white:fontsize=70:"
+        "x=(w-text_w)/2:y=120:"
+        "box=1:boxcolor=black@0.6:boxborderw=20"
+    ).format(HOOK_TEXT)
+
+    subprocess.run([
+        "ffmpeg", "-y",
+        "-i", video,
+        "-vf", draw,
+        "-c:v", "libx264",
+        "-c:a", "copy",
+        out
+    ], check=True)
+
+    return out
+
+
 # ================= MERGE VIDEO + AUDIO =================
 def merge_video_audio(video, audio):
 
     subprocess.run([
-        "ffmpeg",
-        "-y",
-        "-stream_loop", "-1",   # 🔥 loop video if audio longer
+        "ffmpeg", "-y",
+        "-stream_loop", "-1",
         "-i", video,
         "-i", audio,
         "-map", "0:v:0",
@@ -119,7 +148,6 @@ def merge_video_audio(video, audio):
         "-c:v", "libx264",
         "-c:a", "aac",
         "-shortest",
-        "-movflags", "+faststart",
         FINAL_VIDEO
     ], check=True)
 
@@ -141,25 +169,24 @@ async def main():
         print("❌ No clips downloaded")
         return
 
+    # 🎙️ Generate narration
     audio_files = []
 
     for i in range(len(clips)):
 
         file = f"tts/voice_{i}.mp3"
-
         await generate_voice(LINES[i % len(LINES)], file)
-
         audio_files.append(file)
 
     final_audio = merge_audio(audio_files, "tts/final.mp3")
 
     video = concat_videos(clips)
 
-    merge_video_audio(video, final_audio)
+    video_with_text = add_text_overlay(video)
 
-    os.remove(video)
+    merge_video_audio(video_with_text, final_audio)
 
-    print("🎬 SUCCESS — Video created:", FINAL_VIDEO)
+    print("🔥 VIRAL VIDEO READY:", FINAL_VIDEO)
 
 
 if __name__ == "__main__":
