@@ -14,34 +14,48 @@ jobs:
       - name: 📥 Checkout code
         uses: actions/checkout@v3
 
-      # 2️⃣ Python
+      # 2️⃣ Setup Python
       - name: 🐍 Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.11"
 
-      # 3️⃣ Install ffmpeg
-      - name: 🎥 Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      # 3️⃣ Install system dependencies
+      - name: ⚙️ Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg imagemagick fonts-dejavu-core
 
-      # 4️⃣ Install dependencies
-      - name: 📦 Install dependencies
+      # 4️⃣ Fix ImageMagick policy (VERY IMPORTANT)
+      - name: 🔧 Fix ImageMagick policy
+        run: |
+          sudo sed -i 's/rights="none"/rights="read|write"/g' /etc/ImageMagick-6/policy.xml
+
+      # 5️⃣ Install Python dependencies
+      - name: 📦 Install Python packages
         run: |
           pip install --upgrade pip
-          pip install gTTS moviepy requests
+          pip install moviepy==1.0.3 gTTS numpy imageio imageio-ffmpeg requests
 
-      # 5️⃣ Run script
-      - name: 🚀 Run script
+      # 6️⃣ Verify everything
+      - name: ✅ Verify setup
+        run: |
+          python -c "import moviepy.editor as mp; print('moviepy OK')"
+          python -c "from gtts import gTTS; print('gtts OK')"
+          ffmpeg -version
+          convert -version
+
+      # 7️⃣ Run your script
+      - name: 🚀 Run upload script
         run: python upload.py
 
-      # 6️⃣ Debug (see files)
+      # 8️⃣ Debug files
       - name: 📂 List files
         run: ls -R
 
-      # 7️⃣ Upload artifacts
+      # 9️⃣ Upload output
       - name: 📤 Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: generated-files
-          path: |
-            output/**
+          path: output/**
