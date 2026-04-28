@@ -6,6 +6,9 @@ import subprocess
 
 import edge_tts
 
+# =========================
+# SETUP
+# =========================
 OUTPUT_DIR = "output"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -14,13 +17,15 @@ HF_API_KEY = os.getenv("HF_API_KEY")
 API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2"
 HEADERS = {"Authorization": f"Bearer {HF_API_KEY}"}
 
+W, H = 1080, 1920
+
 # =========================
 # STORY
 # =========================
 def generate_story():
     return [
         "गांव में एक चंपू भूत रहता था...",
-        "वो डराने नहीं, लोगों को हंसाने आता था...",
+        "वो लोगों को डराने नहीं, हंसाने आता था...",
         "एक दिन उसने कहा मैं शादी करूंगा!",
         "अगले दिन सच में बारात आ गई...",
         "भूत बोला - shampoo का खर्चा बच गया 😂"
@@ -47,7 +52,7 @@ def build_prompt(line):
     consistent character, white ghost, big eyes,
     indian village cinematic background,
     scene: {line},
-    cartoon style, vibrant colors, 2D animation
+    2D cartoon style, vibrant, viral video style
     """
 
 def generate_image(prompt, i):
@@ -61,10 +66,10 @@ def generate_image(prompt, i):
                 f.write(r.content)
             return path
 
-    except:
-        pass
+    except Exception as e:
+        print("Image error:", e)
 
-    # fallback
+    # fallback image
     img = requests.get(
         f"https://picsum.photos/1080/1920?random={random.randint(1,9999)}"
     ).content
@@ -75,69 +80,75 @@ def generate_image(prompt, i):
     return path
 
 # =========================
-# FFMPEG VIDEO BUILD
+# VIDEO CREATION (FFMPEG SAFE)
 # =========================
 def create_video(images, audio_file):
-    list_file = f"{OUTPUT_DIR}/list.txt"
+    print("🎬 Creating video with FFmpeg...")
 
-    duration = 3  # seconds per scene
+    # rename images sequentially (IMPORTANT for ffmpeg)
+    for i, img in enumerate(images):
+        new_name = f"{OUTPUT_DIR}/img_{i}.jpg"
+        if img != new_name:
+            os.rename(img, new_name)
 
-    with open(list_file, "w") as f:
-        for img in images:
-            f.write(f"file '{img}'\n")
-            f.write(f"duration {duration}\n")
-        f.write(f"file '{images[-1]}'\n")
+    video_path = f"{OUTPUT_DIR}/video.mp4"
+    final_path = f"{OUTPUT_DIR}/final.mp4"
 
-    temp_video = f"{OUTPUT_DIR}/temp.mp4"
-    final_video = f"{OUTPUT_DIR}/final.mp4"
-
-    # Create video from images
-    subprocess.run([
+    # 1️⃣ create image slideshow video
+    cmd1 = [
         "ffmpeg", "-y",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", list_file,
-        "-vsync", "vfr",
-        "-pix_fmt", "yuv420p",
+        "-framerate", "1/3",
+        "-i", f"{OUTPUT_DIR}/img_%d.jpg",
         "-s", "1080x1920",
-        temp_video
-    ])
+        "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
+        video_path
+    ]
 
-    # Add audio
-    subprocess.run([
+    print("Running ffmpeg step 1...")
+    subprocess.run(cmd1, check=True)
+
+    # 2️⃣ add audio
+    cmd2 = [
         "ffmpeg", "-y",
-        "-i", temp_video,
+        "-i", video_path,
         "-i", audio_file,
         "-c:v", "copy",
         "-c:a", "aac",
         "-shortest",
-        final_video
-    ])
+        final_path
+    ]
 
-    return final_video
+    print("Running ffmpeg step 2...")
+    subprocess.run(cmd2, check=True)
+
+    return final_path
 
 # =========================
 # MAIN
 # =========================
 def run():
-    print("🎬 Starting YouTube Shorts Bot...")
+    print("🚀 Starting Shorts Generator...")
+
+    if not HF_API_KEY:
+        print("⚠️ HF_API_KEY missing, fallback images will be used")
 
     lines = generate_story()
     text = " ".join(lines)
 
+    print("🎤 Generating voice...")
     audio = create_voice(text)
-    print("🎤 Voice ready")
 
+    print("🖼 Generating images...")
     images = []
     for i, line in enumerate(lines):
         img = generate_image(build_prompt(line), i)
         images.append(img)
 
-    print("🖼 Images ready")
-
+    print("🎬 Building video...")
     video = create_video(images, audio)
 
-    print("✅ DONE:", video)
+    print("✅ DONE VIDEO CREATED:", video)
 
 if __name__ == "__main__":
     run()
