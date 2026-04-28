@@ -1,36 +1,35 @@
 import os
 import random
 from gtts import gTTS
+from moviepy.editor import *
 
+# =========================
+# SETUP
+# =========================
 OUTPUT_DIR = "output"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-# =========================
-# CHARACTER BASE (CONSISTENT)
-# =========================
-CHARACTER = "funny indian cartoon chudail, big eyes, silly face, 2D animation, colorful, not scary"
 
 # =========================
 # STORY DATA (COMEDY)
 # =========================
 HOOKS = [
-    "एक मजेदार चुड़ैल गांव में रहती थी...",
-    "यह चुड़ैल डराती नहीं, हंसाती थी...",
+    "गांव में एक मजेदार चुड़ैल रहती थी...",
+    "एक दांती चुड़ैल बहुत फेमस थी..."
 ]
 
 SETUPS = [
-    "पूरा गांव उसका मजाक उड़ाता था...",
-    "कोई उससे डरता नहीं था...",
+    "कोई उससे डरता नहीं था, सब उसका मजाक उड़ाते थे...",
+    "पूरा गांव उसे देखकर हंसता था..."
 ]
 
 TWISTS = [
-    "एक दिन उसने शादी करने का फैसला किया...",
-    "एक दिन उसने दुकान खोल ली...",
+    "एक दिन उसने बोला — अब मैं शादी करूँगी!",
+    "एक दिन उसने नौकरी के लिए apply किया!"
 ]
 
 PUNCHLINES = [
-    "लड़का बोला — बाल नहीं हैं तो shampoo का खर्चा बचेगा 😂",
-    "उसकी दुकान में कोई नहीं आया, तो उसने खुद ही सामान खरीद लिया 😂",
+    "लड़का बोला — बाल नहीं हैं तो shampoo का खर्चा बचेगा! 😂",
+    "इंटरव्यू में बोली — मैं डराती नहीं, हंसाती हूं! 😂"
 ]
 
 CTA = [
@@ -41,14 +40,14 @@ CTA = [
 # GENERATE STORY
 # =========================
 def generate_story():
-    story = [
+    lines = [
         random.choice(HOOKS),
         random.choice(SETUPS),
         random.choice(TWISTS),
         random.choice(PUNCHLINES),
         random.choice(CTA)
     ]
-    return story
+    return lines
 
 
 # =========================
@@ -56,64 +55,64 @@ def generate_story():
 # =========================
 def create_voice(text):
     path = os.path.join(OUTPUT_DIR, "voice.mp3")
-    tts = gTTS(text=text, lang='hi', slow=False)
+    tts = gTTS(text=text, lang='hi')
     tts.save(path)
     return path
 
 
 # =========================
-# CREATE ANIMATION PROMPTS
+# VIDEO CREATION
 # =========================
-def create_prompts(story_lines):
-    prompts = []
+def create_video(lines, audio_file):
+    audio = AudioFileClip(audio_file)
+    duration = audio.duration / len(lines)
 
-    for line in story_lines:
-        prompt = f"{CHARACTER}, indian village background, funny scene, {line}, cartoon animation, bright colors"
-        prompts.append(prompt)
+    clips = []
 
-    return prompts
+    for line in lines:
+        bg = ColorClip(size=(1080, 1920), color=(10, 10, 10)).set_duration(duration)
 
+        txt = TextClip(
+            line,
+            fontsize=70,
+            color='white',
+            stroke_color='black',
+            stroke_width=2,
+            method='caption',
+            size=(900, None)
+        ).set_position(("center", "center")).set_duration(duration)
 
-# =========================
-# SAVE FILES
-# =========================
-def save_file(filename, data):
-    path = os.path.join(OUTPUT_DIR, filename)
-    with open(path, "w", encoding="utf-8") as f:
-        for item in data:
-            f.write(item + "\n")
-    return path
+        clip = CompositeVideoClip([bg, txt])
+        clips.append(clip)
+
+    video = concatenate_videoclips(clips)
+    video = video.set_audio(audio)
+
+    output_path = os.path.join(OUTPUT_DIR, "final.mp4")
+    video.write_videofile(output_path, fps=24)
+
+    return output_path
 
 
 # =========================
 # MAIN
 # =========================
 def run():
-    print("😂 Cartoon Chudail Animation Generator\n")
+    print("😂 Generating Funny Video...")
 
-    story_lines = generate_story()
-    full_text = " ".join(story_lines)
+    lines = generate_story()
+    full_text = " ".join(lines)
 
-    # Voice
-    voice = create_voice(full_text)
-    print("🎤 Voice:", voice)
+    for l in lines:
+        print("👉", l)
 
-    # Prompts
-    prompts = create_prompts(story_lines)
-    prompt_file = save_file("prompts.txt", prompts)
-    print("🎨 Prompts:", prompt_file)
+    audio = create_voice(full_text)
+    print("🎤 Voice created")
 
-    # Scene Plan
-    plan = [f"Scene {i+1}: {line}" for i, line in enumerate(story_lines)]
-    plan_file = save_file("scene_plan.txt", plan)
-    print("📝 Plan:", plan_file)
+    video = create_video(lines, audio)
+    print("🎬 Video created:", video)
 
-    print("\n🎬 NEXT STEP:")
-    print("1. Use prompts in AI animation tools")
-    print("2. Generate 2–3 sec clips per scene")
-    print("3. Combine with voice in editor")
-
-    print("\n✅ DONE - Ready for viral cartoon videos")
+    print("\n✅ DONE!")
 
 
 if __name__ == "__main__":
