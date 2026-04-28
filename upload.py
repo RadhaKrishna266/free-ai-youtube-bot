@@ -1,16 +1,11 @@
 import os
 import random
-import time
 import requests
 import asyncio
+import subprocess
 
-from PIL import Image
-from moviepy.editor import *
 import edge_tts
 
-# =========================
-# SETUP
-# =========================
 OUTPUT_DIR = "output"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -19,133 +14,129 @@ HF_API_KEY = os.getenv("HF_API_KEY")
 API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2"
 HEADERS = {"Authorization": f"Bearer {HF_API_KEY}"}
 
-W, H = 1080, 1920  # 🎯 YouTube Shorts format
-
 # =========================
 # STORY
 # =========================
 def generate_story():
     return [
         "गांव में एक चंपू भूत रहता था...",
-        "वो लोगों को डराने नहीं, हंसाने के लिए famous था...",
-        "एक दिन उसने बोला — मैं शादी करूंगा!",
+        "वो डराने नहीं, लोगों को हंसाने आता था...",
+        "एक दिन उसने कहा मैं शादी करूंगा!",
         "अगले दिन सच में बारात आ गई...",
-        "भूत बोला — shampoo का खर्चा बचेगा 😂"
+        "भूत बोला - shampoo का खर्चा बच गया 😂"
     ]
 
 # =========================
-# PROMPT (consistent character)
+# TTS
 # =========================
-def build_prompt(line):
-    return f"""
-    cute funny ghost character Champu Bhoot,
-    same character consistency, white glowing ghost, big expressive eyes,
-    indian village cinematic background,
-    scene: {line},
-    ultra detailed, 2D animation style, vibrant colors
-    """
-
-# =========================
-# EDGE TTS
-# =========================
-async def tts_async(text, path):
-    tts = edge_tts.Communicate(text, "hi-IN-SwaraNeural")
-    await tts.save(path)
+async def tts(text, path):
+    t = edge_tts.Communicate(text, "hi-IN-SwaraNeural")
+    await t.save(path)
 
 def create_voice(text):
-    path = os.path.join(OUTPUT_DIR, "voice.mp3")
-    asyncio.run(tts_async(text, path))
+    path = f"{OUTPUT_DIR}/voice.mp3"
+    asyncio.run(tts(text, path))
     return path
 
 # =========================
 # IMAGE GENERATION
 # =========================
+def build_prompt(line):
+    return f"""
+    cute funny ghost Champu Bhoot,
+    consistent character, white ghost, big eyes,
+    indian village cinematic background,
+    scene: {line},
+    cartoon style, vibrant colors, 2D animation
+    """
+
 def generate_image(prompt, i):
-    path = os.path.join(OUTPUT_DIR, f"{i}.jpg")
+    path = f"{OUTPUT_DIR}/img_{i}.jpg"
 
     try:
-        res = requests.post(API_URL, headers=HEADERS, json={"inputs": prompt}, timeout=60)
+        r = requests.post(API_URL, headers=HEADERS, json={"inputs": prompt}, timeout=60)
 
-        if res.status_code == 200 and "image" in res.headers.get("content-type", ""):
+        if r.status_code == 200 and "image" in r.headers.get("content-type", ""):
             with open(path, "wb") as f:
-                f.write(res.content)
+                f.write(r.content)
             return path
 
     except:
         pass
 
     # fallback
-    img = requests.get(f"https://picsum.photos/1080/1920?random={random.randint(1,9999)}").content
+    img = requests.get(
+        f"https://picsum.photos/1080/1920?random={random.randint(1,9999)}"
+    ).content
+
     with open(path, "wb") as f:
         f.write(img)
 
     return path
 
 # =========================
-# TIMING
+# FFMPEG VIDEO BUILD
 # =========================
-def get_durations(lines, total):
-    base = total / len(lines)
-    return [base]*len(lines)
+def create_video(images, audio_file):
+    list_file = f"{OUTPUT_DIR}/list.txt"
 
-# =========================
-# SIMPLE CLEAN EFFECT (IMPORTANT FIX)
-# =========================
-def animate(clip):
-    return clip.resize(height=H).set_position("center")
+    duration = 3  # seconds per scene
 
-# =========================
-# VIDEO CREATION
-# =========================
-def create_video(lines, audio_file):
-    audio = AudioFileClip(audio_file)
+    with open(list_file, "w") as f:
+        for img in images:
+            f.write(f"file '{img}'\n")
+            f.write(f"duration {duration}\n")
+        f.write(f"file '{images[-1]}'\n")
 
-    durations = get_durations(lines, audio.duration)
-    clips = []
+    temp_video = f"{OUTPUT_DIR}/temp.mp4"
+    final_video = f"{OUTPUT_DIR}/final.mp4"
 
-    for i, line in enumerate(lines):
-        img = generate_image(build_prompt(line), i)
+    # Create video from images
+    subprocess.run([
+        "ffmpeg", "-y",
+        "-f", "concat",
+        "-safe", "0",
+        "-i", list_file,
+        "-vsync", "vfr",
+        "-pix_fmt", "yuv420p",
+        "-s", "1080x1920",
+        temp_video
+    ])
 
-        clip = ImageClip(img).set_duration(durations[i])
+    # Add audio
+    subprocess.run([
+        "ffmpeg", "-y",
+        "-i", temp_video,
+        "-i", audio_file,
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-shortest",
+        final_video
+    ])
 
-        clip = animate(clip)
-
-        # smooth transition
-        clip = clip.crossfadein(0.2)
-
-        clips.append(clip)
-
-    video = concatenate_videoclips(clips, method="compose")
-
-    video = video.set_audio(audio)
-
-    output = os.path.join(OUTPUT_DIR, "final.mp4")
-
-    video.write_videofile(
-        output,
-        fps=24,
-        codec="libx264",
-        audio_codec="aac",
-        preset="ultrafast",
-        threads=2
-    )
-
-    return output
+    return final_video
 
 # =========================
 # MAIN
 # =========================
 def run():
-    print("🎬 Creating YouTube Shorts Video (1080x1920)...")
+    print("🎬 Starting YouTube Shorts Bot...")
 
     lines = generate_story()
-
     text = " ".join(lines)
 
     audio = create_voice(text)
     print("🎤 Voice ready")
 
-    video = create_video(lines, audio)
+    images = []
+    for i, line in enumerate(lines):
+        img = generate_image(build_prompt(line), i)
+        images.append(img)
+
+    print("🖼 Images ready")
+
+    video = create_video(images, audio)
+
     print("✅ DONE:", video)
 
 if __name__ == "__main__":
