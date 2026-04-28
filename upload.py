@@ -2,14 +2,15 @@ import os
 import random
 import time
 import requests
+import asyncio
 
-# ✅ FIX PILLOW ERROR
+# Pillow fix
 from PIL import Image
 if not hasattr(Image, "ANTIALIAS"):
     Image.ANTIALIAS = Image.Resampling.LANCZOS
 
 from moviepy.editor import *
-from gtts import gTTS
+import edge_tts
 
 # =========================
 # SETUP
@@ -23,7 +24,7 @@ API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffus
 HEADERS = {"Authorization": f"Bearer {HF_API_KEY}"}
 
 # =========================
-# STORY (FAST PACED)
+# STORY
 # =========================
 def generate_story():
     return [
@@ -35,28 +36,31 @@ def generate_story():
     ]
 
 # =========================
-# VOICE
+# BETTER PROMPT
 # =========================
+def build_prompt(line):
+    return f"""
+    funny cartoon ghost Champu Bhoot,
+    same character, white ghost, big eyes, cute face,
+    indian village background,
+    scene showing: {line},
+    colorful cartoon, 2D animation style
+    """
+
+# =========================
+# NATURAL VOICE (EDGE TTS)
+# =========================
+async def tts_async(text, path):
+    communicate = edge_tts.Communicate(text, "hi-IN-SwaraNeural")
+    await communicate.save(path)
+
 def create_voice(text):
     path = os.path.join(OUTPUT_DIR, "voice.mp3")
-    gTTS(text=text, lang='hi').save(path)
+    asyncio.run(tts_async(text, path))
     return path
 
 # =========================
-# DOWNLOAD AUDIO (BGM)
-# =========================
-def download_audio(url, filename):
-    path = os.path.join(OUTPUT_DIR, filename)
-    try:
-        r = requests.get(url, timeout=10)
-        with open(path, "wb") as f:
-            f.write(r.content)
-        return path
-    except:
-        return None
-
-# =========================
-# AI IMAGE
+# IMAGE GENERATION
 # =========================
 def generate_image(prompt, index):
     img_path = os.path.join(OUTPUT_DIR, f"{index}.jpg")
@@ -72,11 +76,9 @@ def generate_image(prompt, index):
                     f.write(res.content)
                 return img_path
 
-            print("Retry:", res.text)
             time.sleep(5)
 
-        except Exception as e:
-            print("Error:", e)
+        except:
             time.sleep(5)
 
     # fallback
@@ -88,15 +90,26 @@ def generate_image(prompt, index):
     return img_path
 
 # =========================
-# 🎭 TALKING ANIMATION EFFECT
+# TIMING FIX
+# =========================
+def get_durations(lines, total_audio):
+    base = total_audio / len(lines)
+    durations = []
+
+    for i in range(len(lines)):
+        if i == len(lines) - 1:
+            durations.append(base + 1.2)  # punchline pause
+        else:
+            durations.append(base)
+
+    return durations
+
+# =========================
+# TALKING EFFECT
 # =========================
 def talking_effect(clip):
-    # bounce effect (like speaking)
-    clip = clip.set_position(lambda t: ("center", int(10 * (t % 0.3) * 10)))
-
-    # zoom pulse
-    clip = clip.resize(lambda t: 1 + 0.05 * (t % 0.5))
-
+    clip = clip.set_position(lambda t: ("center", int(5 * (t % 0.4) * 10)))
+    clip = clip.resize(lambda t: 1 + 0.03 * (t % 0.5))
     return clip
 
 # =========================
@@ -104,28 +117,20 @@ def talking_effect(clip):
 # =========================
 def create_video(lines, audio_file):
     voice = AudioFileClip(audio_file)
-    duration = voice.duration / len(lines)
 
+    durations = get_durations(lines, voice.duration)
     clips = []
 
-    BASE_PROMPT = "funny cartoon ghost Champu Bhoot, same character, big eyes, cute, indian village, colorful animation"
-
     for i, line in enumerate(lines):
-        prompt = f"{BASE_PROMPT}, {line}"
-
+        prompt = build_prompt(line)
         img_path = generate_image(prompt, i)
 
-        clip = ImageClip(img_path).set_duration(duration)
+        clip = ImageClip(img_path).set_duration(durations[i])
 
-        # 🎭 talking feel
         clip = talking_effect(clip)
 
-        # 🎥 extra zoom
-        clip = clip.resize(lambda t: 1 + 0.08 * t)
-
-        # 💥 punchline effect (last scene)
         if i == len(lines) - 1:
-            clip = clip.resize(1.2)
+            clip = clip.resize(1.1)  # punch zoom
 
         clip = clip.crossfadein(0.2)
 
@@ -133,19 +138,7 @@ def create_video(lines, audio_file):
 
     video = concatenate_videoclips(clips, method="compose")
 
-    # =========================
-    # 🎵 BACKGROUND MUSIC
-    # =========================
-    bgm_url = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
-    bgm_path = download_audio(bgm_url, "bgm.mp3")
-
-    if bgm_path:
-        bgm = AudioFileClip(bgm_path).volumex(0.08)
-        final_audio = CompositeAudioClip([voice, bgm])
-    else:
-        final_audio = voice
-
-    video = video.set_audio(final_audio)
+    video = video.set_audio(voice)
 
     output = os.path.join(OUTPUT_DIR, "final.mp4")
     video.write_videofile(output, fps=24)
@@ -156,7 +149,7 @@ def create_video(lines, audio_file):
 # MAIN
 # =========================
 def run():
-    print("🎭 Creating TALKING Champu Bhoot Video...\n")
+    print("🎬 Creating FINAL Champu Bhoot Video...\n")
 
     if not HF_API_KEY:
         print("⚠️ HF_API_KEY missing → fallback images will be used")
@@ -168,12 +161,12 @@ def run():
         print("👉", l)
 
     audio = create_voice(text)
-    print("🎤 Voice ready")
+    print("🎤 Natural voice created")
 
     video = create_video(lines, audio)
     print("🎬 Video created:", video)
 
-    print("\n✅ DONE")
+    print("\n✅ DONE - Download from GitHub Actions")
 
 
 if __name__ == "__main__":
