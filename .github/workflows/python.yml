@@ -1,4 +1,4 @@
-name: 🎬 Auto YouTube Video Bot
+name: 🎬 Auto YouTube Shorts Bot
 
 on:
   schedule:
@@ -10,41 +10,41 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout repo
-      - name: 📥 Checkout
+      # 📥 Checkout repo
+      - name: Checkout
         uses: actions/checkout@v3
 
-      # 2️⃣ Setup Python
-      - name: 🐍 Setup Python
+      # 🐍 Setup Python
+      - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.11"
 
-      # 3️⃣ Install system deps
-      - name: ⚙️ Install system dependencies
+      # ⚙️ System deps (IMPORTANT for MoviePy + MP3)
+      - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
-      # 4️⃣ Install Python packages
-      - name: 📦 Install dependencies
+      # 📦 Python deps
+      - name: Install dependencies
         run: |
-          pip install --upgrade pip
-          pip install moviepy==1.0.3 gTTS numpy requests imageio imageio-ffmpeg
+          python -m pip install --upgrade pip setuptools wheel
+          pip install moviepy==1.0.3 gTTS numpy requests imageio imageio-ffmpeg edge-tts pillow
 
-      # 5️⃣ Run script
-      - name: 🚀 Run upload.py
+      # 🚀 Run script
+      - name: Run upload.py
         env:
           HF_API_KEY: ${{ secrets.HF_API_KEY }}
         run: python upload.py
 
-      # 6️⃣ Debug (optional but useful)
-      - name: 📂 List files
+      # 📂 Debug output
+      - name: List files
         run: ls -R
 
-      # 7️⃣ Upload output
-      - name: 📤 Upload artifacts
+      # 📤 Upload video
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: generated-video
-          path: output/**
+          name: youtube-shorts
+          path: output/final.mp4
