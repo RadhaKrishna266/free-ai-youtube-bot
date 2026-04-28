@@ -1,51 +1,53 @@
-name: AI Viral Study Bot
+name: 🎬 Auto YouTube Video Bot
 
 on:
-  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * *"   # Runs daily at 6 AM UTC (11:30 AM IST)
+  workflow_dispatch:       # Allow manual run
 
 jobs:
-  run:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      # ✅ Checkout repo
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      # 1️⃣ Checkout repo
+      - name: 📥 Checkout code
+        uses: actions/checkout@v3
 
-      # ✅ Install system tools
-      - name: Install FFmpeg
-        run: |
-          sudo apt update
-          sudo apt install -y ffmpeg
-
-      # ✅ Setup Python
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      # 2️⃣ Setup Python
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v4
         with:
           python-version: "3.11"
 
-      # ✅ Install ALL required packages
-      - name: Install Python packages
-        run: |
-          python -m pip install --upgrade pip
-          pip install pillow edge-tts pydub requests
+      # 3️⃣ Install system dependencies (ffmpeg)
+      - name: 🎥 Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-      # ✅ Run your bot
-      - name: Run video bot
+      # 4️⃣ Install Python dependencies
+      - name: 📦 Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install gTTS moviepy requests
+
+      # 5️⃣ (Optional) Verify install
+      - name: ✅ Verify installs
+        run: |
+          python -c "import gtts, moviepy, requests; print('All libs installed')"
+
+      # 6️⃣ Run your script
+      - name: 🚀 Run automation script
         env:
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
-        run: |
-          python upload.py
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+        run: python upload.py
 
-      # ✅ Verify video
-      - name: Check video
-        run: |
-          ls -lh
-          ls *.mp4
-
-      # ✅ Upload artifact
-      - name: Upload video
+      # 7️⃣ Upload generated videos (optional debug)
+      - name: 📤 Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: study-video
-          path: "*.mp4"
+          name: generated-videos
+          path: |
+            *.mp4
+            *.mp3
