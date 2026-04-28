@@ -17,23 +17,16 @@ API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffus
 HEADERS = {"Authorization": f"Bearer {HF_API_KEY}"}
 
 # =========================
-# STORY
+# STORY (FAST PACED)
 # =========================
 def generate_story():
     stories = [
         [
             "गांव में एक चंपू भूत रहता था...",
             "वो लोगों को डराने नहीं, हंसाने के लिए famous था...",
-            "एक दिन उसने शादी करने का फैसला किया...",
-            "पूरा गांव हैरान रह गया...",
+            "एक दिन उसने बोला — मैं शादी करूंगा!",
+            "अगले दिन सच में बारात आ गई...",
             "भूत बोला — shampoo का खर्चा बचेगा 😂"
-        ],
-        [
-            "चंपू भूत नौकरी ढूंढ रहा था...",
-            "HR ने पूछा — experience?",
-            "भूत बोला — 100 साल से लोगों को परेशान कर रहा हूँ 😂",
-            "HR बोला — तुम overqualified हो!",
-            "सब हंस पड़े 😂"
         ]
     ]
     return random.choice(stories)
@@ -47,6 +40,19 @@ def create_voice(text):
     return path
 
 # =========================
+# DOWNLOAD AUDIO (BGM/SFX)
+# =========================
+def download_audio(url, filename):
+    path = os.path.join(OUTPUT_DIR, filename)
+    try:
+        r = requests.get(url, timeout=10)
+        with open(path, "wb") as f:
+            f.write(r.content)
+        return path
+    except:
+        return None
+
+# =========================
 # AI IMAGE GENERATION
 # =========================
 def generate_image(prompt, index):
@@ -54,24 +60,24 @@ def generate_image(prompt, index):
 
     payload = {"inputs": prompt}
 
-    for attempt in range(3):
+    for _ in range(3):
         try:
-            response = requests.post(API_URL, headers=HEADERS, json=payload, timeout=60)
+            res = requests.post(API_URL, headers=HEADERS, json=payload, timeout=60)
 
-            if response.status_code == 200:
+            if res.status_code == 200:
                 with open(img_path, "wb") as f:
-                    f.write(response.content)
+                    f.write(res.content)
                 return img_path
 
-            print("Retry:", response.text)
+            print("Retry:", res.text)
             time.sleep(5)
 
         except Exception as e:
             print("Error:", e)
             time.sleep(5)
 
-    # fallback
-    print("⚠️ Using fallback image")
+    # fallback (never fail)
+    print("⚠️ fallback image used")
     fallback = f"https://picsum.photos/seed/{random.randint(1,9999)}/1080/1920"
     img = requests.get(fallback).content
     with open(img_path, "wb") as f:
@@ -80,31 +86,49 @@ def generate_image(prompt, index):
     return img_path
 
 # =========================
-# VIDEO CREATION
+# VIDEO CREATION (REAL FEEL)
 # =========================
 def create_video(lines, audio_file):
-    audio = AudioFileClip(audio_file)
-    duration = audio.duration / len(lines)
+    voice = AudioFileClip(audio_file)
+    duration = voice.duration / len(lines)
 
     clips = []
 
     BASE_PROMPT = "funny cartoon ghost Champu Bhoot, same character, big eyes, cute, indian village, colorful animation"
 
     for i, line in enumerate(lines):
-        prompt = f"{BASE_PROMPT}, scene: {line}"
+        prompt = f"{BASE_PROMPT}, {line}"
 
         img_path = generate_image(prompt, i)
 
         clip = ImageClip(img_path).set_duration(duration)
 
-        # Animation feel
-        clip = clip.resize(lambda t: 1 + 0.1 * t)
-        clip = clip.crossfadein(0.4)
+        # 🎥 dynamic zoom
+        clip = clip.resize(lambda t: 1 + 0.12*t)
+
+        # 🎥 slight movement
+        clip = clip.set_position(lambda t: ("center", int(-30*t)))
+
+        # smooth entry
+        clip = clip.crossfadein(0.3)
 
         clips.append(clip)
 
     video = concatenate_videoclips(clips, method="compose")
-    video = video.set_audio(audio)
+
+    # =========================
+    # ADD BACKGROUND MUSIC
+    # =========================
+    bgm_url = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
+    bgm_path = download_audio(bgm_url, "bgm.mp3")
+
+    if bgm_path:
+        bgm = AudioFileClip(bgm_path).volumex(0.1)
+        final_audio = CompositeAudioClip([voice, bgm])
+    else:
+        final_audio = voice
+
+    video = video.set_audio(final_audio)
 
     output = os.path.join(OUTPUT_DIR, "final.mp4")
     video.write_videofile(output, fps=24)
@@ -115,7 +139,10 @@ def create_video(lines, audio_file):
 # MAIN
 # =========================
 def run():
-    print("👻 Creating Champu Bhoot AI Video...\n")
+    print("🎬 Creating NEXT-LEVEL Champu Bhoot Video...\n")
+
+    if not HF_API_KEY:
+        print("❌ Missing HF_API_KEY → using fallback images")
 
     lines = generate_story()
     text = " ".join(lines)
@@ -129,7 +156,7 @@ def run():
     video = create_video(lines, audio)
     print("🎬 Video created:", video)
 
-    print("\n✅ DONE")
+    print("\n✅ DONE - Download from GitHub Actions")
 
 
 if __name__ == "__main__":
