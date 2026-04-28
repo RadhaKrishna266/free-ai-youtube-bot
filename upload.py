@@ -2,6 +2,12 @@ import os
 import random
 import time
 import requests
+
+# ✅ FIX PILLOW ERROR
+from PIL import Image
+if not hasattr(Image, "ANTIALIAS"):
+    Image.ANTIALIAS = Image.Resampling.LANCZOS
+
 from moviepy.editor import *
 from gtts import gTTS
 
@@ -20,16 +26,13 @@ HEADERS = {"Authorization": f"Bearer {HF_API_KEY}"}
 # STORY (FAST PACED)
 # =========================
 def generate_story():
-    stories = [
-        [
-            "गांव में एक चंपू भूत रहता था...",
-            "वो लोगों को डराने नहीं, हंसाने के लिए famous था...",
-            "एक दिन उसने बोला — मैं शादी करूंगा!",
-            "अगले दिन सच में बारात आ गई...",
-            "भूत बोला — shampoo का खर्चा बचेगा 😂"
-        ]
+    return [
+        "गांव में एक चंपू भूत रहता था...",
+        "वो लोगों को डराने नहीं, हंसाने के लिए famous था...",
+        "एक दिन उसने बोला — मैं शादी करूंगा!",
+        "अगले दिन सच में बारात आ गई...",
+        "भूत बोला — shampoo का खर्चा बचेगा 😂"
     ]
-    return random.choice(stories)
 
 # =========================
 # VOICE
@@ -40,7 +43,7 @@ def create_voice(text):
     return path
 
 # =========================
-# DOWNLOAD AUDIO (BGM/SFX)
+# DOWNLOAD AUDIO (BGM)
 # =========================
 def download_audio(url, filename):
     path = os.path.join(OUTPUT_DIR, filename)
@@ -53,7 +56,7 @@ def download_audio(url, filename):
         return None
 
 # =========================
-# AI IMAGE GENERATION
+# AI IMAGE
 # =========================
 def generate_image(prompt, index):
     img_path = os.path.join(OUTPUT_DIR, f"{index}.jpg")
@@ -76,8 +79,7 @@ def generate_image(prompt, index):
             print("Error:", e)
             time.sleep(5)
 
-    # fallback (never fail)
-    print("⚠️ fallback image used")
+    # fallback
     fallback = f"https://picsum.photos/seed/{random.randint(1,9999)}/1080/1920"
     img = requests.get(fallback).content
     with open(img_path, "wb") as f:
@@ -86,7 +88,19 @@ def generate_image(prompt, index):
     return img_path
 
 # =========================
-# VIDEO CREATION (REAL FEEL)
+# 🎭 TALKING ANIMATION EFFECT
+# =========================
+def talking_effect(clip):
+    # bounce effect (like speaking)
+    clip = clip.set_position(lambda t: ("center", int(10 * (t % 0.3) * 10)))
+
+    # zoom pulse
+    clip = clip.resize(lambda t: 1 + 0.05 * (t % 0.5))
+
+    return clip
+
+# =========================
+# VIDEO CREATION
 # =========================
 def create_video(lines, audio_file):
     voice = AudioFileClip(audio_file)
@@ -103,27 +117,30 @@ def create_video(lines, audio_file):
 
         clip = ImageClip(img_path).set_duration(duration)
 
-        # 🎥 dynamic zoom
-        clip = clip.resize(lambda t: 1 + 0.12*t)
+        # 🎭 talking feel
+        clip = talking_effect(clip)
 
-        # 🎥 slight movement
-        clip = clip.set_position(lambda t: ("center", int(-30*t)))
+        # 🎥 extra zoom
+        clip = clip.resize(lambda t: 1 + 0.08 * t)
 
-        # smooth entry
-        clip = clip.crossfadein(0.3)
+        # 💥 punchline effect (last scene)
+        if i == len(lines) - 1:
+            clip = clip.resize(1.2)
+
+        clip = clip.crossfadein(0.2)
 
         clips.append(clip)
 
     video = concatenate_videoclips(clips, method="compose")
 
     # =========================
-    # ADD BACKGROUND MUSIC
+    # 🎵 BACKGROUND MUSIC
     # =========================
     bgm_url = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
     bgm_path = download_audio(bgm_url, "bgm.mp3")
 
     if bgm_path:
-        bgm = AudioFileClip(bgm_path).volumex(0.1)
+        bgm = AudioFileClip(bgm_path).volumex(0.08)
         final_audio = CompositeAudioClip([voice, bgm])
     else:
         final_audio = voice
@@ -139,10 +156,10 @@ def create_video(lines, audio_file):
 # MAIN
 # =========================
 def run():
-    print("🎬 Creating NEXT-LEVEL Champu Bhoot Video...\n")
+    print("🎭 Creating TALKING Champu Bhoot Video...\n")
 
     if not HF_API_KEY:
-        print("❌ Missing HF_API_KEY → using fallback images")
+        print("⚠️ HF_API_KEY missing → fallback images will be used")
 
     lines = generate_story()
     text = " ".join(lines)
@@ -151,12 +168,12 @@ def run():
         print("👉", l)
 
     audio = create_voice(text)
-    print("🎤 Voice created")
+    print("🎤 Voice ready")
 
     video = create_video(lines, audio)
     print("🎬 Video created:", video)
 
-    print("\n✅ DONE - Download from GitHub Actions")
+    print("\n✅ DONE")
 
 
 if __name__ == "__main__":
