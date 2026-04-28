@@ -1,54 +1,25 @@
 import os
 import random
-from gtts import gTTS
+import requests
 from moviepy.editor import *
+from gtts import gTTS
 
-# =========================
-# SETUP
-# =========================
 OUTPUT_DIR = "output"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# =========================
-# STORY DATA (COMEDY)
-# =========================
-HOOKS = [
-    "गांव में एक मजेदार चुड़ैल रहती थी...",
-    "एक दांती चुड़ैल बहुत फेमस थी..."
-]
-
-SETUPS = [
-    "कोई उससे डरता नहीं था, सब उसका मजाक उड़ाते थे...",
-    "पूरा गांव उसे देखकर हंसता था..."
-]
-
-TWISTS = [
-    "एक दिन उसने बोला — अब मैं शादी करूँगी!",
-    "एक दिन उसने नौकरी के लिए apply किया!"
-]
-
-PUNCHLINES = [
-    "लड़का बोला — बाल नहीं हैं तो shampoo का खर्चा बचेगा! 😂",
-    "इंटरव्यू में बोली — मैं डराती नहीं, हंसाती हूं! 😂"
-]
-
-CTA = [
-    "Follow करो ऐसी funny videos के लिए 😄"
-]
+PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
 
 # =========================
-# GENERATE STORY
+# STORY
 # =========================
 def generate_story():
-    lines = [
-        random.choice(HOOKS),
-        random.choice(SETUPS),
-        random.choice(TWISTS),
-        random.choice(PUNCHLINES),
-        random.choice(CTA)
+    return [
+        "एक मजेदार चुड़ैल गांव में रहती थी...",
+        "कोई उससे डरता नहीं था...",
+        "एक दिन उसने शादी करने का फैसला किया...",
+        "पूरा गांव हैरान रह गया...",
+        "लड़का बोला — shampoo का खर्चा बचेगा 😂"
     ]
-    return lines
-
 
 # =========================
 # VOICE
@@ -59,9 +30,25 @@ def create_voice(text):
     tts.save(path)
     return path
 
+# =========================
+# DOWNLOAD IMAGE
+# =========================
+def get_image(query, index):
+    url = f"https://api.pexels.com/v1/search?query={query}&per_page=1"
+    headers = {"Authorization": PEXELS_API_KEY}
+    res = requests.get(url, headers=headers).json()
+
+    img_url = res["photos"][0]["src"]["portrait"]
+    img_path = os.path.join(OUTPUT_DIR, f"{index}.jpg")
+
+    img_data = requests.get(img_url).content
+    with open(img_path, "wb") as f:
+        f.write(img_data)
+
+    return img_path
 
 # =========================
-# VIDEO CREATION
+# CREATE ANIMATED VIDEO
 # =========================
 def create_video(lines, audio_file):
     audio = AudioFileClip(audio_file)
@@ -69,20 +56,14 @@ def create_video(lines, audio_file):
 
     clips = []
 
-    for line in lines:
-        bg = ColorClip(size=(1080, 1920), color=(10, 10, 10)).set_duration(duration)
+    for i, line in enumerate(lines):
+        img_path = get_image("cartoon village funny", i)
 
-        txt = TextClip(
-            line,
-            fontsize=70,
-            color='white',
-            stroke_color='black',
-            stroke_width=2,
-            method='caption',
-            size=(900, None)
-        ).set_position(("center", "center")).set_duration(duration)
+        clip = ImageClip(img_path).set_duration(duration)
 
-        clip = CompositeVideoClip([bg, txt])
+        # Zoom effect (animation feel)
+        clip = clip.resize(lambda t: 1 + 0.1*t)
+
         clips.append(clip)
 
     video = concatenate_videoclips(clips)
@@ -93,27 +74,19 @@ def create_video(lines, audio_file):
 
     return output_path
 
-
 # =========================
 # MAIN
 # =========================
 def run():
-    print("😂 Generating Funny Video...")
+    print("🎬 Creating Animation Video...")
 
     lines = generate_story()
-    full_text = " ".join(lines)
+    text = " ".join(lines)
 
-    for l in lines:
-        print("👉", l)
-
-    audio = create_voice(full_text)
-    print("🎤 Voice created")
-
+    audio = create_voice(text)
     video = create_video(lines, audio)
-    print("🎬 Video created:", video)
 
-    print("\n✅ DONE!")
-
+    print("✅ DONE:", video)
 
 if __name__ == "__main__":
     run()
