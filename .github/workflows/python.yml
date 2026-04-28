@@ -20,17 +20,17 @@ jobs:
         with:
           python-version: "3.11"
 
-      # ⚙️ System deps (IMPORTANT for MoviePy + MP3)
+      # ⚙️ Install FFmpeg
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
-      # 📦 Python deps
+      # 📦 Install Python dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          pip install moviepy==1.0.3 gTTS numpy requests imageio imageio-ffmpeg edge-tts pillow
+          pip install edge-tts requests pillow
 
       # 🚀 Run script
       - name: Run upload.py
