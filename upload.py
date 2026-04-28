@@ -1,152 +1,109 @@
 import os
-import subprocess
-import asyncio
-import edge_tts
-from PIL import Image, ImageDraw, ImageFont
+from gtts import gTTS
 
-FINAL_VIDEO = "jee_coaching_video.mp4"
+OUTPUT_DIR = "output"
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-STEPS = [
-
-("Topic: Maxima & Minima",
- "Namaste. Aaj hum Maxima aur Minima concept bilkul aasaan tareeke se padhenge."),
-
-("Key Idea: f'(x) = 0 at extreme point",
- "Maximum ya minimum point par derivative zero hota hai."),
-
-("Second derivative test:",
- "Agar second derivative negative ho to maximum hota hai."),
-
-("Given Question (JEE Main 2019 — 4 marks)",
- "Ab JEE Main 2019 ka question solve karte hain."),
-
-("f(x) = -x² + 4x + 1",
- "Is function ka maximum value nikalna hai."),
-
-("Step 1: First derivative",
- "Sabse pehle derivative nikaalte hain."),
-
-("f'(x) = -2x + 4",
- "Power rule apply karne par derivative milta hai."),
-
-("Step 2: Set f'(x) = 0",
- "Maximum ya minimum ke liye derivative zero karte hain."),
-
-("-2x + 4 = 0",
- "Equation solve karte hain."),
-
-("x = 2",
- "x ki value 2 milti hai."),
-
-("Step 3: Second derivative",
- "Ab second derivative nikaalte hain."),
-
-("f''(x) = -2 < 0",
- "Negative hone par yeh maximum point hai."),
-
-("Step 4: Find value",
- "Ab x = 2 ko function me put karte hain."),
-
-("f(2) = -4 + 8 + 1",
- "Calculation karte hain."),
-
-("Maximum Value = 5",
- "Is function ka maximum value 5 hai."),
-
-("Quick Trick:",
- "Downward parabola ka vertex hi maximum hota hai."),
-
-("Practice Question:",
- "Find maximum of f(x) = -x² + 6x"),
-
-("Thank you",
- "Aise hi practice karte rahiye. Aap zarur succeed karenge.")
-]
-
-os.makedirs("frames", exist_ok=True)
-os.makedirs("tts", exist_ok=True)
+# =========================
+# FULL STORY
+# =========================
+def get_story():
+    return [
+        "यह कहानी आपकी सोच बदल देगी...",
+        "एक गरीब किसान अपने खेत में काम कर रहा था...",
+        "तभी उसे मिट्टी के अंदर कुछ सख्त चीज महसूस हुई...",
+        "उसने खोदकर देखा तो एक पुराना घड़ा मिला...",
+        "पहले उसने सोचा यह बेकार होगा...",
+        "लेकिन जब उसने घड़ा खोला...",
+        "अंदर सोना नहीं था...",
+        "बल्कि एक पुरानी चिट्ठी थी...",
+        "जिसमें लिखा था — जो मेहनत करता है वही असली खजाना पाता है...",
+        "उस दिन किसान समझ गया कि मेहनत ही असली दौलत है...",
+        "और वही उसे सफल बना सकती है...",
+        "यही असली खुशी है ❤️"
+    ]
 
 
-def create_frame(lines, i):
-
-    W, H = 720, 1280
-    img = Image.new("RGB", (W, H), (15, 60, 35))
-    draw = ImageDraw.Draw(img)
-
-    try:
-        font = ImageFont.truetype("DejaVuSans-Bold.ttf", 42)
-    except:
-        font = ImageFont.load_default()
-
-    y = 60
-
-    for line in lines:
-        draw.text((60, y), line, fill=(245, 245, 245), font=font)
-        y += 55
-
-    path = f"frames/frame_{i}.png"
-    img.save(path)
+# =========================
+# VOICE
+# =========================
+def create_voice(text):
+    path = os.path.join(OUTPUT_DIR, "voice.mp3")
+    tts = gTTS(text=text, lang='hi', slow=True)
+    tts.save(path)
     return path
 
 
-async def generate_voice(text, file):
+# =========================
+# CHARACTER PROMPTS (VERY IMPORTANT)
+# =========================
+def create_scene_prompts(story_lines):
+    base_character = "same indian farmer, 2D cartoon style, consistent face, village background"
 
-    tts = edge_tts.Communicate(
-        text,
-        "hi-IN-SwaraNeural",
-        rate="-18%",
-        pitch="-2Hz"
-    )
+    prompts = []
 
-    await tts.save(file)
+    for line in story_lines:
+        prompt = f"{base_character}, emotional scene, {line}, cinematic lighting, animation style"
+        prompts.append(prompt)
+
+    return prompts
 
 
-async def main():
+# =========================
+# SAVE PROMPTS
+# =========================
+def save_prompts(prompts):
+    path = os.path.join(OUTPUT_DIR, "scene_prompts.txt")
+    with open(path, "w", encoding="utf-8") as f:
+        for p in prompts:
+            f.write(p + "\n")
+    return path
 
-    clips = []
-    board = []
 
-    for i, (text, voice) in enumerate(STEPS):
+# =========================
+# SAVE EDIT PLAN
+# =========================
+def save_edit_plan(story_lines):
+    path = os.path.join(OUTPUT_DIR, "edit_plan.txt")
 
-        board.append(text)
+    with open(path, "w", encoding="utf-8") as f:
+        for i, line in enumerate(story_lines):
+            f.write(f"Scene {i+1}: {line}\n")
+            f.write("Duration: 2-3 seconds\n\n")
 
-        img = create_frame(board, i)
-        audio_file = f"tts/voice_{i}.mp3"
+    return path
 
-        await generate_voice(voice, audio_file)
 
-        clip = f"clip_{i}.mp4"
+# =========================
+# MAIN
+# =========================
+def run():
+    print("🚀 Character Animation Video System\n")
 
-        subprocess.run([
-            "ffmpeg", "-y",
-            "-loop", "1",
-            "-i", img,
-            "-i", audio_file,
-            "-c:v", "libx264",
-            "-tune", "stillimage",
-            "-c:a", "aac",
-            "-pix_fmt", "yuv420p",
-            "-shortest",
-            clip
-        ], check=True)
+    story_lines = get_story()
+    full_text = " ".join(story_lines)
 
-        clips.append(clip)
+    # Voice
+    voice = create_voice(full_text)
+    print("🎤 Voice created:", voice)
 
-    with open("concat.txt", "w") as f:
-        for c in clips:
-            f.write(f"file '{c}'\n")
+    # Prompts
+    prompts = create_scene_prompts(story_lines)
+    prompt_file = save_prompts(prompts)
+    print("🎨 Scene prompts ready:", prompt_file)
 
-    subprocess.run([
-        "ffmpeg", "-y",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", "concat.txt",
-        "-c", "copy",
-        FINAL_VIDEO
-    ], check=True)
+    # Edit plan
+    plan = save_edit_plan(story_lines)
+    print("📝 Edit plan ready:", plan)
 
-    print("🎬 Coaching video created:", FINAL_VIDEO)
+    print("\n🎬 NEXT STEPS (IMPORTANT):")
+    print("1. Open AI tool like Runway or Pika")
+    print("2. Paste each prompt → generate 2–3 sec animation")
+    print("3. Download clips")
+    print("4. Combine clips + voice in CapCut")
+
+    print("\n✅ DONE! This is how viral animated videos are made")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    run()
