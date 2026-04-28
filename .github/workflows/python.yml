@@ -2,52 +2,46 @@ name: 🎬 Auto YouTube Video Bot
 
 on:
   schedule:
-    - cron: "0 6 * * *"   # Runs daily at 6 AM UTC (11:30 AM IST)
-  workflow_dispatch:       # Allow manual run
+    - cron: "0 6 * * *"
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout repo
+      # 1️⃣ Checkout
       - name: 📥 Checkout code
         uses: actions/checkout@v3
 
-      # 2️⃣ Setup Python
-      - name: 🐍 Set up Python
+      # 2️⃣ Python
+      - name: 🐍 Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.11"
 
-      # 3️⃣ Install system dependencies (ffmpeg)
+      # 3️⃣ Install ffmpeg
       - name: 🎥 Install ffmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-      # 4️⃣ Install Python dependencies
+      # 4️⃣ Install dependencies
       - name: 📦 Install dependencies
         run: |
           pip install --upgrade pip
           pip install gTTS moviepy requests
 
-      # 5️⃣ (Optional) Verify install
-      - name: ✅ Verify installs
-        run: |
-          python -c "import gtts, moviepy, requests; print('All libs installed')"
-
-      # 6️⃣ Run your script
-      - name: 🚀 Run automation script
-        env:
-          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
-          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+      # 5️⃣ Run script
+      - name: 🚀 Run script
         run: python upload.py
 
-      # 7️⃣ Upload generated videos (optional debug)
+      # 6️⃣ Debug (see files)
+      - name: 📂 List files
+        run: ls -R
+
+      # 7️⃣ Upload artifacts
       - name: 📤 Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: generated-videos
+          name: generated-files
           path: |
-            *.mp4
-            *.mp3
+            output/**
