@@ -1,27 +1,54 @@
 import os
+import random
 from gtts import gTTS
 
 OUTPUT_DIR = "output"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # =========================
-# FULL STORY
+# CHARACTER BASE (CONSISTENT)
 # =========================
-def get_story():
-    return [
-        "यह कहानी आपकी सोच बदल देगी...",
-        "एक गरीब किसान अपने खेत में काम कर रहा था...",
-        "तभी उसे मिट्टी के अंदर कुछ सख्त चीज महसूस हुई...",
-        "उसने खोदकर देखा तो एक पुराना घड़ा मिला...",
-        "पहले उसने सोचा यह बेकार होगा...",
-        "लेकिन जब उसने घड़ा खोला...",
-        "अंदर सोना नहीं था...",
-        "बल्कि एक पुरानी चिट्ठी थी...",
-        "जिसमें लिखा था — जो मेहनत करता है वही असली खजाना पाता है...",
-        "उस दिन किसान समझ गया कि मेहनत ही असली दौलत है...",
-        "और वही उसे सफल बना सकती है...",
-        "यही असली खुशी है ❤️"
+CHARACTER = "funny indian cartoon chudail, big eyes, silly face, 2D animation, colorful, not scary"
+
+# =========================
+# STORY DATA (COMEDY)
+# =========================
+HOOKS = [
+    "एक मजेदार चुड़ैल गांव में रहती थी...",
+    "यह चुड़ैल डराती नहीं, हंसाती थी...",
+]
+
+SETUPS = [
+    "पूरा गांव उसका मजाक उड़ाता था...",
+    "कोई उससे डरता नहीं था...",
+]
+
+TWISTS = [
+    "एक दिन उसने शादी करने का फैसला किया...",
+    "एक दिन उसने दुकान खोल ली...",
+]
+
+PUNCHLINES = [
+    "लड़का बोला — बाल नहीं हैं तो shampoo का खर्चा बचेगा 😂",
+    "उसकी दुकान में कोई नहीं आया, तो उसने खुद ही सामान खरीद लिया 😂",
+]
+
+CTA = [
+    "Follow करो ऐसी funny videos के लिए 😄"
+]
+
+# =========================
+# GENERATE STORY
+# =========================
+def generate_story():
+    story = [
+        random.choice(HOOKS),
+        random.choice(SETUPS),
+        random.choice(TWISTS),
+        random.choice(PUNCHLINES),
+        random.choice(CTA)
     ]
+    return story
 
 
 # =========================
@@ -29,48 +56,32 @@ def get_story():
 # =========================
 def create_voice(text):
     path = os.path.join(OUTPUT_DIR, "voice.mp3")
-    tts = gTTS(text=text, lang='hi', slow=True)
+    tts = gTTS(text=text, lang='hi', slow=False)
     tts.save(path)
     return path
 
 
 # =========================
-# CHARACTER PROMPTS (VERY IMPORTANT)
+# CREATE ANIMATION PROMPTS
 # =========================
-def create_scene_prompts(story_lines):
-    base_character = "same indian farmer, 2D cartoon style, consistent face, village background"
-
+def create_prompts(story_lines):
     prompts = []
 
     for line in story_lines:
-        prompt = f"{base_character}, emotional scene, {line}, cinematic lighting, animation style"
+        prompt = f"{CHARACTER}, indian village background, funny scene, {line}, cartoon animation, bright colors"
         prompts.append(prompt)
 
     return prompts
 
 
 # =========================
-# SAVE PROMPTS
+# SAVE FILES
 # =========================
-def save_prompts(prompts):
-    path = os.path.join(OUTPUT_DIR, "scene_prompts.txt")
+def save_file(filename, data):
+    path = os.path.join(OUTPUT_DIR, filename)
     with open(path, "w", encoding="utf-8") as f:
-        for p in prompts:
-            f.write(p + "\n")
-    return path
-
-
-# =========================
-# SAVE EDIT PLAN
-# =========================
-def save_edit_plan(story_lines):
-    path = os.path.join(OUTPUT_DIR, "edit_plan.txt")
-
-    with open(path, "w", encoding="utf-8") as f:
-        for i, line in enumerate(story_lines):
-            f.write(f"Scene {i+1}: {line}\n")
-            f.write("Duration: 2-3 seconds\n\n")
-
+        for item in data:
+            f.write(item + "\n")
     return path
 
 
@@ -78,31 +89,31 @@ def save_edit_plan(story_lines):
 # MAIN
 # =========================
 def run():
-    print("🚀 Character Animation Video System\n")
+    print("😂 Cartoon Chudail Animation Generator\n")
 
-    story_lines = get_story()
+    story_lines = generate_story()
     full_text = " ".join(story_lines)
 
     # Voice
     voice = create_voice(full_text)
-    print("🎤 Voice created:", voice)
+    print("🎤 Voice:", voice)
 
     # Prompts
-    prompts = create_scene_prompts(story_lines)
-    prompt_file = save_prompts(prompts)
-    print("🎨 Scene prompts ready:", prompt_file)
+    prompts = create_prompts(story_lines)
+    prompt_file = save_file("prompts.txt", prompts)
+    print("🎨 Prompts:", prompt_file)
 
-    # Edit plan
-    plan = save_edit_plan(story_lines)
-    print("📝 Edit plan ready:", plan)
+    # Scene Plan
+    plan = [f"Scene {i+1}: {line}" for i, line in enumerate(story_lines)]
+    plan_file = save_file("scene_plan.txt", plan)
+    print("📝 Plan:", plan_file)
 
-    print("\n🎬 NEXT STEPS (IMPORTANT):")
-    print("1. Open AI tool like Runway or Pika")
-    print("2. Paste each prompt → generate 2–3 sec animation")
-    print("3. Download clips")
-    print("4. Combine clips + voice in CapCut")
+    print("\n🎬 NEXT STEP:")
+    print("1. Use prompts in AI animation tools")
+    print("2. Generate 2–3 sec clips per scene")
+    print("3. Combine with voice in editor")
 
-    print("\n✅ DONE! This is how viral animated videos are made")
+    print("\n✅ DONE - Ready for viral cartoon videos")
 
 
 if __name__ == "__main__":
