@@ -10,8 +10,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout
-      - name: 📥 Checkout code
+      # 1️⃣ Checkout repo
+      - name: 📥 Checkout
         uses: actions/checkout@v3
 
       # 2️⃣ Setup Python
@@ -20,42 +20,31 @@ jobs:
         with:
           python-version: "3.11"
 
-      # 3️⃣ Install system dependencies
+      # 3️⃣ Install system deps
       - name: ⚙️ Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg imagemagick fonts-dejavu-core
+          sudo apt-get install -y ffmpeg
 
-      # 4️⃣ Fix ImageMagick policy (VERY IMPORTANT)
-      - name: 🔧 Fix ImageMagick policy
-        run: |
-          sudo sed -i 's/rights="none"/rights="read|write"/g' /etc/ImageMagick-6/policy.xml
-
-      # 5️⃣ Install Python dependencies
-      - name: 📦 Install Python packages
+      # 4️⃣ Install Python packages
+      - name: 📦 Install dependencies
         run: |
           pip install --upgrade pip
-          pip install moviepy==1.0.3 gTTS numpy imageio imageio-ffmpeg requests
+          pip install moviepy==1.0.3 gTTS numpy requests imageio imageio-ffmpeg
 
-      # 6️⃣ Verify everything
-      - name: ✅ Verify setup
-        run: |
-          python -c "import moviepy.editor as mp; print('moviepy OK')"
-          python -c "from gtts import gTTS; print('gtts OK')"
-          ffmpeg -version
-          convert -version
-
-      # 7️⃣ Run your script
-      - name: 🚀 Run upload script
+      # 5️⃣ Run script
+      - name: 🚀 Run upload.py
+        env:
+          HF_API_KEY: ${{ secrets.HF_API_KEY }}
         run: python upload.py
 
-      # 8️⃣ Debug files
+      # 6️⃣ Debug (optional but useful)
       - name: 📂 List files
         run: ls -R
 
-      # 9️⃣ Upload output
+      # 7️⃣ Upload output
       - name: 📤 Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: generated-files
+          name: generated-video
           path: output/**
